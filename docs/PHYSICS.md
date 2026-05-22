@@ -12,10 +12,10 @@ Current implementation details:
 - Gravity uses the native non-cape constants visible around `HandlePlayerPhysics_D930`: `0x06` when jump is not held and `0x03` while jump is held during rising motion.
 - Maximum normal fall speed is currently `0x40`, matching the common non-cape clamp in the same table.
 - Horizontal movement is clamped to the generated level bounds so Mario cannot leave the level to the left or right during the playable slice.
-- Runtime slope collision is a temporary geometric bridge. Only imported diagonal pipe/ledge/slope edge cells become slope surfaces; ledge/slope fill, assist, and support cells stay rectangular solids so Mario does not fall through the interior of a slope object. These surfaces are emitted per Map16 tile rather than as long connected-component averages, which avoids false collision lines when adjacent or overlapping slope objects touch.
+- Runtime slope collision is a temporary geometric bridge. Only imported diagonal pipe/ledge/slope edge cells become slope surfaces; ledge/slope fill, assist, and support cells stay rectangular solids so Mario does not fall through the interior of a slope object. These surfaces are emitted per Map16 tile rather than as long connected-component averages, which avoids false collision lines when adjacent or overlapping slope objects touch. Standard slope Map16 tiles now use per-tile segment heights: gradual slopes change by 4 px per tile, normal slopes by 8 px per tile, and steep slopes by 16 px per tile.
 - `tools/check-dotnet.sh` runs a C# physics smoke executable that verifies the flat-ground caps, P-meter sprint threshold behavior, friction step, and imported horizontal max-speed table.
 
-This is not a complete reimplementation of every SMW physics branch yet. Missing pieces include exact slope Map16 shape lookup, ice, swimming, cape, carrying, Yoshi, rope/net climbing, solid-sprite interaction, and exact takeoff behavior. The purpose of this slice is to establish the deterministic Godot core, asset feed, and regression surface before broadening the compatibility matrix.
+This is not a complete reimplementation of every SMW physics branch yet. Missing pieces include the full native Map16 act-as/slope interaction table, ice, swimming, cape, carrying, Yoshi, rope/net climbing, solid-sprite interaction, and exact takeoff behavior. The purpose of this slice is to establish the deterministic Godot core, asset feed, and regression surface before broadening the compatibility matrix.
 
 ## Exact-Port Rule
 

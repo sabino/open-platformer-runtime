@@ -863,6 +863,11 @@ public partial class GameScene : Node2D
         var x1 = x0 + Map16TileSize;
         var y1 = y0 + Map16TileSize;
 
+        if (TryBuildStandardSlopeTileSurface(tile, x0, y0, x1, out slope))
+        {
+            return true;
+        }
+
         if (IsSlopeUpRightTile(tile))
         {
             slope = new SmwPhysics.SlopeSurface(x0, y1, x1, y0);
@@ -879,6 +884,123 @@ public partial class GameScene : Node2D
         return false;
     }
 
+    private static bool TryBuildStandardSlopeTileSurface(
+        PlacedMap16Tile tile,
+        float x0,
+        float y0,
+        float x1,
+        out SmwPhysics.SlopeSurface slope)
+    {
+        if (TryGetStandardSlopeOffsets(tile.Map16, out var leftYOffset, out var rightYOffset))
+        {
+            slope = new SmwPhysics.SlopeSurface(x0, y0 + leftYOffset, x1, y0 + rightYOffset);
+            return true;
+        }
+
+        slope = default;
+        return false;
+    }
+
+    private static bool TryGetStandardSlopeOffsets(int map16, out float leftYOffset, out float rightYOffset)
+    {
+        if (MatchesAdjustedSlopeTile(map16, 0x016E))
+        {
+            leftYOffset = 16;
+            rightYOffset = 12;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x0173))
+        {
+            leftYOffset = 12;
+            rightYOffset = 8;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x0178))
+        {
+            leftYOffset = 8;
+            rightYOffset = 4;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x017D))
+        {
+            leftYOffset = 4;
+            rightYOffset = 0;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x0182))
+        {
+            leftYOffset = 0;
+            rightYOffset = 4;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x0187))
+        {
+            leftYOffset = 4;
+            rightYOffset = 8;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x018C))
+        {
+            leftYOffset = 8;
+            rightYOffset = 12;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x0191))
+        {
+            leftYOffset = 12;
+            rightYOffset = 16;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x0196))
+        {
+            leftYOffset = 16;
+            rightYOffset = 8;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x019B))
+        {
+            leftYOffset = 8;
+            rightYOffset = 0;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x01A0))
+        {
+            leftYOffset = 0;
+            rightYOffset = 8;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x01A5))
+        {
+            leftYOffset = 8;
+            rightYOffset = 16;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x01AA))
+        {
+            leftYOffset = 16;
+            rightYOffset = 0;
+            return true;
+        }
+        if (MatchesAdjustedSlopeTile(map16, 0x01AF))
+        {
+            leftYOffset = 0;
+            rightYOffset = 16;
+            return true;
+        }
+
+        leftYOffset = 0;
+        rightYOffset = 0;
+        return false;
+    }
+
+    private static bool MatchesAdjustedSlopeTile(int map16, int baseTile)
+    {
+        return map16 == baseTile ||
+            map16 == baseTile + 0x0001 ||
+            map16 == baseTile + 0x0003 ||
+            map16 == baseTile + 0x0004;
+    }
+
     private static bool IsSlopeUpRightTile(PlacedMap16Tile tile)
     {
         if (tile.Source.Contains("upside_down", StringComparison.Ordinal))
@@ -893,7 +1015,7 @@ public partial class GameScene : Node2D
 
         return tile.Source switch
         {
-            "left_diagonal_ledge_edge" => tile.Map16 == 0x01AA,
+            "left_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AA),
             "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB,
             _ => false,
         };
@@ -1029,8 +1151,8 @@ public partial class GameScene : Node2D
         return tile.Source switch
         {
             "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB,
-            "left_diagonal_ledge_edge" => tile.Map16 == 0x01AA,
-            "steep_right_slope_edge" => tile.Map16 == 0x01AF,
+            "left_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AA),
+            "steep_right_slope_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AF),
             _ => false,
         };
     }

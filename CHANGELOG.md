@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added Map16-aware slope heights for runtime collision: gradual, normal, and steep standard-slope tiles now project 4px/8px/16px segments instead of every edge tile acting like a 45-degree ramp.
+- Ported Lunar Magic Universal's current left diagonal ledge slope/line overwrite flags into the offline importer so adjusted ledge edge tiles stay aligned with LMU's renderer.
 - Kept imported slope/diagonal-ledge fill and support tiles as runtime solids while only converting actual edge cells into slope surfaces, making slope interiors traversable instead of hollow.
 - Ported Lunar Magic Universal's full standard slope object projection into the importer, including native slope overwrite tile adjustment and pipe foreground preservation for generated previews.
 - Shifted the small-Mario OAM render anchor upward relative to the 16px collision box so the visible sprite sits on the hitbox floor instead of below it.
