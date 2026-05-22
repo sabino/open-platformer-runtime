@@ -13,6 +13,7 @@ Importer references translated into `tools/smw_import.py`:
 - LoROM address conversion and decompression from `assets/util.py`
 - Level object length parsing, Map16, palette, graphics, level pointer, and sprite pointer addresses from `assets/compile_resources.py`
 - Foreground/background GFX upload order from `kUploadGraphicsFiles_FGAndBGGFXList` in `src/smw_00.cpp`; level `105` uses tileset `7`, which uploads GFX `15`, `1B`, `17`, and `14` into level VRAM order.
+- Sprite GFX upload order from `kUploadGraphicsFiles_SpriteGFXList` and `UploadGraphicsFiles` in `src/smw_00.cpp`; level `105` uses sprite GFX setting `8`, which uploads GFX `20`, `13`, `01`, and `00` into the `$6000-$7FFF` sprite VRAM window, while direct pipe target `0CB` uses setting `4`, which uploads `06`, `13`, `01`, and `00`.
 - Screen-exit property semantics from `src/smw_0d.cpp` and level-load destination construction from `src/smw_05.cpp`
 - Player graphics source data from `GFX32`/`GFX33`, player palettes, and `PlayerGFXRt` tile pointer tables. Current PNG atlases are usable, but state/frame categorization remains pending until the OAM assembly tables are ported directly.
 - SPC upload bank addresses from `assets/compile_resources.py`: engine `0x0E8000`, samples `0x0F8000`, level music `0x0EAED6`, overworld music `0x0E98B1`, and credits music `0x03E400`.
@@ -33,6 +34,8 @@ Runtime level asset note: `GameScene` loads the current level through `generated
 Runtime transition scaffolding note: `GameScene` can rebuild world geometry, collision rectangles, HUD previews, and player spawn from another imported level. The CLI argument `--smw-test-level=0CB` is used by `tools/check-headless.sh` to verify that the imported direct pipe target loads with 131 Map16 placements and generated collision rectangles.
 
 Runtime sprite note: `GameScene` loads generated `sprite_layer.sprites` records and renders their spawn points as debug markers with sprite IDs. The current coordinate decode uses the vanilla screen nibble plus 8-bit x byte and low y nibble, which is enough to inspect Yoshi Island 1's 34 imported sprite records while full sprite simulation and exact OAM rendering remain pending.
+
+Sprite GFX note: the importer now writes `spritesets/level_*_spritegfx*_8x8.png` and matching metadata from the same sprite upload table used by the native code. These files are raw sprite VRAM previews, not final enemy frames. Correct Koopa, Yoshi, power-up, and effect rendering still requires porting each sprite's OAM assembly, tile index, tile size, flip, priority, and palette selection rules.
 
 The key transition invariant is:
 

@@ -52,6 +52,34 @@ FG_AND_BG_GFX_LIST = [
     0x14, 0x17, 0x19, 0x2C,
     0x19, 0x17, 0x1B, 0x18,
 ]
+SPRITE_GFX_LIST = [
+    0x00, 0x01, 0x13, 0x02,
+    0x00, 0x01, 0x12, 0x03,
+    0x00, 0x01, 0x13, 0x05,
+    0x00, 0x01, 0x13, 0x04,
+    0x00, 0x01, 0x13, 0x06,
+    0x00, 0x01, 0x13, 0x09,
+    0x00, 0x01, 0x13, 0x04,
+    0x00, 0x01, 0x06, 0x11,
+    0x00, 0x01, 0x13, 0x20,
+    0x00, 0x01, 0x13, 0x0F,
+    0x00, 0x01, 0x13, 0x23,
+    0x00, 0x01, 0x0D, 0x14,
+    0x00, 0x01, 0x24, 0x0E,
+    0x00, 0x01, 0x0A, 0x22,
+    0x00, 0x01, 0x13, 0x0E,
+    0x00, 0x01, 0x13, 0x14,
+    0x00, 0x00, 0x00, 0x08,
+    0x10, 0x0F, 0x1C, 0x1D,
+    0x00, 0x01, 0x24, 0x22,
+    0x00, 0x01, 0x25, 0x22,
+    0x00, 0x22, 0x13, 0x2D,
+    0x00, 0x01, 0x0F, 0x22,
+    0x00, 0x26, 0x2E, 0x22,
+    0x21, 0x0B, 0x25, 0x0A,
+    0x00, 0x0D, 0x24, 0x22,
+    0x2C, 0x30, 0x2D, 0x0E,
+]
 GENERIC_REPEATED_TILES = [0x02, 0x21, 0x23, 0x2A, 0x2B, 0x3F, 0x03, 0x13, 0x1E, 0x24, 0x2E, 0x2F, 0x30, 0x32, 0x65]
 VERTICAL_PIPE_TOP_LEFT = [0x33, 0x37, 0x39, 0x00, 0x00]
 VERTICAL_PIPE_TOP_RIGHT = [0x34, 0x38, 0x3A, 0x00, 0x00]
@@ -519,6 +547,16 @@ def level_fg_bg_gfx_ids(tileset: int) -> list[int]:
     return arr
 
 
+def level_sprite_gfx_ids(sprite_graphics: int) -> list[int]:
+    if sprite_graphics < 0 or (sprite_graphics + 1) * 4 > len(SPRITE_GFX_LIST):
+        raise ImportErrorWithExit(f"Unsupported sprite graphics setting: {sprite_graphics}")
+    source = SPRITE_GFX_LIST[sprite_graphics * 4 : sprite_graphics * 4 + 4]
+    arr = [0, 0, 0, 0]
+    for i, gfx_id in enumerate(source):
+        arr[3 - i] = gfx_id
+    return arr
+
+
 def level_fg_bg_vram(rom: Rom, tileset: int) -> tuple[bytes, list[dict[str, Any]]]:
     vram = bytearray(0x2000)
     uploads: list[dict[str, Any]] = []
@@ -535,6 +573,32 @@ def level_fg_bg_vram(rom: Rom, tileset: int) -> tuple[bytes, list[dict[str, Any]
                 "source_addr": f"0x{addr:06X}",
                 "compressed_length": compressed_len,
                 "decompressed_length": len(data),
+                "vram_offset": f"0x{dst:04X}",
+                "tile_start": dst // 32,
+                "tile_count": copy_len // 32,
+            }
+        )
+    return bytes(vram), uploads
+
+
+def level_sprite_vram(rom: Rom, sprite_graphics: int) -> tuple[bytes, list[dict[str, Any]]]:
+    vram = bytearray(0x2000)
+    uploads: list[dict[str, Any]] = []
+    gfx_ids = level_sprite_gfx_ids(sprite_graphics)
+    for slot, gfx_id in enumerate(gfx_ids):
+        data, addr, compressed_len = decompress_graphics_file(rom, gfx_id)
+        dst = [0x1800, 0x1000, 0x0800, 0x0000][slot]
+        copy_len = min(0x800, len(data))
+        vram[dst : dst + copy_len] = data[:copy_len]
+        uploads.append(
+            {
+                "slot": slot,
+                "gfx_id": f"{gfx_id:02X}",
+                "source_addr": f"0x{addr:06X}",
+                "compressed_length": compressed_len,
+                "decompressed_length": len(data),
+                "vram_base": "0x6000",
+                "vram_addr": f"0x{0x6000 + dst:04X}",
                 "vram_offset": f"0x{dst:04X}",
                 "tile_start": dst // 32,
                 "tile_count": copy_len // 32,
@@ -1005,6 +1069,55 @@ def extract_level_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header
     return metadata
 
 
+def extract_level_sprite_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header: dict[str, Any]) -> dict[str, Any]:
+    sprite_graphics = int(header["sprite_graphics"])
+    sprite_palette_index = int(header["sprite_palette"])
+    sprite_palettes_rgb = snes_words_to_rgb(rom.get_words(0x00B318, 84))
+    palette_start = min(sprite_palette_index * 16, max(0, len(sprite_palettes_rgb) - 16))
+    preview_palette = sprite_palettes_rgb[palette_start : palette_start + 16]
+    if len(preview_palette) < 16:
+        preview_palette = sprite_palettes_rgb[:16]
+
+    vram_4bpp, uploads = level_sprite_vram(rom, sprite_graphics)
+
+    spriteset_dir = out_dir / "spritesets"
+    key = f"level_{level_key}_spritegfx{sprite_graphics}"
+    vram_path = spriteset_dir / f"{key}_vram.bin"
+    atlas_path = spriteset_dir / f"{key}_8x8.png"
+    metadata_path = spriteset_dir / f"{key}.json"
+
+    atlas = write_vram_tile_atlas_png(atlas_path, vram_4bpp, preview_palette)
+    atlas["file"] = rel(atlas_path, out_dir)
+
+    metadata = {
+        "status": "preview",
+        "notes": [
+            "Uses the vanilla sprite GFX upload list for this level's sprite graphics setting.",
+            "Tiles are placed in the same $6000-$7FFF sprite VRAM window used by UploadGraphicsFiles.",
+            "This atlas is a raw VRAM preview. Exact enemy frames still require each sprite's OAM/tile assembly and palette selection code.",
+        ],
+        "level_id": level_key,
+        "sprite_graphics": sprite_graphics,
+        "sprite_palette": sprite_palette_index,
+        "palette_mapping": {
+            "source": "palettes/global_palettes.json sprites",
+            "preview_start_color": palette_start,
+            "final_oam_palette_selection_pending": True,
+        },
+        "uploads": uploads,
+        "vram": {
+            "file": rel(vram_path, out_dir),
+            "sha1": write_bin(vram_path, vram_4bpp),
+            "format": "snes_4bpp_tiles_in_sprite_vram_order_0x6000_to_0x7fff",
+            "tile_count": len(vram_4bpp) // 32,
+        },
+        "atlas_png": atlas,
+    }
+    metadata["file"] = rel(metadata_path, out_dir)
+    metadata["sha1"] = write_json(metadata_path, metadata)
+    return metadata
+
+
 def write_json(path: Path, payload: Any) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2, sort_keys=True)
@@ -1198,6 +1311,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
 
     level_key = f"{level_id:03X}"
     tileset_assets = extract_level_tileset_assets(rom, out_dir, level_key, header)
+    sprite_tileset_assets = extract_level_sprite_tileset_assets(rom, out_dir, level_key, header)
     layout_preview = extract_level_layout_preview(rom, out_dir, level_key, header, parsed_layer1["objects"])
     level_path = out_dir / "levels" / f"level_{level_key}.json"
     payload = {
@@ -1234,6 +1348,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
         },
         "screen_exits": parsed_layer1["screen_exits"],
         "tileset_assets": tileset_assets,
+        "sprite_tileset_assets": sprite_tileset_assets,
         "layout_preview": layout_preview,
     }
     level_sha = write_json(level_path, payload)
@@ -1250,6 +1365,12 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
             "file": tileset_assets["file"],
             "atlas_png": tileset_assets["atlas_png"]["file"],
             "map16_preview_png": tileset_assets["map16_preview_png"]["file"],
+        },
+        "sprite_tileset_assets": {
+            "file": sprite_tileset_assets["file"],
+            "atlas_png": sprite_tileset_assets["atlas_png"]["file"],
+            "status": sprite_tileset_assets["status"],
+            "sprite_graphics": sprite_tileset_assets["sprite_graphics"],
         },
         "layout_preview": {
             "file": layout_preview["file"],

@@ -28,6 +28,7 @@ public partial class GameScene : Node2D
     private string _currentLevelId = "105";
     private string _levelGfxAtlasPath = "res://generated/smw/tilesets/level_105_tileset7_8x8.png";
     private string _levelMap16AtlasPath = "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png";
+    private string _levelSpriteAtlasPath = "res://generated/smw/spritesets/level_105_spritegfx8_8x8.png";
     private string _levelLayoutPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
     private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
     private float _cameraX;
@@ -234,6 +235,16 @@ public partial class GameScene : Node2D
             if (tileset.TryGetValue("map16_preview_png", out var map16Variant))
             {
                 _levelMap16AtlasPath = $"res://generated/smw/{map16Variant.AsString()}";
+            }
+        }
+
+        if (level.TryGetValue("sprite_tileset_assets", out var spriteTilesetVariant) &&
+            spriteTilesetVariant.VariantType == Variant.Type.Dictionary)
+        {
+            var spriteTileset = spriteTilesetVariant.AsGodotDictionary();
+            if (spriteTileset.TryGetValue("atlas_png", out var atlasVariant))
+            {
+                _levelSpriteAtlasPath = $"res://generated/smw/{atlasVariant.AsString()}";
             }
         }
 
@@ -852,7 +863,7 @@ public partial class GameScene : Node2D
         {
             Color = new Color(0.02f, 0.03f, 0.04f, 0.78f),
             Position = new Vector2(484, 12),
-            Size = new Vector2(264, 380),
+            Size = new Vector2(304, 380),
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         layer.AddChild(panel);
@@ -860,14 +871,14 @@ public partial class GameScene : Node2D
         AddPreviewLabel(layer, "Level GFX", new Vector2(496, 20));
         AddPreviewImage(layer, _levelGfxAtlasPath, new Vector2(496, 44), Vector2.One);
 
-        AddPreviewLabel(layer, "Map16", new Vector2(636, 20));
-        AddPreviewImage(layer, _levelMap16AtlasPath, new Vector2(636, 44), new Vector2(0.42f, 0.42f));
+        AddPreviewLabel(layer, "Sprite GFX", new Vector2(636, 20));
+        AddPreviewImage(layer, _levelSpriteAtlasPath, new Vector2(636, 44), Vector2.One);
 
         AddPreviewLabel(layer, "Layout", new Vector2(496, 188));
         AddPreviewImage(layer, _levelLayoutPreviewPath, new Vector2(496, 212), new Vector2(0.08f, 0.08f));
 
-        AddPreviewLabel(layer, "Player GFX32", new Vector2(636, 188));
-        AddPreviewImage(layer, "res://generated/smw/player/gfx32_player_palette0.png", new Vector2(636, 212), new Vector2(0.42f, 0.42f));
+        AddPreviewLabel(layer, "Map16", new Vector2(636, 188));
+        AddPreviewImage(layer, _levelMap16AtlasPath, new Vector2(636, 212), new Vector2(0.42f, 0.42f));
     }
 
     private static void AddPreviewLabel(Node parent, string text, Vector2 position)

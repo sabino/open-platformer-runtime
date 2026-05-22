@@ -34,6 +34,8 @@ for png in [
     out_dir / "tilesets" / "level_105_tileset7_map16_preview.png",
     out_dir / "tilesets" / "level_0CB_tileset8_8x8.png",
     out_dir / "tilesets" / "level_0CB_tileset8_map16_preview.png",
+    out_dir / "spritesets" / "level_105_spritegfx8_8x8.png",
+    out_dir / "spritesets" / "level_0CB_spritegfx4_8x8.png",
     out_dir / "levels" / "level_105_partial_layout.png",
     out_dir / "levels" / "level_0CB_partial_layout.png",
 ]:
@@ -56,6 +58,14 @@ assert tileset["map16_preview_png"]["file"] == "tilesets/level_105_tileset7_map1
 assert tileset["palette_mapping"]["tile_word_palette_bits"] == "bits 10-12"
 assert tileset["palette_mapping"]["foreground_rows_used_for_bg_palettes_2_to_7"] is True
 
+sprite_tileset = json.loads((out_dir / "spritesets" / "level_105_spritegfx8.json").read_text())
+assert sprite_tileset["status"] == "preview"
+assert sprite_tileset["sprite_graphics"] == 8, sprite_tileset
+assert [entry["gfx_id"] for entry in sprite_tileset["uploads"]] == ["20", "13", "01", "00"], sprite_tileset["uploads"]
+assert sprite_tileset["atlas_png"]["file"] == "spritesets/level_105_spritegfx8_8x8.png"
+assert sprite_tileset["vram"]["format"] == "snes_4bpp_tiles_in_sprite_vram_order_0x6000_to_0x7fff"
+assert sprite_tileset["palette_mapping"]["final_oam_palette_selection_pending"] is True
+
 tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
 assert tilemap["status"] == "partial"
 assert tilemap["placed_tile_count"] > 1000, tilemap["placed_tile_count"]
@@ -70,6 +80,10 @@ target_sources = {tile["source"] for tile in pipe_target_tilemap["placed_tiles"]
 assert "horizontal_pipe_end" in target_sources, target_sources
 assert "rope_mushroom_top_left" in target_sources, target_sources
 assert "rope_mushroom_column_left" in target_sources, target_sources
+
+pipe_target_sprite_tileset = json.loads((out_dir / "spritesets" / "level_0CB_spritegfx4.json").read_text())
+assert pipe_target_sprite_tileset["sprite_graphics"] == 4, pipe_target_sprite_tileset
+assert [entry["gfx_id"] for entry in pipe_target_sprite_tileset["uploads"]] == ["06", "13", "01", "00"], pipe_target_sprite_tileset["uploads"]
 
 audio = manifest["assets"]["audio"]
 assert audio["status"] == "partial", audio
@@ -101,6 +115,7 @@ for sample in audio_manifest["decoded_samples"]:
 print("smw-import check: YI1 pipe route 105 screen 07 -> 0CB secondary=0")
 print("smw-import check: player GFX32/GFX33 PNG atlases and categorization manifest present")
 print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview present")
+print("smw-import check: level 105 and 0CB sprite GFX VRAM atlases present")
 print("smw-import check: level 105 partial layout preview uses Map16 palette bits")
 print("smw-import check: level 0CB rope pipe target layout expands horizontal pipes and mushroom platforms")
 print("smw-import check: SPC banks and BRR preview WAVs present")
