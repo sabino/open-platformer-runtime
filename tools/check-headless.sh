@@ -28,3 +28,6 @@ grep -q "player_sprites=8" "$LOG_FILE"
 grep -q "smw-runtime: level=1CB layer1_objects=16 layer2_objects=0 layer2_bg=1 map16_tiles=585 collision_rects=" "$LOG_FILE"
 grep -q "pipe_rects=0" "$LOG_FILE"
 grep -q "sprite_spawns=0" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --audio-driver Dummy --path . --quit-after 1 --smw-audio-preview=Level 2>&1 | tee "$LOG_FILE"
+grep -q "smw-audio: music_preview=Level events=12 loop_frames=96" "$LOG_FILE"

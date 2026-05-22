@@ -31,6 +31,7 @@ public partial class Main : Node2D
         var autostart = false;
         string? testLevel = null;
         string? capturePath = null;
+        string? audioPreview = null;
         Vector2? testSpawn = null;
         var captureFrames = 8;
         foreach (var arg in OS.GetCmdlineArgs())
@@ -51,6 +52,10 @@ public partial class Main : Node2D
             {
                 capturePath = arg["--smw-capture=".Length..];
                 autostart = true;
+            }
+            else if (arg.StartsWith("--smw-audio-preview=", StringComparison.Ordinal))
+            {
+                audioPreview = arg["--smw-audio-preview=".Length..];
             }
             else if (arg.StartsWith("--smw-test-spawn=", StringComparison.Ordinal))
             {
@@ -79,6 +84,10 @@ public partial class Main : Node2D
         if (capturePath != null)
         {
             _game?.DebugCaptureViewport(capturePath, captureFrames, quitAfterCapture: true);
+        }
+        if (audioPreview != null)
+        {
+            _audio?.PlayMusicPreview(audioPreview);
         }
     }
 
@@ -215,14 +224,24 @@ public partial class Main : Node2D
         panel.AddChild(musicButtons);
         foreach (var name in new[] { "Level", "Overworld", "Credits" })
         {
+            var bankPath = $"res://generated/smw/audio/spc_{name.ToLowerInvariant()}_music_bank.bin";
             var button = new Button
             {
                 Text = name,
-                Disabled = true,
-                TooltipText = "Imported, but exact SPC/DSP command sequencing is not ported yet.",
+                Disabled = !FileAccess.FileExists(bankPath),
+                TooltipText = "Internal BRR sequencer preview; exact SPC/DSP song playback is still pending.",
             };
+            button.Pressed += () => _audio?.PlayMusicPreview(name);
             musicButtons.AddChild(button);
         }
+
+        var stop = new Button
+        {
+            Text = "Stop",
+            TooltipText = "Stop the internal sequencer preview.",
+        };
+        stop.Pressed += () => _audio?.StopMusicPreview();
+        musicButtons.AddChild(stop);
     }
 
     private void AddSampleButton(HBoxContainer parent, int sampleId, string label)

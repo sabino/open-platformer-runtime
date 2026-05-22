@@ -13,6 +13,12 @@ public partial class SmwAudio : Node
     private AudioStreamPlayer? _player;
     private AudioStreamGeneratorPlayback? _playback;
     private bool _loaded;
+    private IReadOnlyList<MusicEvent> _musicPattern = Array.Empty<MusicEvent>();
+    private int _musicLoopFrames;
+    private int _musicFrame;
+    private int _musicEventIndex;
+    private double _musicFrameAccumulator;
+    private bool _musicPlaying;
 
     public override void _Ready()
     {
@@ -22,6 +28,7 @@ public partial class SmwAudio : Node
 
     public override void _Process(double delta)
     {
+        StepMusicSequencer(delta);
         FillGeneratorBuffer();
     }
 
@@ -64,6 +71,31 @@ public partial class SmwAudio : Node
         }
 
         _voices.Add(new Voice(sample, step: 1.0, volume: 0.42f, pan: 0.0f, durationSamples: 0, delaySamples: 0));
+    }
+
+    public void PlayMusicPreview(string bankName)
+    {
+        EnsureLoaded();
+        (_musicPattern, _musicLoopFrames) = bankName switch
+        {
+            "Overworld" => (OverworldPreviewPattern, 96),
+            "Credits" => (CreditsPreviewPattern, 128),
+            _ => (LevelPreviewPattern, 96),
+        };
+
+        _voices.Clear();
+        _musicFrame = 0;
+        _musicEventIndex = 0;
+        _musicFrameAccumulator = 0.0;
+        _musicPlaying = true;
+        TriggerMusicEventsForCurrentFrame();
+        GD.Print($"smw-audio: music_preview={bankName} events={_musicPattern.Count} loop_frames={_musicLoopFrames}");
+    }
+
+    public void StopMusicPreview()
+    {
+        _musicPlaying = false;
+        _voices.Clear();
     }
 
     private void EnsureLoaded()
@@ -229,7 +261,7 @@ public partial class SmwAudio : Node
         PlayInstrumentNote(instrument: 7, note: 0xA4, durationFrames: 0x0C, volume: 0.42f, delayFrames: 0x10);
     }
 
-    private void PlayInstrumentNote(int instrument, int note, int durationFrames, float volume, int delayFrames)
+    private void PlayInstrumentNote(int instrument, int note, int durationFrames, float volume, int delayFrames, float pan = 0.0f)
     {
         EnsureLoaded();
         var instrumentOffset = InstrumentTable + instrument * 9;
@@ -256,9 +288,41 @@ public partial class SmwAudio : Node
             sample,
             step,
             volume,
-            pan: 0.0f,
+            pan,
             durationSamples: FramesToSamples(durationFrames),
             delaySamples: FramesToSamples(delayFrames)));
+    }
+
+    private void StepMusicSequencer(double delta)
+    {
+        if (!_musicPlaying || _musicPattern.Count == 0 || _musicLoopFrames <= 0)
+        {
+            return;
+        }
+
+        _musicFrameAccumulator += delta * FramesPerSecond;
+        while (_musicFrameAccumulator >= 1.0)
+        {
+            _musicFrameAccumulator -= 1.0;
+            _musicFrame++;
+            if (_musicFrame >= _musicLoopFrames)
+            {
+                _musicFrame = 0;
+                _musicEventIndex = 0;
+            }
+
+            TriggerMusicEventsForCurrentFrame();
+        }
+    }
+
+    private void TriggerMusicEventsForCurrentFrame()
+    {
+        while (_musicEventIndex < _musicPattern.Count && _musicPattern[_musicEventIndex].Frame == _musicFrame)
+        {
+            var note = _musicPattern[_musicEventIndex];
+            PlayInstrumentNote(note.Instrument, note.Note, note.DurationFrames, note.Volume, delayFrames: 0, note.Pan);
+            _musicEventIndex++;
+        }
     }
 
     private static int FramesToSamples(int frames)
@@ -347,6 +411,59 @@ public partial class SmwAudio : Node
     }
 
     private sealed record DecodedSample(int Id, int StartAddress, int LoopAddress, float[] Pcm);
+
+    private readonly record struct MusicEvent(
+        int Frame,
+        int Instrument,
+        int Note,
+        int DurationFrames,
+        float Volume,
+        float Pan);
+
+    private static readonly MusicEvent[] LevelPreviewPattern =
+    [
+        new(0, 9, 0x68, 18, 0.22f, -0.15f),
+        new(0, 12, 0x58, 22, 0.14f, 0.18f),
+        new(12, 9, 0x6C, 18, 0.22f, -0.10f),
+        new(24, 9, 0x70, 18, 0.22f, -0.05f),
+        new(24, 12, 0x5C, 22, 0.14f, 0.18f),
+        new(36, 9, 0x74, 18, 0.22f, 0.00f),
+        new(48, 9, 0x77, 18, 0.22f, 0.05f),
+        new(48, 12, 0x60, 22, 0.14f, 0.18f),
+        new(60, 9, 0x74, 18, 0.22f, 0.00f),
+        new(72, 9, 0x70, 18, 0.22f, -0.05f),
+        new(72, 12, 0x5C, 22, 0.14f, 0.18f),
+        new(84, 9, 0x6C, 18, 0.22f, -0.10f),
+    ];
+
+    private static readonly MusicEvent[] OverworldPreviewPattern =
+    [
+        new(0, 12, 0x60, 14, 0.18f, -0.12f),
+        new(8, 12, 0x64, 14, 0.18f, -0.08f),
+        new(16, 12, 0x67, 14, 0.18f, 0.00f),
+        new(24, 12, 0x6C, 20, 0.20f, 0.08f),
+        new(32, 9, 0x54, 22, 0.12f, 0.18f),
+        new(40, 12, 0x6C, 14, 0.18f, 0.08f),
+        new(48, 12, 0x67, 14, 0.18f, 0.00f),
+        new(56, 12, 0x64, 14, 0.18f, -0.08f),
+        new(64, 12, 0x60, 20, 0.20f, -0.12f),
+        new(72, 9, 0x58, 22, 0.12f, 0.18f),
+        new(80, 12, 0x64, 14, 0.18f, -0.08f),
+        new(88, 12, 0x67, 14, 0.18f, 0.00f),
+    ];
+
+    private static readonly MusicEvent[] CreditsPreviewPattern =
+    [
+        new(0, 12, 0x64, 28, 0.18f, -0.10f),
+        new(0, 9, 0x50, 32, 0.10f, 0.18f),
+        new(24, 12, 0x68, 28, 0.18f, -0.05f),
+        new(40, 9, 0x54, 32, 0.10f, 0.18f),
+        new(48, 12, 0x6C, 28, 0.18f, 0.00f),
+        new(72, 12, 0x70, 28, 0.18f, 0.05f),
+        new(80, 9, 0x58, 32, 0.10f, 0.18f),
+        new(96, 12, 0x6C, 28, 0.18f, 0.00f),
+        new(112, 12, 0x68, 24, 0.18f, -0.05f),
+    ];
 
     private sealed class Voice
     {

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added a C# internal APU probe that streams BRR samples from imported SPC banks through `AudioStreamGenerator`, including port-1 jump and two-note command probes.
+- Enabled the menu music-bank buttons with a native C# pattern sequencer that plays level, overworld, and credits previews from imported BRR instruments without WAV/MP3 playback.
 - Rendered generated Yoshi Island 1 Map16 tile placements at runtime and derived temporary merged collision rectangles from imported tile placement sources.
 - Replaced the runtime player placeholder rectangle with an eight-sprite Mario composite sourced from generated GFX32 data and ROM-derived `PlayerGFXRt` head/body tile pointer tables.
 - Corrected vanilla screen-exit high-bit routing so Yoshi Island 1 imports direct pipe target `1CB` instead of the unrelated `0CB` room, and expanded the underground target's ceiling ledge/edge objects.
