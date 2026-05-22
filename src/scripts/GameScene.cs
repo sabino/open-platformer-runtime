@@ -644,12 +644,12 @@ public partial class GameScene : Node2D
     private void AddGeneratedCollision()
     {
         var solidTiles = new HashSet<(int X, int Y)>();
-        var slopeTiles = new HashSet<(int X, int Y)>();
+        var slopeTiles = new List<PlacedMap16Tile>();
         foreach (var tile in _placedTiles)
         {
-            if (IsSlopeSurfaceSource(tile.Source))
+            if (IsSlopeSurfaceTile(tile))
             {
-                slopeTiles.Add((tile.X, tile.Y));
+                slopeTiles.Add(tile);
             }
             else if (IsSolidMap16Source(tile.Source))
             {
@@ -668,21 +668,23 @@ public partial class GameScene : Node2D
         }
     }
 
-    private static List<SmwPhysics.SlopeSurface> BuildSlopeSurfaces(HashSet<(int X, int Y)> slopeTiles)
+    private static List<SmwPhysics.SlopeSurface> BuildSlopeSurfaces(IReadOnlyList<PlacedMap16Tile> slopeTiles)
     {
         var slopes = new List<SmwPhysics.SlopeSurface>();
-        foreach (var component in ConnectedTileComponents(slopeTiles))
+        var tileCoords = new HashSet<(int X, int Y)>();
+        foreach (var tile in slopeTiles)
+        {
+            tileCoords.Add((tile.X, tile.Y));
+        }
+
+        foreach (var component in ConnectedTileComponents(tileCoords))
         {
             var minX = int.MaxValue;
             var maxX = int.MinValue;
-            var minY = int.MaxValue;
-            var maxY = int.MinValue;
             foreach (var tile in component)
             {
                 minX = Math.Min(minX, tile.X);
                 maxX = Math.Max(maxX, tile.X);
-                minY = Math.Min(minY, tile.Y);
-                maxY = Math.Max(maxY, tile.Y);
             }
 
             if (minX == int.MaxValue)
@@ -690,14 +692,37 @@ public partial class GameScene : Node2D
                 continue;
             }
 
+            var leftY = AverageYAtX(component, minX);
+            var rightY = AverageYAtX(component, maxX);
+            var descendsRight = rightY >= leftY;
+            var leftWorldY = (leftY + (descendsRight ? 0.0f : 1.0f)) * Map16TileSize + LevelVisualYOffset;
+            var rightWorldY = (rightY + (descendsRight ? 1.0f : 0.0f)) * Map16TileSize + LevelVisualYOffset;
             slopes.Add(new SmwPhysics.SlopeSurface(
                 minX * Map16TileSize,
-                (maxY + 1) * Map16TileSize + LevelVisualYOffset,
+                leftWorldY,
                 (maxX + 1) * Map16TileSize,
-                minY * Map16TileSize + LevelVisualYOffset));
+                rightWorldY));
         }
 
         return slopes;
+    }
+
+    private static float AverageYAtX(List<(int X, int Y)> component, int x)
+    {
+        var sum = 0;
+        var count = 0;
+        foreach (var tile in component)
+        {
+            if (tile.X != x)
+            {
+                continue;
+            }
+
+            sum += tile.Y;
+            count++;
+        }
+
+        return count == 0 ? 0.0f : sum / (float)count;
     }
 
     private static List<List<(int X, int Y)>> ConnectedTileComponents(HashSet<(int X, int Y)> tiles)
@@ -838,6 +863,11 @@ public partial class GameScene : Node2D
 
     private static bool IsSolidMap16Source(string source)
     {
+        if (IsSlopeObjectSource(source))
+        {
+            return false;
+        }
+
         return source.Contains("ledge", StringComparison.Ordinal) ||
             source.Contains("ground", StringComparison.Ordinal) ||
             source.Contains("mushroom", StringComparison.Ordinal) ||
@@ -846,11 +876,22 @@ public partial class GameScene : Node2D
             source.StartsWith("std_generic_", StringComparison.Ordinal);
     }
 
-    private static bool IsSlopeSurfaceSource(string source)
+    private static bool IsSlopeObjectSource(string source)
     {
         return source.Contains("diagonal_pipe", StringComparison.Ordinal) ||
-            source.Contains("diagonal_ledge_edge", StringComparison.Ordinal) ||
-            source.Contains("steep_right_slope_surface", StringComparison.Ordinal);
+            source.Contains("diagonal_ledge", StringComparison.Ordinal) ||
+            source.Contains("steep_right_slope", StringComparison.Ordinal);
+    }
+
+    private static bool IsSlopeSurfaceTile(PlacedMap16Tile tile)
+    {
+        return tile.Source switch
+        {
+            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB,
+            "left_diagonal_ledge_edge" => tile.Map16 == 0x01AA,
+            "steep_right_slope_edge" => tile.Map16 == 0x01AF,
+            _ => false,
+        };
     }
 
     private void AddSolid(Rect2 rect, Color color, bool debugVisible)

@@ -19,6 +19,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckSlopeJumpAndLanding(physics))
+        {
+            return 1;
+        }
 
         var solids = new List<Rect2> { new(0, 128, 512, 32) };
         var state = physics.MakeState(32, 64);
@@ -181,6 +185,43 @@ public static class PhysicsSmoke
         if (state.X != expectedRight || state.XSpeed > 0 || state.SubX != 0)
         {
             Console.Error.WriteLine($"expected right level bound clamp, got x={state.X} sub={state.SubX} xs={state.XSpeed}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckSlopeJumpAndLanding(SmwPhysics physics)
+    {
+        var slopes = new List<SmwPhysics.SlopeSurface>
+        {
+            new(0, 128, 128, 96),
+        };
+        var state = physics.MakeState(56, 78);
+        state.OnGround = true;
+
+        physics.Step(ref state, new SmwPhysics.FrameInput
+        {
+            Jump = true,
+            JumpPressed = true,
+        }, [], slopes);
+
+        if (state.OnGround || state.YSpeed >= 0)
+        {
+            Console.Error.WriteLine($"expected slope jump to leave ground, got on_ground={state.OnGround} ys={state.YSpeed}");
+            return false;
+        }
+
+        state = physics.MakeState(56, 72);
+        state.YSpeed = 12;
+        for (var i = 0; i < 16 && !state.OnGround; i++)
+        {
+            physics.Step(ref state, new SmwPhysics.FrameInput(), [], slopes);
+        }
+
+        if (!state.OnGround)
+        {
+            Console.Error.WriteLine("expected falling player to land on slope");
             return false;
         }
 

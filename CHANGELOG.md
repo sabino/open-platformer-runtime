@@ -36,3 +36,4 @@
 - Expanded the physics reference notes with Hamaluik's measured SMW motion regressions and the native SMW `HandlePlayerPhysics`/slope table targets to port next.
 - Clamped player horizontal movement to generated level bounds so Mario cannot walk off-screen to the left at the start of Yoshi Island 1.
 - Ported Lunar Magic Universal's newer diagonal pipe and left diagonal ledge projection offsets, including negative X descent and missing bottom/fill rows.
+- Made temporary slope collision Map16-aware and prevented upward jumps from snapping back onto slopes, with slope-object fill art excluded from rectangular wall collision.

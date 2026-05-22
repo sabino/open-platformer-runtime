@@ -336,7 +336,7 @@ public sealed class SmwPhysics
 
     private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes)
     {
-        if (slopes.Count == 0)
+        if (slopes.Count == 0 || state.YSpeed < 0)
         {
             return;
         }
