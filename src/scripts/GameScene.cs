@@ -45,6 +45,7 @@ public partial class GameScene : Node2D
     private string _levelSpriteAtlasPath = "res://generated/smw/spritesets/level_105_spritegfx8_8x8.png";
     private string _levelLayoutPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
     private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
+    private string _levelLayer2BackgroundPath = "res://generated/smw/levels/level_105_layer2_background.png";
     private float _cameraX;
     private float _cameraY;
     private int _lastPlayerPose = -1;
@@ -251,9 +252,15 @@ public partial class GameScene : Node2D
             var spriteId = sprite.TryGetValue("sprite_id", out var spriteIdVariant) ? spriteIdVariant.AsInt32() : 0;
             var extraBits = sprite.TryGetValue("extra_bits", out var extraBitsVariant) ? extraBitsVariant.AsInt32() : 0;
             var offset = sprite.TryGetValue("offset", out var offsetVariant) ? offsetVariant.AsInt32() : 0;
-            var screen = (screenY >> 4) & 0x0F;
-            var y = (screenY & 0x0F) * 16 + (int)LevelVisualYOffset;
-            var x = screen * 256 + xId;
+            var screen = sprite.TryGetValue("screen", out var screenVariant)
+                ? screenVariant.AsInt32()
+                : (((screenY << 3) & 0x10) | (xId & 0x0F));
+            var x = sprite.TryGetValue("x_px", out var xVariant)
+                ? xVariant.AsInt32()
+                : screen * 256 + (xId & 0xF0);
+            var y = sprite.TryGetValue("y_px", out var yVariant)
+                ? yVariant.AsInt32() + (int)LevelVisualYOffset
+                : (screenY & 0xF0) + (((screenY & 0x01) != 0) ? 0x100 : 0) + (int)LevelVisualYOffset;
             _levelSprites.Add(new SpriteSpawn(x, y, screen, spriteId, extraBits, offset));
         }
     }
@@ -293,6 +300,16 @@ public partial class GameScene : Node2D
             if (layout.TryGetValue("preview_png", out var previewVariant))
             {
                 _levelLayoutPreviewPath = $"res://generated/smw/{previewVariant.AsString()}";
+            }
+        }
+
+        if (level.TryGetValue("layer2_background", out var layer2Variant) &&
+            layer2Variant.VariantType == Variant.Type.Dictionary)
+        {
+            var layer2 = layer2Variant.AsGodotDictionary();
+            if (layer2.TryGetValue("preview_png", out var previewVariant))
+            {
+                _levelLayer2BackgroundPath = $"res://generated/smw/{previewVariant.AsString()}";
             }
         }
     }
@@ -443,6 +460,7 @@ public partial class GameScene : Node2D
         _solids.Clear();
         StartWorldRoot();
         AddWorldBackground();
+        AddLayer2BackgroundPreview();
 
         if (AddGeneratedMap16Tiles())
         {
@@ -465,6 +483,31 @@ public partial class GameScene : Node2D
         {
             AddScreenLine(i);
         }
+    }
+
+    private void AddLayer2BackgroundPreview()
+    {
+        if (!FileAccess.FileExists(_levelLayer2BackgroundPath))
+        {
+            return;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelLayer2BackgroundPath));
+        if (image == null || image.IsEmpty())
+        {
+            return;
+        }
+
+        var sprite = new Sprite2D
+        {
+            Name = "Layer2BackgroundPreview",
+            Texture = ImageTexture.CreateFromImage(image),
+            Position = new Vector2(0, LevelVisualYOffset),
+            Centered = false,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            ZIndex = -30,
+        };
+        AddWorldChild(sprite);
     }
 
     private void AddWorldBackground()
@@ -1124,7 +1167,8 @@ public partial class GameScene : Node2D
 
     private void PrintRuntimeState()
     {
-        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
+        var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
@@ -1160,13 +1204,28 @@ public partial class GameScene : Node2D
         {
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         }
-        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+
+        if (!DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
+        {
+            await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        }
+
         CaptureViewportNow(capturePath, quitAfterCapture);
     }
 
     private void CaptureViewportNow(string capturePath, bool quitAfterCapture)
     {
-        var image = GetViewport().GetTexture().GetImage();
+        var image = GetViewport().GetTexture()?.GetImage();
+        if (image == null)
+        {
+            GD.PrintErr($"smw-capture: failed path={capturePath} reason=viewport_texture_unavailable level={_currentLevelId}");
+            if (quitAfterCapture)
+            {
+                GetTree().Quit(1);
+            }
+            return;
+        }
+
         image.Convert(Image.Format.Rgba8);
         for (var y = 0; y < image.GetHeight(); y++)
         {

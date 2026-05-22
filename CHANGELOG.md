@@ -20,4 +20,7 @@
 - Added vertical camera follow/clamping against generated level bounds so lower Yoshi Island 1 terrain remains visible during drops instead of looking like the map ends.
 - Added a `--smw-test-spawn=x,y` debug launch argument for reproducible viewport captures at specific world coordinates.
 - Documented that the Python importer is an offline extraction tool for now and should eventually move into C# Godot tooling or a C# asset-pipeline project.
+- Decoded vanilla Layer 2 RLE background tilemaps into generated preview layers and rendered them behind the runtime Layer 1 Map16 placements.
+- Corrected sprite spawn metadata and runtime markers to use the native `yyyyEESY / XXXXssss / id` screen, X, and Y bit layout.
+- Corrected imported Level 1/2 object placement to match Lunar Magic Universal's `x=b1 low nibble` and `y=b0 low 5 bits` decode, and aligned more pipe/slope/diagonal ledge Map16 projection rules with its `lmcore` renderer.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.

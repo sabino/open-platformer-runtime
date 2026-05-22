@@ -124,7 +124,10 @@ ROPE_CLOUD_LINE = [0x05, 0x06]
 SMALL_BUSH_LEFT = [0x73, 0x7A, 0x85, 0x88, 0xC3]
 SMALL_BUSH_MIDDLE = [0x74, 0x7B, 0x86, 0x89, 0xC3]
 SMALL_BUSH_RIGHT = [0x79, 0x80, 0x87, 0x8E, 0xC3]
-DIAGONAL_PIPE_TILES = [0xC4, 0xC5, 0xC7, 0xEC, 0xED, 0xC6, 0xC7, 0xEE, 0x59, 0x5A, 0xEF, 0xC7, 0xEE, 0x59, 0x5B, 0x5C]
+DIAGONAL_PIPE_ROW0 = [0x01C4, 0x01C5]
+DIAGONAL_PIPE_ROW1 = [0x01C7, 0x01EC, 0x01ED, 0x01C6]
+DIAGONAL_PIPE_ROW2 = [0x01C7, 0x01EE, 0x0159, 0x015A, 0x01EF]
+DIAGONAL_PIPE_ROWN = [0x01C7, 0x01EE, 0x0159, 0x015B, 0x015C]
 ROPE_TILESETS = {2, 6, 8}
 LEVEL_VERTICAL_TABLE = [
     0x00, 0x00, 0x80, 0x01, 0x81, 0x02, 0x82, 0x03,
@@ -316,7 +319,7 @@ def calc_level_len(rom: Rom, addr: int) -> int:
             addr += 1
         elif obj_id in (0x22, 0x23):
             addr += 1
-        elif obj_id == 0x27:
+        elif obj_id in (0x27, 0x29):
             addr += 2
     return addr - start
 
@@ -375,10 +378,10 @@ def decode_object_placement(
         adjusted_b0 = (b1 & 0x0F) | (b0 & 0xF0)
         adjusted_b1 = low_nibble | (b1 & 0xF0)
 
-    sub_x = adjusted_b0 & 0x0F
-    sub_y = adjusted_b1 & 0x0F
+    sub_x = adjusted_b1 & 0x0F
+    sub_y = adjusted_b0 & 0x0F
     high_subscreen = (adjusted_b0 & 0x10) != 0
-    y_tile = sub_y + (16 if high_subscreen else 0)
+    y_tile = adjusted_b0 & 0x1F
     return {
         "layer": layer_index + 1,
         "screen_cursor": screen_cursor,
@@ -386,7 +389,7 @@ def decode_object_placement(
         "sub_x": sub_x,
         "sub_y": sub_y,
         "high_subscreen": high_subscreen,
-        "map16_offset": (0x100 if high_subscreen else 0) + sub_y * 16 + sub_x,
+        "map16_offset": y_tile * 16 + sub_x,
         "x_tile": screen_cursor * 16 + sub_x,
         "y_tile": y_tile,
         "x_px": (screen_cursor * 16 + sub_x) * 16,
@@ -446,7 +449,7 @@ def parse_level_objects(raw: bytes, header: dict[str, Any], layer_index: int = 0
         elif obj_id in (0x22, 0x23):
             extra.append(raw[index])
             index += 1
-        elif obj_id == 0x27:
+        elif obj_id in (0x27, 0x29):
             extra.extend([raw[index], raw[index + 1]])
             index += 2
         objects.append(
@@ -485,18 +488,76 @@ def parse_sprite_data(raw: bytes) -> dict[str, Any]:
     while index < len(raw) and raw[index] != 0xFF:
         if index + 3 > len(raw):
             raise ImportErrorWithExit("Truncated sprite stream")
+        first = raw[index]
+        second = raw[index + 1]
+        screen = ((first << 3) & 0x10) | (second & 0x0F)
+        x_px = screen * 0x100 + (second & 0xF0)
+        y_px = (first & 0xF0) | (0x100 if (first & 0x01) != 0 else 0)
         records.append(
             {
                 "offset": index,
-                "screen_y": raw[index],
-                "x_id": raw[index + 1],
-                "extra_bits": (raw[index + 2] >> 6) & 0x03,
+                "screen_y": first,
+                "x_id": second,
+                "screen": screen,
+                "x_px": x_px,
+                "y_px": y_px,
+                "extra_bits": (first >> 2) & 0x03,
                 "sprite_id": raw[index + 2] & 0x3F,
                 "raw": [raw[index], raw[index + 1], raw[index + 2]],
+                "format": "yyyyEESY_XXXXssss_NNNNNNNN",
             }
         )
         index += 3
     return {"header": raw[0], "sprites": records}
+
+
+def object_width_tiles(obj_id: int, size_or_type: int) -> int:
+    slope_size = (size_or_type >> 4) + 1
+    slope_type = size_or_type & 0x0F
+    if obj_id == 0:
+        return 1
+    if obj_id == 0x0F:
+        return 2
+    if obj_id == 0x10:
+        return (size_or_type & 0x0F) + 2
+    if obj_id in (0x11, 0x13):
+        return 1
+    if obj_id == 0x12:
+        if slope_type in (1, 4):
+            return slope_size
+        if slope_type in (0, 3, 6, 8):
+            return slope_size * 2
+        if slope_type in (2, 5, 7, 9):
+            return slope_size * 4
+    if obj_id == 0x21:
+        return min(size_or_type + 1, 0xFF)
+    if obj_id == 0x39:
+        return min(2 + 2 * (size_or_type >> 4), 5)
+    return (size_or_type & 0x0F) + 1
+
+
+def object_height_tiles(obj_id: int, size_or_type: int) -> int:
+    if obj_id == 0:
+        return 1
+    if obj_id == 0x0F:
+        pipe_type = size_or_type & 0x0F
+        size = size_or_type >> 4
+        if pipe_type == 5:
+            return size + 1
+        if pipe_type >= 2:
+            return max(2, size + 1)
+        return size + 2
+    if obj_id == 0x10:
+        return 2
+    if obj_id == 0x13 and (size_or_type & 0x0F) >= 0x0B:
+        return (size_or_type >> 4) + 2
+    if obj_id == 0x12:
+        return (size_or_type >> 4) + 2
+    if obj_id == 0x21:
+        return 3
+    if obj_id == 0x3F:
+        return 1
+    return (size_or_type >> 4) + 1
 
 
 def snes_words_to_rgb(words: list[int]) -> list[list[int]]:
@@ -1108,6 +1169,13 @@ def level_map16_words(rom: Rom, tileset: int) -> list[int]:
     return words
 
 
+def background_map16_words(rom: Rom) -> list[int]:
+    words: list[int] = []
+    for map16_id in range(512):
+        words.extend(rom.get_words(0x0D9100 + map16_id * 8, 4))
+    return words
+
+
 def blit_map16_tile(
     rgba: bytearray,
     canvas_width: int,
@@ -1197,6 +1265,12 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         if 0 <= x < width_tiles and 0 <= y < height_tiles:
             placed.append({"x": x, "y": y, "map16": page * 0x100 + low, "source": source})
 
+    def place_map16(x: int, y: int, map16_id: int, source: str) -> None:
+        if map16_id == 0xFFFF:
+            return
+        if 0 <= x < width_tiles and 0 <= y < height_tiles:
+            placed.append({"x": x, "y": y, "map16": map16_id, "source": source})
+
     def fill_rect(x: int, y: int, width: int, height: int, page: int, low: int, source: str) -> None:
         for yy in range(height):
             for xx in range(width):
@@ -1234,28 +1308,36 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             place(x, y + rows, 1, GROUND_EDGE_BOTTOM[kind], "ground_edge_bottom")
 
     def render_vertical_pipe(obj: dict[str, Any], x: int, y: int, size: int) -> None:
-        rows = (size >> 4) + 1
+        rows = object_height_tiles(int(obj["object_id"]), size)
         pipe_type = size & 0x0F
         if pipe_type >= len(VERTICAL_PIPE_TOP_LEFT):
             pipe_type = 0
-        place(x, y, 1, VERTICAL_PIPE_TOP_LEFT[pipe_type], "vertical_pipe_top_left")
-        place(x + 1, y, 1, VERTICAL_PIPE_TOP_RIGHT[pipe_type], "vertical_pipe_top_right")
-        for yy in range(1, rows):
+        if pipe_type == 5:
+            for yy in range(rows):
+                place(x, y + yy, 1, 0x68, "skinny_vertical_pipe_left")
+                place(x + 1, y + yy, 1, 0x69, "skinny_vertical_pipe_right")
+            return
+        if pipe_type < 3:
+            place(x, y, 1, VERTICAL_PIPE_TOP_LEFT[pipe_type], "vertical_pipe_top_left")
+            place(x + 1, y, 1, VERTICAL_PIPE_TOP_RIGHT[pipe_type], "vertical_pipe_top_right")
+        for yy in range(1 if pipe_type < 3 else 0, rows):
             place(x, y + yy, 1, 0x35, "vertical_pipe_shaft_left")
             place(x + 1, y + yy, 1, 0x36, "vertical_pipe_shaft_right")
-        if pipe_type >= 2:
-            place(x, y + rows, 1, VERTICAL_PIPE_BOTTOM_LEFT[pipe_type], "vertical_pipe_bottom_left")
-            place(x + 1, y + rows, 1, VERTICAL_PIPE_BOTTOM_RIGHT[pipe_type], "vertical_pipe_bottom_right")
+        if 2 <= pipe_type < 5:
+            place(x, y + rows - 1, 1, VERTICAL_PIPE_BOTTOM_LEFT[pipe_type], "vertical_pipe_bottom_left")
+            place(x + 1, y + rows - 1, 1, VERTICAL_PIPE_BOTTOM_RIGHT[pipe_type], "vertical_pipe_bottom_right")
 
     def render_horizontal_pipe(obj: dict[str, Any], x: int, y: int, size: int) -> None:
-        width = (size & 0x0F) + 2
-        pipe_type = (size & 0xF0) >> 3
+        width = object_width_tiles(int(obj["object_id"]), size)
+        pipe_type = (size >> 4) & 0x0F
+        end_on_right = pipe_type >= 4
         for row in range(2):
             tile_kind = min(pipe_type + row, len(HORIZONTAL_PIPE_END) - 1)
-            place(x, y + row, 1, HORIZONTAL_PIPE_END[tile_kind], "horizontal_pipe_end")
-            for xx in range(1, width - 1):
-                place(x + xx, y + row, 1, HORIZONTAL_PIPE_SHAFT[tile_kind], "horizontal_pipe_shaft")
-            place(x + width - 1, y + row, 1, HORIZONTAL_PIPE_END[tile_kind], "horizontal_pipe_end")
+            for xx in range(width):
+                if (not end_on_right and xx == 0) or (end_on_right and xx + 1 == width):
+                    place(x + xx, y + row, 1, HORIZONTAL_PIPE_END[tile_kind], "horizontal_pipe_end")
+                else:
+                    place(x + xx, y + row, 1, HORIZONTAL_PIPE_SHAFT[tile_kind], "horizontal_pipe_shaft")
 
     def render_midway_goal(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         rows = max(1, size >> 4)
@@ -1279,20 +1361,45 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             place(x + width - 1, y, 0, SMALL_BUSH_RIGHT[kind], "small_bush_right")
 
     def render_diagonal_pipe(obj: dict[str, Any], x: int, y: int) -> None:
-        for yy in range(4):
-            for xx in range(4):
-                place(x + xx, y + yy, 1, DIAGONAL_PIPE_TILES[yy * 4 + xx], "diagonal_pipe")
-
-    def render_slope_block(obj: dict[str, Any], x: int, y: int, size: int, left: bool) -> None:
-        rows = (size >> 4) + 1
-        width = max(2, (size & 0x0F) + 1)
+        rows = max(1, object_height_tiles(int(obj["object_id"]), int(obj["size_or_type"])))
         for yy in range(rows):
-            solid = min(width, yy + 1)
-            start = 0 if left else width - solid
-            for xx in range(start, start + solid):
-                place(x + xx, y + yy, 0, 0x3F, "slope_fill")
-            edge_x = start + solid - 1 if left else start
-            place(x + edge_x, y + yy, 1, 0xAA if left else 0xAF, "slope_edge")
+            source_row = (
+                DIAGONAL_PIPE_ROW0 if yy == 0
+                else DIAGONAL_PIPE_ROW1 if yy == 1
+                else DIAGONAL_PIPE_ROW2 if yy == 2
+                else DIAGONAL_PIPE_ROWN
+            )
+            for xx, map16_id in enumerate(source_row):
+                place_map16(x + xx, y + yy, map16_id, "right_diagonal_pipe")
+
+    def render_steep_right_slope(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        if (size & 0x0F) != 4:
+            return
+        rows = (size >> 4) + 1
+        place_map16(x, y, 0x01AF, "steep_right_slope_edge")
+        for yy in range(1, rows):
+            for xx in range(max(0, yy - 1)):
+                place_map16(x + xx, y + yy, 0x003F, "steep_right_slope_fill")
+            place_map16(x + yy - 1, y + yy, 0x01E4, "steep_right_slope_surface")
+            place_map16(x + yy, y + yy, 0x01AF, "steep_right_slope_edge")
+        for xx in range(max(0, rows - 1)):
+            place_map16(x + xx, y + rows, 0x003F, "steep_right_slope_fill")
+        place_map16(x + rows - 1, y + rows, 0x01E4, "steep_right_slope_surface")
+
+    def render_left_diagonal_ledge(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        rows = max(1, object_height_tiles(int(obj["object_id"]), size))
+        width = max(1, object_width_tiles(int(obj["object_id"]), size))
+        for yy in range(rows):
+            edge_x = width - 1 - yy if yy < width else 0
+            for xx in range(width):
+                if xx < edge_x:
+                    continue
+                if xx == edge_x:
+                    place_map16(x + xx, y + yy, 0x01AA if yy == 0 else 0x00A6, "left_diagonal_ledge_edge")
+                elif xx + 1 == width and yy == 0:
+                    place_map16(x + xx, y + yy, 0x00A1, "left_diagonal_ledge_top")
+                else:
+                    place_map16(x + xx, y + yy, 0x003F, "left_diagonal_ledge_fill")
 
     def render_rope_mushroom_top(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         width = (size & 0x0F) + 1
@@ -1337,8 +1444,8 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         obj_id = int(obj["object_id"])
         size = int(obj["size_or_type"])
         tileset = int(header["tileset"])
-        width = (size & 0x0F) + 1
-        height = (size >> 4) + 1
+        width = object_width_tiles(obj_id, size)
+        height = object_height_tiles(obj_id, size)
 
         if 1 <= obj_id <= 0x0E:
             render_generic(obj, x, y, width, height)
@@ -1347,7 +1454,10 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         elif obj_id == 0x10:
             render_horizontal_pipe(obj, x, y, size)
         elif obj_id == 0x12:
-            render_slope_block(obj, x, y, size, left=((size & 0x0F) <= 2))
+            if (size & 0x0F) == 4:
+                render_steep_right_slope(obj, x, y, size)
+            else:
+                unsupported[f"{obj_id:02X}"] = unsupported.get(f"{obj_id:02X}", 0) + 1
         elif obj_id == 0x13:
             render_ground_edge(obj, x, y, size)
         elif obj_id == 0x14:
@@ -1373,9 +1483,9 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         elif obj_id == 0x39:
             render_diagonal_pipe(obj, x, y)
         elif obj_id == 0x3A:
-            render_slope_block(obj, x, y, size, left=True)
+            render_left_diagonal_ledge(obj, x, y, size)
         elif obj_id == 0x3B:
-            render_slope_block(obj, x, y, size, left=False)
+            unsupported[f"{obj_id:02X}"] = unsupported.get(f"{obj_id:02X}", 0) + 1
         elif obj_id == 0x3C and tileset in ROPE_TILESETS:
             render_rope_mushroom_top(obj, x, y, size)
         elif obj_id == 0x3D and tileset in ROPE_TILESETS:
@@ -1393,6 +1503,13 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             place(x, y, 0, 0x6A, "extended_switch_or_goal_marker")
         elif obj_id == 0x00 and size == 0x00:
             continue
+        elif obj_id in (0x27, 0x29) and len(obj.get("extra", [])) >= 2:
+            extra = obj["extra"]
+            base = int(extra[0]) | ((int(extra[1]) & 0x3F) << 8)
+            page_offset = 0x4000 if obj_id == 0x29 else 0
+            for yy in range(height):
+                for xx in range(width):
+                    place_map16(x + xx, y + yy, page_offset + base + yy * width + xx, "direct_map16")
         else:
             unsupported[f"{obj_id:02X}"] = unsupported.get(f"{obj_id:02X}", 0) + 1
 
@@ -1445,6 +1562,92 @@ def extract_level_layout_preview(
     tilemap["map16_pointer_source"] = {
         "source": "native_initialize_map16_pointers",
         "tileset": int(header["tileset"]),
+    }
+    tilemap["gfx_source"] = gfx_source
+    tilemap["file"] = rel(tilemap_path, out_dir)
+    tilemap["sha1"] = write_json(tilemap_path, tilemap)
+    return tilemap
+
+
+def build_layer2_background_tilemap(layer2_raw: bytes, source_addr: int) -> dict[str, Any]:
+    width_tiles = 32
+    height_tiles = 27
+    half_width = width_tiles // 2
+    half_size = half_width * height_tiles
+    map16_page = 1 if (source_addr & 0xFFFF) >= 0xE8FE else 0
+    placed: list[dict[str, Any]] = []
+    for index, low in enumerate(layer2_raw[: width_tiles * height_tiles]):
+        half = index // half_size
+        local = index % half_size
+        x = half * half_width + (local % half_width)
+        y = local // half_width
+        if y >= height_tiles:
+            continue
+        placed.append(
+            {
+                "x": x,
+                "y": y,
+                "map16": map16_page * 0x100 + int(low),
+                "source": "layer2_rle_background",
+            }
+        )
+
+    return {
+        "status": "partial",
+        "kind": "rle_background",
+        "width_tiles": width_tiles,
+        "height_tiles": height_tiles,
+        "map16_page": map16_page,
+        "placed_tiles": placed,
+        "placed_tile_count": len(placed),
+        "notes": [
+            "Decoded from the vanilla Layer 2 LC_RLE1 background stream.",
+            "Tile bytes are ordered as the left 16x27 half followed by the right 16x27 half.",
+            "This is a visual background layer; exact scrolling and BG interaction remain runtime work.",
+        ],
+    }
+
+
+def extract_layer2_background_preview(
+    rom: Rom,
+    out_dir: Path,
+    level_id: int,
+    level_key: str,
+    header: dict[str, Any],
+    layer2_raw: bytes,
+    layer2_kind: str,
+    layer2_addr: int,
+    palette_assets: dict[str, Any],
+) -> dict[str, Any] | None:
+    if layer2_kind != "rle_background":
+        return None
+
+    tilemap = build_layer2_background_tilemap(layer2_raw, layer2_addr)
+    level_palette_rgb = palette_assets["rgb888"]
+    vram_4bpp, _uploads, gfx_source = level_fg_bg_vram(rom, level_id, header)
+    map16_words = background_map16_words(rom)
+    key = f"level_{level_key}"
+    preview_path = out_dir / "levels" / f"{key}_layer2_background.png"
+    tilemap_path = out_dir / "levels" / f"{key}_layer2_background.json"
+    preview = write_level_layout_preview_png(
+        preview_path,
+        int(tilemap["width_tiles"]),
+        int(tilemap["height_tiles"]),
+        tilemap["placed_tiles"],
+        map16_words,
+        vram_4bpp,
+        level_palette_rgb,
+    )
+    preview["file"] = rel(preview_path, out_dir)
+    tilemap["preview_png"] = preview
+    tilemap["palette_assets"] = {
+        "file": palette_assets["file"],
+        "source": palette_assets["source"],
+    }
+    tilemap["map16_pointer_source"] = {
+        "source": "native_buffer_bg_tilemap",
+        "base_addr": "0x0D9100",
+        "page_threshold": "0xE8FE",
     }
     tilemap["gfx_source"] = gfx_source
     tilemap["file"] = rel(tilemap_path, out_dir)
@@ -1780,6 +1983,17 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     palette_assets = extract_level_palette_assets(rom, out_dir, level_id, header)
     tileset_assets = extract_level_tileset_assets(rom, out_dir, level_id, level_key, header, palette_assets)
     sprite_tileset_assets = extract_level_sprite_tileset_assets(rom, out_dir, level_id, level_key, header, palette_assets)
+    layer2_background = extract_layer2_background_preview(
+        rom,
+        out_dir,
+        level_id,
+        level_key,
+        header,
+        layer2_raw,
+        layer2_kind,
+        layer2_addr,
+        palette_assets,
+    )
     layout_preview = extract_level_layout_preview(
         rom,
         out_dir,
@@ -1831,6 +2045,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
         "tileset_assets": tileset_assets,
         "sprite_tileset_assets": sprite_tileset_assets,
         "layout_preview": layout_preview,
+        "layer2_background": layer2_background,
     }
     level_sha = write_json(level_path, payload)
     return {
@@ -1863,6 +2078,16 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
             "status": layout_preview["status"],
             "placed_tile_count": layout_preview["placed_tile_count"],
         },
+        "layer2_background": (
+            {
+                "file": layer2_background["file"],
+                "preview_png": layer2_background["preview_png"]["file"],
+                "placed_tile_count": layer2_background["placed_tile_count"],
+                "map16_page": layer2_background["map16_page"],
+            }
+            if layer2_background is not None
+            else None
+        ),
     }
 
 

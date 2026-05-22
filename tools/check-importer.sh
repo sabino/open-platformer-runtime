@@ -39,7 +39,9 @@ for png in [
     out_dir / "spritesets" / "level_105_spritegfx8_8x8.png",
     out_dir / "spritesets" / "level_1CB_spritegfx8_8x8.png",
     out_dir / "levels" / "level_105_partial_layout.png",
+    out_dir / "levels" / "level_105_layer2_background.png",
     out_dir / "levels" / "level_1CB_partial_layout.png",
+    out_dir / "levels" / "level_1CB_layer2_background.png",
 ]:
     data = png.read_bytes()
     assert data.startswith(b"\x89PNG\r\n\x1a\n"), png
@@ -112,21 +114,47 @@ assert all(entry["tile_count"] == 128 for entry in sprite_tileset["uploads"]), s
 
 tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
 assert tilemap["status"] == "partial"
-assert tilemap["placed_tile_count"] > 1000, tilemap["placed_tile_count"]
+assert tilemap["placed_tile_count"] == 1508, tilemap["placed_tile_count"]
 assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
 assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
 assert any("Map16 tile word's palette" in note for note in tilemap["notes"]), tilemap["notes"]
 assert tilemap["palette_assets"]["file"] == "palettes/level_105_palette.json"
 assert tilemap["map16_pointer_source"] == {"source": "native_initialize_map16_pointers", "tileset": 7}
 assert tilemap["gfx_source"]["source"] == "vanilla_fg_bg_gfx_list"
+first_object = level_105["layer1"]["objects"][0]
+assert first_object["raw"] == [0x58, 0x10, 0xBF], first_object
+assert first_object["placement"]["x_tile"] == 0, first_object["placement"]
+assert first_object["placement"]["y_tile"] == 24, first_object["placement"]
+assert first_object["placement"]["map16_offset"] == 0x180, first_object["placement"]
+tile_sources = {tile["source"] for tile in tilemap["placed_tiles"]}
+assert "right_diagonal_pipe" in tile_sources, tile_sources
+assert "left_diagonal_ledge_edge" in tile_sources, tile_sources
+assert "steep_right_slope_surface" in tile_sources, tile_sources
+
+layer2_bg = json.loads((out_dir / "levels" / "level_105_layer2_background.json").read_text())
+assert layer2_bg["kind"] == "rle_background", layer2_bg
+assert layer2_bg["placed_tile_count"] == 864, layer2_bg["placed_tile_count"]
+assert layer2_bg["map16_page"] == 0, layer2_bg["map16_page"]
+assert layer2_bg["preview_png"]["file"] == "levels/level_105_layer2_background.png"
+assert layer2_bg["map16_pointer_source"]["base_addr"] == "0x0D9100"
+assert levels["105"]["layer2_background"]["preview_png"] == "levels/level_105_layer2_background.png"
+
+sprites = level_105["sprite_layer"]["sprites"]
+assert sprites[0]["format"] == "yyyyEESY_XXXXssss_NNNNNNNN", sprites[0]
+assert sprites[0]["screen"] == 0 and sprites[0]["x_px"] == 208 and sprites[0]["y_px"] == 272, sprites[0]
+assert sprites[1]["screen"] == 1 and sprites[1]["x_px"] == 496 and sprites[1]["y_px"] == 304, sprites[1]
 
 pipe_target_tilemap = json.loads((out_dir / "levels" / "level_1CB_partial_tilemap.json").read_text())
-assert pipe_target_tilemap["placed_tile_count"] > 500, pipe_target_tilemap["placed_tile_count"]
+assert pipe_target_tilemap["placed_tile_count"] == 591, pipe_target_tilemap["placed_tile_count"]
 assert pipe_target_tilemap["unsupported_object_counts"] == {"00": 1}, pipe_target_tilemap["unsupported_object_counts"]
 target_sources = {tile["source"] for tile in pipe_target_tilemap["placed_tiles"]}
 assert "horizontal_pipe_end" in target_sources, target_sources
 assert "underground_ceiling_ledge_fill" in target_sources, target_sources
 assert "underground_ceiling_edge" in target_sources, target_sources
+
+pipe_target_layer2_bg = json.loads((out_dir / "levels" / "level_1CB_layer2_background.json").read_text())
+assert pipe_target_layer2_bg["placed_tile_count"] == 864, pipe_target_layer2_bg["placed_tile_count"]
+assert pipe_target_layer2_bg["map16_page"] == 1, pipe_target_layer2_bg["map16_page"]
 
 pipe_target_sprite_tileset = json.loads((out_dir / "spritesets" / "level_1CB_spritegfx8.json").read_text())
 assert pipe_target_sprite_tileset["sprite_graphics"] == 8, pipe_target_sprite_tileset
@@ -172,6 +200,9 @@ print("smw-import check: per-level full CGRAM palettes generated for 105 and 1CB
 print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview use level CGRAM rows")
 print("smw-import check: level 105 and 1CB sprite GFX VRAM atlases use level sprite palette rows")
 print("smw-import check: level 105 partial layout preview uses Map16 palette bits against full CGRAM")
+print("smw-import check: level 105 object placement follows Lunar Magic x=b1/y=b0 tile decode")
+print("smw-import check: level 105 and 1CB Layer 2 RLE backgrounds decode to preview layers")
+print("smw-import check: level 105 sprite positions decode with native screen/x/y bit layout")
 print("smw-import check: level 1CB underground pipe target layout expands ceiling ledges, edges, and pipes")
 print("smw-import check: SPC banks and BRR preview WAVs present")
 PY

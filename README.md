@@ -7,7 +7,7 @@ The long-term bar is a 100% physics and gameplay semantics match with the origin
 The current first slice covers:
 
 - ROM validation and deterministic extraction for level `105` by default.
-- Layer 1/layer 2 raw object streams, decoded placement metadata, screen exits, sprite stream, Map16, global palettes, per-level full CGRAM palettes, GFX32/GFX33, player PNG atlases, level tileset GFX atlases, sprite GFX VRAM atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables.
+- Layer 1/layer 2 raw object streams, Layer 2 RLE background previews, decoded placement metadata, screen exits, sprite stream, Map16, global palettes, per-level full CGRAM palettes, GFX32/GFX33, player PNG atlases, level tileset GFX atlases, sprite GFX VRAM atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables.
 - Raw SPC upload banks plus a few decoded BRR preview WAVs used only as importer verification artifacts while the full SPC/DSP sequencer is still pending.
 - A Godot .NET C# menu and minimal playable scene.
 - A SNES-sized `256x224` logical viewport that opens as a 3x Wayland window for normal graphical runs.
@@ -15,13 +15,15 @@ The current first slice covers:
 - A menu audio panel for internal port-1 SFX command probes and BRR sample probes, plus imported music bank visibility while the full SPC/DSP command sequencer is still pending.
 - A debug asset overlay showing the imported level GFX, sprite GFX, full-CGRAM palette-aware Map16 preview, and partial level layout preview while the level renderer is still being ported.
 - Runtime placement of the generated Yoshi Island 1 Map16 tilemap, with temporary merged collision rectangles derived from imported tile placement sources.
+- Runtime rendering of generated Layer 2 RLE background previews behind the imported Layer 1 Map16 placements for level `105` and pipe target `1CB`.
+- Layer 1/2 object placement and several Map16 projection rules are cross-checked against Lunar Magic Universal's current `lmcore` parser/renderer, including native object tile coordinates, pipes, steep right slopes, left diagonal ledges, and right diagonal pipes.
 - Runtime camera follow on both axes, clamped to generated tile bounds so Yoshi Island 1's lower routes can be inspected during drops.
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
 - Partial object expansion for the Yoshi Island 1 direct pipe target `1CB`, including horizontal pipes and underground ceiling ledges/edges in the generated Map16 tilemap.
 - Manifest-driven runtime asset selection for the current level's tilemap, preview, and tileset atlases, rather than hardcoded generated filenames.
 - Runtime world rebuild scaffolding for loading imported level targets; headless checks currently verify both startup level `105` and direct pipe target `1CB`.
 - Runtime pipe debug triggers derived from imported screen exits and placed pipe tiles instead of a hardcoded screen position.
-- Runtime loading and debug rendering of imported sprite spawn records, including 34 Yoshi Island 1 sprite spawns; the current direct target `1CB` has no sprite spawns.
+- Runtime loading and debug rendering of imported sprite spawn records using the native `yyyyEESY / XXXXssss / id` coordinate layout, including 34 Yoshi Island 1 sprite spawns; the current direct target `1CB` has no sprite spawns.
 - Per-level sprite GFX extraction through vanilla and Lunar Magic-aware GFX slot resolution, producing raw `$6000-$7FFF` sprite VRAM atlases for Yoshi Island 1 and the direct pipe target.
 - Vanilla GFX preview extraction expands SMW 3bpp slots into 4bpp and fills the full 512-tile BG/sprite VRAM windows used by Map16 and OAM tile numbers.
 - Level Map16 previews are resolved through the native per-tileset Map16 pointer table, so level `105` uses its grassland/YI1 tile definitions instead of treating `$0D8000` as a flat linear Map16 page.
