@@ -849,8 +849,8 @@ public partial class GameScene : Node2D
     private static bool IsSlopeSurfaceSource(string source)
     {
         return source.Contains("diagonal_pipe", StringComparison.Ordinal) ||
-            source.Contains("diagonal_ledge", StringComparison.Ordinal) ||
-            source.Contains("steep_right_slope", StringComparison.Ordinal);
+            source.Contains("diagonal_ledge_edge", StringComparison.Ordinal) ||
+            source.Contains("steep_right_slope_surface", StringComparison.Ordinal);
     }
 
     private void AddSolid(Rect2 rect, Color color, bool debugVisible)

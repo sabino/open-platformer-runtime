@@ -502,7 +502,7 @@ def parse_sprite_data(raw: bytes) -> dict[str, Any]:
                 "x_px": x_px,
                 "y_px": y_px,
                 "extra_bits": (first >> 2) & 0x03,
-                "sprite_id": raw[index + 2] & 0x3F,
+                "sprite_id": raw[index + 2],
                 "raw": [raw[index], raw[index + 1], raw[index + 2]],
                 "format": "yyyyEESY_XXXXssss_NNNNNNNN",
             }

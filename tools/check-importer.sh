@@ -10,6 +10,7 @@ python3 - "$OUT_DIR" "$ROM_PATH" <<'PY'
 import importlib.util
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 out_dir = Path(sys.argv[1])
@@ -153,7 +154,14 @@ assert levels["105"]["layer2_background"]["preview_png"] == "levels/level_105_la
 sprites = level_105["sprite_layer"]["sprites"]
 assert sprites[0]["format"] == "yyyyEESY_XXXXssss_NNNNNNNN", sprites[0]
 assert sprites[0]["screen"] == 0 and sprites[0]["x_px"] == 208 and sprites[0]["y_px"] == 272, sprites[0]
+assert sprites[0]["sprite_id"] == 0xBD, sprites[0]
 assert sprites[1]["screen"] == 1 and sprites[1]["x_px"] == 496 and sprites[1]["y_px"] == 304, sprites[1]
+assert sprites[1]["sprite_id"] == 0x9F, sprites[1]
+sprite_counts = Counter(sprite["sprite_id"] for sprite in sprites)
+assert sprite_counts[0xAB] == 18, sprite_counts
+assert sprite_counts[0x9F] == 4, sprite_counts
+assert sprite_counts[0x4F] == 3, sprite_counts
+assert sprite_counts[0xB9] == 2, sprite_counts
 
 pipe_target_tilemap = json.loads((out_dir / "levels" / "level_1CB_partial_tilemap.json").read_text())
 assert pipe_target_tilemap["placed_tile_count"] == 591, pipe_target_tilemap["placed_tile_count"]

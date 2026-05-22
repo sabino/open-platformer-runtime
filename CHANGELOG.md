@@ -31,3 +31,6 @@
 - Wired the spin button into the physics step so pressing `X` starts a spin jump instead of only playing the sound probe.
 - Replaced the temporary center-follow camera with SMW-style horizontal and vertical threshold scrolling using the native `0x80 +/- 12`, `0x64`, and `0x7C` screen anchors plus native-like vertical scroll caps.
 - Kept terrain Map16 cells visually in front of overlapping pipe shaft/body cells so pipes remain masked by grass/ledge tiles while pipe tops still render as entrances.
+- Preserved full 8-bit native sprite IDs in imported sprite streams, so level 105 keeps enemies such as `0xAB` Rex and `0xBD` sliding naked blue Koopa instead of aliasing them to low six-bit IDs.
+- Tightened temporary runtime slope classification so slope/ledge fill cells stay solid and only diagonal pipe, diagonal ledge edge, and steep-slope surface cells become slope surfaces.
+- Expanded the physics reference notes with Hamaluik's measured SMW motion regressions and the native SMW `HandlePlayerPhysics`/slope table targets to port next.
