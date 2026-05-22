@@ -15,4 +15,8 @@ export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
 "$GODOT_BIN" --version
 
 dotnet build SmwGodotNative.csproj
-"$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart
+LOG_FILE="$(mktemp)"
+trap 'rm -f "$LOG_FILE"' EXIT
+"$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
+grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
+grep -q "smw-runtime: map16_tiles=1408 collision_rects=" "$LOG_FILE"

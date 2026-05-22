@@ -20,7 +20,9 @@ Importer references translated into `tools/smw_import.py`:
 
 Palette note: raw 8x8 GFX tiles are not enough to show final colors. The level layout preview renders through Map16 tile words because those words carry BG palette bits 10-12, priority, and flip flags. The current importer maps BG palette rows 2-7 to the vanilla foreground palette rows extracted from `0x00B190`.
 
-Audio note: the current Godot playback is intentionally a preview layer. The importer preserves the original SPC engine/sample/music banks and decodes selected BRR sample directory entries to WAV so Godot can play ROM-derived sound immediately; exact SMW music and SFX require porting the SPC command sequencing and DSP state rather than only playing the raw BRR instruments.
+Audio note: the importer preserves the original SPC engine/sample/music banks. Godot runtime playback now uses a C# internal APU probe that parses the SPC upload streams, reads the vanilla instrument table from the engine RAM image, decodes selected BRR entries from the sample directory, and streams them through `AudioStreamGenerator`; the WAV files are only importer verification artifacts. The current command probes cover the native SPC port-1 jump and two-note command shapes, but exact SMW music and SFX still require porting the complete SPC command sequencing, ADSR, pitch sweep, and DSP state.
+
+Runtime collision note: `GameScene` now renders the generated Yoshi Island 1 Map16 placements as individual tiles from the palette-aware Map16 preview atlas and derives temporary merged AABB collision rectangles from the imported placement source labels. This is useful for playable traversal, but it is not a substitute for the final Map16 act-as table, slope semantics, and block interaction routines.
 
 The key transition invariant is:
 

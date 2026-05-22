@@ -4,10 +4,15 @@ using System.Collections.Generic;
 
 public partial class GameScene : Node2D
 {
+    private const float LevelVisualYOffset = -64.0f;
+    private const int Map16TileSize = 16;
+    private const int Map16AtlasColumns = 16;
+
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
     private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
+    private readonly List<PlacedMap16Tile> _placedTiles = [];
 
     private SmwPhysics.PlayerState _state;
     private ColorRect? _player;
@@ -17,13 +22,14 @@ public partial class GameScene : Node2D
 
     public override void _Ready()
     {
-        _state = _physics.MakeState(64, 64);
         _audio = new SmwAudio { Name = "SmwAudio" };
         AddChild(_audio);
         LoadAssetPack();
+        _state = MakeInitialPlayerState();
         BuildWorld();
         BuildPlayer();
         BuildHud();
+        GD.Print($"smw-runtime: map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count}");
     }
 
     public override void _PhysicsProcess(double delta)
@@ -60,6 +66,8 @@ public partial class GameScene : Node2D
         UpdateHud();
         CheckPipeDebug();
     }
+
+    private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
 
     private void LoadAssetPack()
     {
@@ -148,14 +156,67 @@ public partial class GameScene : Node2D
                 _levelObjects.Add(objectVariant.AsGodotDictionary());
             }
         }
+
+        LoadPlacedTiles();
+    }
+
+    private void LoadPlacedTiles()
+    {
+        const string tilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
+        if (!FileAccess.FileExists(tilemapPath))
+        {
+            return;
+        }
+
+        using var tilemapFile = FileAccess.Open(tilemapPath, FileAccess.ModeFlags.Read);
+        if (tilemapFile == null)
+        {
+            return;
+        }
+
+        var tilemapParsed = Json.ParseString(tilemapFile.GetAsText());
+        if (tilemapParsed.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var tilemap = tilemapParsed.AsGodotDictionary();
+        if (!tilemap.TryGetValue("placed_tiles", out var placedTilesVariant) ||
+            placedTilesVariant.VariantType != Variant.Type.Array)
+        {
+            return;
+        }
+
+        foreach (var placedVariant in placedTilesVariant.AsGodotArray())
+        {
+            if (placedVariant.VariantType != Variant.Type.Dictionary)
+            {
+                continue;
+            }
+
+            var placed = placedVariant.AsGodotDictionary();
+            var x = placed.TryGetValue("x", out var xVariant) ? xVariant.AsInt32() : 0;
+            var y = placed.TryGetValue("y", out var yVariant) ? yVariant.AsInt32() : 0;
+            var map16 = placed.TryGetValue("map16", out var map16Variant) ? map16Variant.AsInt32() : 0;
+            var source = placed.TryGetValue("source", out var sourceVariant) ? sourceVariant.AsString() : "";
+            _placedTiles.Add(new PlacedMap16Tile(x, y, map16, source));
+        }
     }
 
     private void BuildWorld()
     {
-        AddGeneratedLevelPreview();
-        AddSolid(new Rect2(0, 192, 3584, 64), new Color(0.20f, 0.55f, 0.25f, 0.22f));
-        AddSolid(new Rect2(240, 160, 48, 32), new Color(0.55f, 0.42f, 0.20f, 0.22f));
-        AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 0.22f));
+        if (AddGeneratedMap16Tiles())
+        {
+            AddGeneratedCollision();
+        }
+        else
+        {
+            AddGeneratedLevelPreview();
+            AddSolid(new Rect2(0, 192, 3584, 64), new Color(0.20f, 0.55f, 0.25f, 0.22f), debugVisible: true);
+            AddSolid(new Rect2(240, 160, 48, 32), new Color(0.55f, 0.42f, 0.20f, 0.22f), debugVisible: true);
+            AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 0.22f), debugVisible: true);
+        }
+
         AddPipeMarker(new Rect2(416, 112, 32, 80));
         AddObjectMarkers();
 
@@ -165,9 +226,179 @@ public partial class GameScene : Node2D
         }
     }
 
-    private void AddSolid(Rect2 rect, Color color)
+    private bool AddGeneratedMap16Tiles()
+    {
+        const string map16AtlasPath = "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png";
+        if (_placedTiles.Count == 0 || !FileAccess.FileExists(map16AtlasPath))
+        {
+            return false;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(map16AtlasPath));
+        if (image == null || image.IsEmpty())
+        {
+            return false;
+        }
+
+        var texture = ImageTexture.CreateFromImage(image);
+        var container = new Node2D
+        {
+            Name = "GeneratedMap16Tiles",
+            ZIndex = -10,
+        };
+        AddChild(container);
+
+        foreach (var tile in _placedTiles)
+        {
+            if (tile.Map16 < 0)
+            {
+                continue;
+            }
+
+            var region = new Rect2(
+                (tile.Map16 % Map16AtlasColumns) * Map16TileSize,
+                (tile.Map16 / Map16AtlasColumns) * Map16TileSize,
+                Map16TileSize,
+                Map16TileSize);
+            if (region.Position.Y + Map16TileSize > image.GetHeight())
+            {
+                continue;
+            }
+
+            var sprite = new Sprite2D
+            {
+                Texture = texture,
+                RegionEnabled = true,
+                RegionRect = region,
+                Position = TileToWorld(tile.X, tile.Y),
+                Centered = false,
+                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            };
+            container.AddChild(sprite);
+        }
+
+        return true;
+    }
+
+    private void AddGeneratedCollision()
+    {
+        var solidTiles = new HashSet<(int X, int Y)>();
+        foreach (var tile in _placedTiles)
+        {
+            if (IsSolidMap16Source(tile.Source))
+            {
+                solidTiles.Add((tile.X, tile.Y));
+            }
+        }
+
+        foreach (var rect in BuildMergedSolidRects(solidTiles))
+        {
+            AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), debugVisible: true);
+        }
+    }
+
+    private static List<Rect2> BuildMergedSolidRects(HashSet<(int X, int Y)> solidTiles)
+    {
+        var rows = GroupSolidRows(solidTiles);
+        var active = new Dictionary<(int StartX, int EndX), (int StartY, int EndY)>();
+        var rects = new List<Rect2>();
+        foreach (var (y, runs) in rows)
+        {
+            var nextActive = new Dictionary<(int StartX, int EndX), (int StartY, int EndY)>();
+            foreach (var run in runs)
+            {
+                if (active.TryGetValue(run, out var existing) && existing.EndY + 1 == y)
+                {
+                    nextActive[run] = (existing.StartY, y);
+                    active.Remove(run);
+                }
+                else
+                {
+                    nextActive[run] = (y, y);
+                }
+            }
+
+            foreach (var (run, span) in active)
+            {
+                rects.Add(TileRunToRect(run.StartX, run.EndX, span.StartY, span.EndY));
+            }
+
+            active = nextActive;
+        }
+
+        foreach (var (run, span) in active)
+        {
+            rects.Add(TileRunToRect(run.StartX, run.EndX, span.StartY, span.EndY));
+        }
+
+        return rects;
+    }
+
+    private static SortedDictionary<int, List<(int StartX, int EndX)>> GroupSolidRows(HashSet<(int X, int Y)> solidTiles)
+    {
+        var byY = new SortedDictionary<int, List<int>>();
+        foreach (var tile in solidTiles)
+        {
+            if (!byY.TryGetValue(tile.Y, out var xs))
+            {
+                xs = [];
+                byY[tile.Y] = xs;
+            }
+
+            xs.Add(tile.X);
+        }
+
+        var rows = new SortedDictionary<int, List<(int StartX, int EndX)>>();
+        foreach (var (y, xs) in byY)
+        {
+            xs.Sort();
+            var runs = new List<(int StartX, int EndX)>();
+            var start = xs[0];
+            var end = xs[0];
+            for (var i = 1; i < xs.Count; i++)
+            {
+                if (xs[i] == end + 1)
+                {
+                    end = xs[i];
+                    continue;
+                }
+
+                runs.Add((start, end));
+                start = xs[i];
+                end = xs[i];
+            }
+
+            runs.Add((start, end));
+            rows[y] = runs;
+        }
+
+        return rows;
+    }
+
+    private static Rect2 TileRunToRect(int startX, int endX, int startY, int endY)
+    {
+        return new Rect2(
+            new Vector2(startX * Map16TileSize, startY * Map16TileSize + LevelVisualYOffset),
+            new Vector2((endX - startX + 1) * Map16TileSize, (endY - startY + 1) * Map16TileSize));
+    }
+
+    private static bool IsSolidMap16Source(string source)
+    {
+        return source.Contains("ledge", StringComparison.Ordinal) ||
+            source.Contains("ground", StringComparison.Ordinal) ||
+            source.Contains("pipe", StringComparison.Ordinal) ||
+            source.Contains("slope", StringComparison.Ordinal) ||
+            source.StartsWith("std_generic_", StringComparison.Ordinal);
+    }
+
+    private void AddSolid(Rect2 rect, Color color, bool debugVisible)
     {
         _solids.Add(rect);
+        if (!debugVisible)
+        {
+            return;
+        }
+
         var node = new ColorRect
         {
             Color = color,
@@ -250,7 +481,7 @@ public partial class GameScene : Node2D
             var marker = new ColorRect
             {
                 Color = id == 0 ? new Color(0.95f, 0.85f, 0.15f, 0.85f) : new Color(0.10f, 0.58f, 0.95f, 0.55f),
-                Position = new Vector2(x, y),
+                Position = new Vector2(x, y + LevelVisualYOffset),
                 Size = new Vector2(8, 8),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
@@ -263,9 +494,30 @@ public partial class GameScene : Node2D
         _player = new ColorRect
         {
             Color = new Color(0.88f, 0.12f, 0.10f, 1.0f),
+            Position = new Vector2(_state.XFloat, _state.YFloat),
             Size = new Vector2(SmwPhysics.PlayerWidth, SmwPhysics.PlayerHeight),
         };
         AddChild(_player);
+    }
+
+    private SmwPhysics.PlayerState MakeInitialPlayerState()
+    {
+        foreach (var tile in _placedTiles)
+        {
+            if (tile.X >= 8 && tile.Source.Contains("ledge_top", StringComparison.Ordinal))
+            {
+                return _physics.MakeState(
+                    tile.X * Map16TileSize + Map16TileSize,
+                    (int)(tile.Y * Map16TileSize + LevelVisualYOffset - SmwPhysics.PlayerHeight));
+            }
+        }
+
+        return _physics.MakeState(64, 64);
+    }
+
+    private static Vector2 TileToWorld(int x, int y)
+    {
+        return new Vector2(x * Map16TileSize, y * Map16TileSize + LevelVisualYOffset);
     }
 
     private void BuildHud()
@@ -346,7 +598,7 @@ public partial class GameScene : Node2D
         }
 
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} exits={_screenExits.Count}";
+            $"xs={_state.XSpeed} ys={_state.YSpeed} tiles={_placedTiles.Count} solids={_solids.Count} exits={_screenExits.Count}";
     }
 
     private void CheckPipeDebug()
