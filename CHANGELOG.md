@@ -12,4 +12,5 @@
 - Loaded generated sprite spawn records in the Godot runtime and rendered debug markers for the imported Yoshi Island 1 and `0CB` sprite layers.
 - Added per-level sprite GFX VRAM atlas extraction from the vanilla sprite upload table, including generated previews for level `105` sprite GFX `8` and level `0CB` sprite GFX `4`.
 - Switched the Godot logical viewport to SNES `256x224`, kept visible Wayland runs at 3x scale, and moved pipe debug triggers onto imported screen-exit pipe tiles.
+- Added per-level full CGRAM palette extraction for generated level previews, with Lunar Magic custom palette and Super GFX bypass table detection guarded by the documented ROM hooks.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.

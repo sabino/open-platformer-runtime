@@ -24,6 +24,10 @@ from typing import Any
 SMW_SHA1_US = "6B47BB75D16514B6A476AA0C73A683A2A4C18765"
 SCHEMA_VERSION = 1
 GFX_FILE_COUNT = 50
+LM_CUSTOM_PALETTE_POINTER_TABLE = 0x0EF600
+LM_CUSTOM_PALETTE_HIJACK_ADDR = 0x00A5C0
+LM_CUSTOM_PALETTE_ROUTINE_ADDR = 0x0EF570
+LM_SUPER_GFX_POINTER_ADDR = 0x0FF7FF
 FG_AND_BG_GFX_LIST = [
     0x14, 0x17, 0x19, 0x15,
     0x14, 0x17, 0x1B, 0x18,
@@ -109,6 +113,17 @@ LEVEL_VERTICAL_TABLE = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
 ]
+BG_PALETTE_ADDR = 0x00B0B0
+FG_PALETTE_ADDR = 0x00B190
+OBJECT_PALETTE_ADDR = 0x00B250
+PLAYER_PALETTE_ADDR = 0x00B2C8
+SPRITE_PALETTE_ADDR = 0x00B318
+LAYER3_PALETTE_ADDR = 0x00B170
+BERRY_PALETTE_ADDR = 0x00B674
+BACK_AREA_COLOR_ADDR = 0x00B0A0
+ANIMATED_COLOR_ADDR = 0x00B60C
+PALETTE_BLACK = 0x0000
+PALETTE_WHITE = 0x7FDD
 
 
 class ImportErrorWithExit(Exception):
@@ -149,6 +164,13 @@ class Rom:
         if index >= len(self.data):
             raise ImportErrorWithExit(f"LoROM address out of ROM range: 0x{addr:06X}")
         return index
+
+    def has_lorom_range(self, addr: int, count: int) -> bool:
+        try:
+            start = self.lorom_index(addr)
+        except ImportErrorWithExit:
+            return False
+        return start + count <= len(self.data)
 
     def get_byte(self, addr: int) -> int:
         return self.data[self.lorom_index(addr)]
@@ -520,9 +542,148 @@ def write_4bpp_atlas_png(path: Path, gfx_data: bytes, palette_rgb: list[list[int
     }
 
 
+def copy_palette_words(target: list[int], row: int, color: int, words: list[int]) -> None:
+    start = row * 16 + color
+    for index, word in enumerate(words):
+        if 0 <= start + index < len(target):
+            target[start + index] = word
+
+
+def has_lunar_magic_custom_palette_hijack(rom: Rom) -> bool:
+    if not rom.has_lorom_range(LM_CUSTOM_PALETTE_HIJACK_ADDR, 4):
+        return False
+    return (
+        rom.get_byte(LM_CUSTOM_PALETTE_HIJACK_ADDR) == 0x22
+        and rom.get_24(LM_CUSTOM_PALETTE_HIJACK_ADDR + 1) == LM_CUSTOM_PALETTE_ROUTINE_ADDR
+    )
+
+
+def read_level_custom_palette(rom: Rom, level_id: int) -> tuple[int, list[int]] | None:
+    if not has_lunar_magic_custom_palette_hijack(rom):
+        return None
+    pointer_addr = LM_CUSTOM_PALETTE_POINTER_TABLE + level_id * 3
+    if not rom.has_lorom_range(pointer_addr, 3):
+        return None
+    pointer = rom.get_24(pointer_addr)
+    if pointer in (0x000000, 0xFFFFFF):
+        return None
+    if not rom.has_lorom_range(pointer, 0x202):
+        return None
+    words = rom.get_words(pointer, 0x101)
+    return words[0], words[1:]
+
+
+def build_vanilla_level_palette_words(rom: Rom, header: dict[str, Any], player: int = 0) -> tuple[int, list[int]]:
+    palette = [0] * 256
+    for row in range(16):
+        palette[row * 16] = PALETTE_BLACK
+        palette[row * 16 + 1] = PALETTE_WHITE
+
+    back_area_color = rom.get_word(BACK_AREA_COLOR_ADDR + int(header["background_color"]) * 2)
+
+    bg_index = int(header["bg_palette"])
+    bg_words = rom.get_words(BG_PALETTE_ADDR + bg_index * 0x18, 12)
+    copy_palette_words(palette, 0, 2, bg_words[:6])
+    copy_palette_words(palette, 1, 2, bg_words[6:])
+
+    fg_index = int(header["fg_palette"])
+    fg_words = rom.get_words(FG_PALETTE_ADDR + fg_index * 0x18, 12)
+    copy_palette_words(palette, 2, 2, fg_words[:6])
+    copy_palette_words(palette, 3, 2, fg_words[6:])
+
+    for row in range(4, 14):
+        copy_palette_words(palette, row, 2, rom.get_words(OBJECT_PALETTE_ADDR + (row - 4) * 0x0C, 6))
+
+    player_index = max(0, min(player, 3))
+    copy_palette_words(palette, 8, 6, rom.get_words(PLAYER_PALETTE_ADDR + player_index * 0x14, 10))
+
+    sprite_index = int(header["sprite_palette"])
+    sprite_words = rom.get_words(SPRITE_PALETTE_ADDR + sprite_index * 0x18, 12)
+    copy_palette_words(palette, 14, 2, sprite_words[:6])
+    copy_palette_words(palette, 15, 2, sprite_words[6:])
+
+    for row in (0, 1):
+        copy_palette_words(palette, row, 8, rom.get_words(LAYER3_PALETTE_ADDR + row * 0x10, 8))
+
+    for offset, row in enumerate((2, 3, 4)):
+        berry_words = rom.get_words(BERRY_PALETTE_ADDR + offset * 0x0E, 7)
+        copy_palette_words(palette, row, 9, berry_words)
+        copy_palette_words(palette, row + 7, 9, berry_words)
+
+    palette[6 * 16 + 4] = rom.get_word(ANIMATED_COLOR_ADDR)
+    return back_area_color, palette
+
+
+def level_palette_payload(rom: Rom, level_id: int, header: dict[str, Any]) -> dict[str, Any]:
+    custom = read_level_custom_palette(rom, level_id)
+    if custom is None:
+        source = "vanilla_header_tables"
+        back_area_color, palette_words = build_vanilla_level_palette_words(rom, header)
+        custom_palette_addr = None
+    else:
+        source = "lunar_magic_custom_palette"
+        back_area_color, palette_words = custom
+        custom_palette_addr = LM_CUSTOM_PALETTE_POINTER_TABLE + level_id * 3
+
+    payload: dict[str, Any] = {
+        "status": "preview",
+        "source": source,
+        "level_id": f"{level_id:03X}",
+        "back_area_color": {
+            "snes_bgr555": back_area_color,
+            "rgb888": snes_words_to_rgb([back_area_color])[0],
+        },
+        "snes_bgr555": palette_words,
+        "rgb888": snes_words_to_rgb(palette_words),
+        "layout": {
+            "rows": 16,
+            "colors_per_row": 16,
+            "tilemap_palette_bits": "bits 10-12 select CGRAM rows 0-7 for BG/FG Map16 rendering",
+            "sprite_rows": "rows 8-15 are used by OAM sprite palettes",
+        },
+        "header_palette_indexes": {
+            "background_color": int(header["background_color"]),
+            "bg_palette": int(header["bg_palette"]),
+            "fg_palette": int(header["fg_palette"]),
+            "sprite_palette": int(header["sprite_palette"]),
+        },
+        "notes": [
+            "Vanilla palette assembly follows the header-selected tables documented by SMW Central and the speedrunning level-data notes.",
+            "Lunar Magic custom palette pointers at $0EF600 are recognized when a supported ROM exposes them.",
+        ],
+    }
+    if custom_palette_addr is not None:
+        payload["custom_palette_pointer_table_addr"] = f"0x{custom_palette_addr:06X}"
+    return payload
+
+
+def extract_level_palette_assets(rom: Rom, out_dir: Path, level_id: int, header: dict[str, Any]) -> dict[str, Any]:
+    level_key = f"{level_id:03X}"
+    palette_path = out_dir / "palettes" / f"level_{level_key}_palette.json"
+    payload = level_palette_payload(rom, level_id, header)
+    payload["file"] = rel(palette_path, out_dir)
+    payload["sha1"] = write_json(palette_path, payload)
+    return payload
+
+
 def graphics_file_address(rom: Rom, gfx_id: int) -> int:
-    if gfx_id < 0 or gfx_id >= GFX_FILE_COUNT:
+    if gfx_id < 0:
         raise ImportErrorWithExit(f"GFX id out of range: {gfx_id}")
+    if gfx_id >= 0x100:
+        table_ptr = rom.get_24(0x0FF937)
+        if table_ptr in (0x000000, 0xFFFFFF):
+            raise ImportErrorWithExit(f"ExGFX pointer table is not installed for GFX{gfx_id:03X}")
+        addr = rom.get_24(table_ptr + (gfx_id - 0x100) * 3)
+        if addr == 0:
+            raise ImportErrorWithExit(f"ExGFX{gfx_id:03X} is not inserted")
+        return addr
+    if gfx_id >= 0x80:
+        addr = rom.get_24(0x0FF600 + (gfx_id - 0x80) * 3)
+        if addr == 0:
+            raise ImportErrorWithExit(f"ExGFX{gfx_id:03X} is not inserted")
+        return addr
+    if gfx_id >= GFX_FILE_COUNT:
+        raise ImportErrorWithExit(f"GFX id out of range for vanilla table: {gfx_id}")
     lo = rom.get_byte(0x00B992 + gfx_id)
     hi = rom.get_byte(0x00B9C4 + gfx_id)
     bank = rom.get_byte(0x00B9F6 + gfx_id)
@@ -557,10 +718,75 @@ def level_sprite_gfx_ids(sprite_graphics: int) -> list[int]:
     return arr
 
 
-def level_fg_bg_vram(rom: Rom, tileset: int) -> tuple[bytes, list[dict[str, Any]]]:
+def lm_super_gfx_entry_words(rom: Rom, level_id: int) -> list[int] | None:
+    if not rom.has_lorom_range(LM_SUPER_GFX_POINTER_ADDR, 3):
+        return None
+    table_addr = rom.get_24(LM_SUPER_GFX_POINTER_ADDR)
+    if table_addr in (0x000000, 0xFFFFFF) or not rom.has_lorom_range(table_addr + level_id * 0x20, 0x20):
+        return None
+    return rom.get_words(table_addr + level_id * 0x20, 16)
+
+
+def lm_super_gfx_enabled(entry_words: list[int] | None) -> bool:
+    return entry_words is not None and (entry_words[0] & 0x8000) != 0
+
+
+def gfx_slot_number(word: int) -> int:
+    return word & 0x0FFF
+
+
+def resolve_fg_bg_gfx_ids(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[list[int], dict[str, Any]]:
+    entry_words = lm_super_gfx_entry_words(rom, level_id)
+    if lm_super_gfx_enabled(entry_words):
+        assert entry_words is not None
+        gfx_ids = [
+            gfx_slot_number(entry_words[4]),  # FG3
+            gfx_slot_number(entry_words[5]),  # BG1
+            gfx_slot_number(entry_words[6]),  # FG2
+            gfx_slot_number(entry_words[7]),  # FG1
+        ]
+        return gfx_ids, {
+            "source": "lunar_magic_super_gfx_bypass",
+            "entry_words": [f"0x{word:04X}" for word in entry_words],
+            "slot_order": ["FG3", "BG1", "FG2", "FG1"],
+        }
+
+    tileset = int(header["tileset"])
+    return level_fg_bg_gfx_ids(tileset), {
+        "source": "vanilla_fg_bg_gfx_list",
+        "tileset": tileset,
+        "slot_order": ["FG3", "BG1", "FG2", "FG1"],
+    }
+
+
+def resolve_sprite_gfx_ids(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[list[int], dict[str, Any]]:
+    entry_words = lm_super_gfx_entry_words(rom, level_id)
+    if lm_super_gfx_enabled(entry_words):
+        assert entry_words is not None
+        gfx_ids = [
+            gfx_slot_number(entry_words[8]),   # SP4
+            gfx_slot_number(entry_words[9]),   # SP3
+            gfx_slot_number(entry_words[10]),  # SP2
+            gfx_slot_number(entry_words[11]),  # SP1
+        ]
+        return gfx_ids, {
+            "source": "lunar_magic_super_gfx_bypass",
+            "entry_words": [f"0x{word:04X}" for word in entry_words],
+            "slot_order": ["SP4", "SP3", "SP2", "SP1"],
+        }
+
+    sprite_graphics = int(header["sprite_graphics"])
+    return level_sprite_gfx_ids(sprite_graphics), {
+        "source": "vanilla_sprite_gfx_list",
+        "sprite_graphics": sprite_graphics,
+        "slot_order": ["SP4", "SP3", "SP2", "SP1"],
+    }
+
+
+def level_fg_bg_vram(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[bytes, list[dict[str, Any]], dict[str, Any]]:
     vram = bytearray(0x2000)
     uploads: list[dict[str, Any]] = []
-    gfx_ids = level_fg_bg_gfx_ids(tileset)
+    gfx_ids, source = resolve_fg_bg_gfx_ids(rom, level_id, header)
     for slot, gfx_id in enumerate(gfx_ids):
         data, addr, compressed_len = decompress_graphics_file(rom, gfx_id)
         dst = [0x1800, 0x1000, 0x0800, 0x0000][slot]
@@ -578,13 +804,13 @@ def level_fg_bg_vram(rom: Rom, tileset: int) -> tuple[bytes, list[dict[str, Any]
                 "tile_count": copy_len // 32,
             }
         )
-    return bytes(vram), uploads
+    return bytes(vram), uploads, source
 
 
-def level_sprite_vram(rom: Rom, sprite_graphics: int) -> tuple[bytes, list[dict[str, Any]]]:
+def level_sprite_vram(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[bytes, list[dict[str, Any]], dict[str, Any]]:
     vram = bytearray(0x2000)
     uploads: list[dict[str, Any]] = []
-    gfx_ids = level_sprite_gfx_ids(sprite_graphics)
+    gfx_ids, source = resolve_sprite_gfx_ids(rom, level_id, header)
     for slot, gfx_id in enumerate(gfx_ids):
         data, addr, compressed_len = decompress_graphics_file(rom, gfx_id)
         dst = [0x1800, 0x1000, 0x0800, 0x0000][slot]
@@ -604,16 +830,15 @@ def level_sprite_vram(rom: Rom, sprite_graphics: int) -> tuple[bytes, list[dict[
                 "tile_count": copy_len // 32,
             }
         )
-    return bytes(vram), uploads
+    return bytes(vram), uploads, source
 
 
-def palette_from_tile_word(word: int, fg_palettes_rgb: list[list[int]]) -> list[list[int]]:
+def palette_from_tile_word(word: int, level_palette_rgb: list[list[int]]) -> list[list[int]]:
     palette_id = (word >> 10) & 0x07
-    palette_index = palette_id - 2 if palette_id >= 2 else palette_id
-    start = max(0, min(palette_index, 5)) * 16
-    palette = fg_palettes_rgb[start : start + 16]
+    start = palette_id * 16
+    palette = level_palette_rgb[start : start + 16]
     if len(palette) < 16:
-        palette = fg_palettes_rgb[:16]
+        palette = level_palette_rgb[:16]
     return palette
 
 
@@ -647,7 +872,7 @@ def write_map16_preview_png(
     path: Path,
     map16_words: list[int],
     vram_4bpp: bytes,
-    fg_palettes_rgb: list[list[int]],
+    level_palette_rgb: list[list[int]],
     first_tile: int = 0,
     tile_count: int = 512,
     columns: int = 16,
@@ -680,7 +905,7 @@ def write_map16_preview_png(
                 sub_x,
                 sub_y,
                 tile_pixels,
-                palette_from_tile_word(word, fg_palettes_rgb),
+                palette_from_tile_word(word, level_palette_rgb),
                 x_flip=(word & 0x4000) != 0,
                 y_flip=(word & 0x8000) != 0,
             )
@@ -712,7 +937,7 @@ def blit_map16_tile(
     map16_id: int,
     map16_words: list[int],
     vram_4bpp: bytes,
-    fg_palettes_rgb: list[list[int]],
+    level_palette_rgb: list[list[int]],
 ) -> bool:
     words = map16_tile_words(map16_words, map16_id)
     if words is None:
@@ -732,7 +957,7 @@ def blit_map16_tile(
             sub_x,
             sub_y,
             tile_pixels,
-            palette_from_tile_word(word, fg_palettes_rgb),
+            palette_from_tile_word(word, level_palette_rgb),
             x_flip=(word & 0x4000) != 0,
             y_flip=(word & 0x8000) != 0,
         )
@@ -746,7 +971,7 @@ def write_level_layout_preview_png(
     placed_tiles: list[dict[str, Any]],
     map16_words: list[int],
     vram_4bpp: bytes,
-    fg_palettes_rgb: list[list[int]],
+    level_palette_rgb: list[list[int]],
 ) -> dict[str, Any]:
     width = width_tiles * 16
     height = height_tiles * 16
@@ -765,7 +990,7 @@ def write_level_layout_preview_png(
             int(placed["map16"]),
             map16_words,
             vram_4bpp,
-            fg_palettes_rgb,
+            level_palette_rgb,
         ):
             rendered += 1
     return {
@@ -988,14 +1213,15 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
 def extract_level_layout_preview(
     rom: Rom,
     out_dir: Path,
+    level_id: int,
     level_key: str,
     header: dict[str, Any],
     objects: list[dict[str, Any]],
+    palette_assets: dict[str, Any],
 ) -> dict[str, Any]:
     tilemap = build_partial_level_tilemap(header, objects)
-    tileset = int(header["tileset"])
-    fg_palettes_rgb = snes_words_to_rgb(rom.get_words(0x00B190, 96))
-    vram_4bpp, _uploads = level_fg_bg_vram(rom, tileset)
+    level_palette_rgb = palette_assets["rgb888"]
+    vram_4bpp, _uploads, gfx_source = level_fg_bg_vram(rom, level_id, header)
     map16_words = rom.get_words(0x0D8000, (0xA100 - 0x8000) // 2)
     key = f"level_{level_key}"
     preview_path = out_dir / "levels" / f"{key}_partial_layout.png"
@@ -1007,24 +1233,36 @@ def extract_level_layout_preview(
         tilemap["placed_tiles"],
         map16_words,
         vram_4bpp,
-        fg_palettes_rgb,
+        level_palette_rgb,
     )
     preview["file"] = rel(preview_path, out_dir)
     tilemap["preview_png"] = preview
+    tilemap["palette_assets"] = {
+        "file": palette_assets["file"],
+        "source": palette_assets["source"],
+    }
+    tilemap["gfx_source"] = gfx_source
     tilemap["file"] = rel(tilemap_path, out_dir)
     tilemap["sha1"] = write_json(tilemap_path, tilemap)
     return tilemap
 
 
-def extract_level_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header: dict[str, Any]) -> dict[str, Any]:
+def extract_level_tileset_assets(
+    rom: Rom,
+    out_dir: Path,
+    level_id: int,
+    level_key: str,
+    header: dict[str, Any],
+    palette_assets: dict[str, Any],
+) -> dict[str, Any]:
     tileset = int(header["tileset"])
     fg_palette_index = int(header["fg_palette"])
-    fg_palettes_rgb = snes_words_to_rgb(rom.get_words(0x00B190, 96))
-    player_safe_palette = fg_palettes_rgb[fg_palette_index * 16 : fg_palette_index * 16 + 16]
-    if len(player_safe_palette) < 16:
-        player_safe_palette = fg_palettes_rgb[:16]
+    level_palette_rgb = palette_assets["rgb888"]
+    preview_palette = level_palette_rgb[2 * 16 : 3 * 16]
+    if len(preview_palette) < 16:
+        preview_palette = level_palette_rgb[:16]
 
-    vram_4bpp, uploads = level_fg_bg_vram(rom, tileset)
+    vram_4bpp, uploads, gfx_source = level_fg_bg_vram(rom, level_id, header)
     map16_words = rom.get_words(0x0D8000, (0xA100 - 0x8000) // 2)
 
     tileset_dir = out_dir / "tilesets"
@@ -1034,26 +1272,32 @@ def extract_level_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header
     map16_path = tileset_dir / f"{key}_map16_preview.png"
     metadata_path = tileset_dir / f"{key}.json"
 
-    atlas = write_vram_tile_atlas_png(atlas_path, vram_4bpp, player_safe_palette)
+    atlas = write_vram_tile_atlas_png(atlas_path, vram_4bpp, preview_palette)
     atlas["file"] = rel(atlas_path, out_dir)
-    map16_preview = write_map16_preview_png(map16_path, map16_words, vram_4bpp, fg_palettes_rgb)
+    map16_preview = write_map16_preview_png(map16_path, map16_words, vram_4bpp, level_palette_rgb)
     map16_preview["file"] = rel(map16_path, out_dir)
 
     metadata = {
         "status": "preview",
         "notes": [
-            "Uses the vanilla foreground/background GFX upload list for this level tileset.",
+            "Uses the foreground/background GFX upload list resolved for this level.",
             "Map16 preview renders raw Map16 tile words; full 1:1 object expansion is still pending.",
-            "SNES 4bpp BG graphics do not carry a final palette by themselves; Map16/tilemap words provide the palette bits used by layout previews.",
+            "SNES 4bpp BG graphics do not carry a final palette by themselves; Map16/tilemap words select CGRAM rows through palette bits.",
         ],
         "level_id": level_key,
         "tileset": tileset,
         "fg_palette": fg_palette_index,
+        "palette_assets": {
+            "file": palette_assets["file"],
+            "source": palette_assets["source"],
+        },
         "palette_mapping": {
             "tile_word_palette_bits": "bits 10-12",
-            "foreground_palette_source": "palettes/global_palettes.json foreground rows",
-            "foreground_rows_used_for_bg_palettes_2_to_7": True,
+            "source": "per-level full CGRAM palette",
+            "cgram_row_indexing": True,
+            "preview_row": 2,
         },
+        "gfx_source": gfx_source,
         "uploads": uploads,
         "vram": {
             "file": rel(vram_path, out_dir),
@@ -1069,16 +1313,23 @@ def extract_level_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header
     return metadata
 
 
-def extract_level_sprite_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header: dict[str, Any]) -> dict[str, Any]:
+def extract_level_sprite_tileset_assets(
+    rom: Rom,
+    out_dir: Path,
+    level_id: int,
+    level_key: str,
+    header: dict[str, Any],
+    palette_assets: dict[str, Any],
+) -> dict[str, Any]:
     sprite_graphics = int(header["sprite_graphics"])
     sprite_palette_index = int(header["sprite_palette"])
-    sprite_palettes_rgb = snes_words_to_rgb(rom.get_words(0x00B318, 84))
-    palette_start = min(sprite_palette_index * 16, max(0, len(sprite_palettes_rgb) - 16))
-    preview_palette = sprite_palettes_rgb[palette_start : palette_start + 16]
+    level_palette_rgb = palette_assets["rgb888"]
+    preview_row = 14
+    preview_palette = level_palette_rgb[preview_row * 16 : preview_row * 16 + 16]
     if len(preview_palette) < 16:
-        preview_palette = sprite_palettes_rgb[:16]
+        preview_palette = level_palette_rgb[8 * 16 : 9 * 16]
 
-    vram_4bpp, uploads = level_sprite_vram(rom, sprite_graphics)
+    vram_4bpp, uploads, gfx_source = level_sprite_vram(rom, level_id, header)
 
     spriteset_dir = out_dir / "spritesets"
     key = f"level_{level_key}_spritegfx{sprite_graphics}"
@@ -1092,18 +1343,23 @@ def extract_level_sprite_tileset_assets(rom: Rom, out_dir: Path, level_key: str,
     metadata = {
         "status": "preview",
         "notes": [
-            "Uses the vanilla sprite GFX upload list for this level's sprite graphics setting.",
+            "Uses the sprite GFX upload list resolved for this level.",
             "Tiles are placed in the same $6000-$7FFF sprite VRAM window used by UploadGraphicsFiles.",
             "This atlas is a raw VRAM preview. Exact enemy frames still require each sprite's OAM/tile assembly and palette selection code.",
         ],
         "level_id": level_key,
         "sprite_graphics": sprite_graphics,
         "sprite_palette": sprite_palette_index,
+        "palette_assets": {
+            "file": palette_assets["file"],
+            "source": palette_assets["source"],
+        },
         "palette_mapping": {
-            "source": "palettes/global_palettes.json sprites",
-            "preview_start_color": palette_start,
+            "source": "per-level full CGRAM palette rows 8-15",
+            "preview_row": preview_row,
             "final_oam_palette_selection_pending": True,
         },
+        "gfx_source": gfx_source,
         "uploads": uploads,
         "vram": {
             "file": rel(vram_path, out_dir),
@@ -1310,9 +1566,18 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     parsed_sprites = parse_sprite_data(sprite_raw)
 
     level_key = f"{level_id:03X}"
-    tileset_assets = extract_level_tileset_assets(rom, out_dir, level_key, header)
-    sprite_tileset_assets = extract_level_sprite_tileset_assets(rom, out_dir, level_key, header)
-    layout_preview = extract_level_layout_preview(rom, out_dir, level_key, header, parsed_layer1["objects"])
+    palette_assets = extract_level_palette_assets(rom, out_dir, level_id, header)
+    tileset_assets = extract_level_tileset_assets(rom, out_dir, level_id, level_key, header, palette_assets)
+    sprite_tileset_assets = extract_level_sprite_tileset_assets(rom, out_dir, level_id, level_key, header, palette_assets)
+    layout_preview = extract_level_layout_preview(
+        rom,
+        out_dir,
+        level_id,
+        level_key,
+        header,
+        parsed_layer1["objects"],
+        palette_assets,
+    )
     level_path = out_dir / "levels" / f"level_{level_key}.json"
     payload = {
         "level_id": level_key,
@@ -1347,6 +1612,11 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
             "sprites": parsed_sprites["sprites"],
         },
         "screen_exits": parsed_layer1["screen_exits"],
+        "palette_assets": {
+            "file": palette_assets["file"],
+            "source": palette_assets["source"],
+            "back_area_color": palette_assets["back_area_color"],
+        },
         "tileset_assets": tileset_assets,
         "sprite_tileset_assets": sprite_tileset_assets,
         "layout_preview": layout_preview,
@@ -1371,6 +1641,10 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
             "atlas_png": sprite_tileset_assets["atlas_png"]["file"],
             "status": sprite_tileset_assets["status"],
             "sprite_graphics": sprite_tileset_assets["sprite_graphics"],
+        },
+        "palette_assets": {
+            "file": palette_assets["file"],
+            "source": palette_assets["source"],
         },
         "layout_preview": {
             "file": layout_preview["file"],

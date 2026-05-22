@@ -7,13 +7,13 @@ The long-term bar is a 100% physics and gameplay semantics match with the origin
 The current first slice covers:
 
 - ROM validation and deterministic extraction for level `105` by default.
-- Layer 1/layer 2 raw object streams, decoded placement metadata, screen exits, sprite stream, Map16, palettes, GFX32/GFX33, player PNG atlases, level tileset GFX atlases, sprite GFX VRAM atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables.
+- Layer 1/layer 2 raw object streams, decoded placement metadata, screen exits, sprite stream, Map16, global palettes, per-level full CGRAM palettes, GFX32/GFX33, player PNG atlases, level tileset GFX atlases, sprite GFX VRAM atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables.
 - Raw SPC upload banks plus a few decoded BRR preview WAVs used only as importer verification artifacts while the full SPC/DSP sequencer is still pending.
 - A Godot .NET C# menu and minimal playable scene.
 - A SNES-sized `256x224` logical viewport that opens as a 3x Wayland window for normal graphical runs.
 - Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; the Godot runtime no longer depends on WAV/MP3 playback for these probes.
 - A menu audio panel for internal port-1 SFX command probes and BRR sample probes, plus imported music bank visibility while the full SPC/DSP command sequencer is still pending.
-- A debug asset overlay showing the imported level GFX, sprite GFX, palette-aware Map16 preview, and partial level layout preview while the level renderer is still being ported.
+- A debug asset overlay showing the imported level GFX, sprite GFX, full-CGRAM palette-aware Map16 preview, and partial level layout preview while the level renderer is still being ported.
 - Runtime placement of the generated Yoshi Island 1 Map16 tilemap, with temporary merged collision rectangles derived from imported tile placement sources.
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
 - Partial object expansion for the Yoshi Island 1 direct pipe target `0CB`, including horizontal pipes and rope mushroom platforms in the generated Map16 tilemap.
@@ -21,7 +21,7 @@ The current first slice covers:
 - Runtime world rebuild scaffolding for loading imported level targets; headless checks currently verify both startup level `105` and direct pipe target `0CB`.
 - Runtime pipe debug triggers derived from imported screen exits and placed pipe tiles instead of a hardcoded screen position.
 - Runtime loading and debug rendering of imported sprite spawn records, including 34 Yoshi Island 1 sprite spawns and the direct target's single spawn.
-- Per-level sprite GFX extraction through the vanilla sprite upload table, producing raw `$6000-$7FFF` sprite VRAM atlases for Yoshi Island 1 and the direct pipe target.
+- Per-level sprite GFX extraction through vanilla and Lunar Magic-aware GFX slot resolution, producing raw `$6000-$7FFF` sprite VRAM atlases for Yoshi Island 1 and the direct pipe target.
 - A C# fixed-step Mario movement prototype using SMW velocity units, native flat-ground walk/run/P-meter caps, native ground friction, and jump/gravity constants from the native reference.
 - Headless/import/build validation scripts that avoid opening a Wayland window and assert audio, Map16, collision, and player sprite loading.
 

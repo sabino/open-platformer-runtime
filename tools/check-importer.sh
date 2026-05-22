@@ -46,6 +46,17 @@ for png in [
     height = int.from_bytes(data[20:24], "big")
     assert width > 0 and height > 0, (png, width, height)
 
+for palette_json in [
+    out_dir / "palettes" / "level_105_palette.json",
+    out_dir / "palettes" / "level_0CB_palette.json",
+]:
+    level_palette = json.loads(palette_json.read_text())
+    assert level_palette["status"] == "preview", level_palette
+    assert level_palette["source"] == "vanilla_header_tables", level_palette
+    assert len(level_palette["snes_bgr555"]) == 256, palette_json
+    assert len(level_palette["rgb888"]) == 256, palette_json
+    assert level_palette["layout"]["tilemap_palette_bits"].startswith("bits 10-12"), level_palette["layout"]
+
 player_graphics = json.loads((out_dir / "player" / "player_graphics.json").read_text())
 assert player_graphics["status"] == "partial"
 assert player_graphics["categories"]["states_pending_direct_oam_port"], player_graphics
@@ -56,7 +67,9 @@ assert [entry["gfx_id"] for entry in tileset["uploads"]] == ["15", "1B", "17", "
 assert tileset["atlas_png"]["file"] == "tilesets/level_105_tileset7_8x8.png"
 assert tileset["map16_preview_png"]["file"] == "tilesets/level_105_tileset7_map16_preview.png"
 assert tileset["palette_mapping"]["tile_word_palette_bits"] == "bits 10-12"
-assert tileset["palette_mapping"]["foreground_rows_used_for_bg_palettes_2_to_7"] is True
+assert tileset["palette_mapping"]["cgram_row_indexing"] is True
+assert tileset["palette_assets"]["file"] == "palettes/level_105_palette.json"
+assert tileset["gfx_source"]["source"] == "vanilla_fg_bg_gfx_list"
 
 sprite_tileset = json.loads((out_dir / "spritesets" / "level_105_spritegfx8.json").read_text())
 assert sprite_tileset["status"] == "preview"
@@ -65,6 +78,9 @@ assert [entry["gfx_id"] for entry in sprite_tileset["uploads"]] == ["20", "13", 
 assert sprite_tileset["atlas_png"]["file"] == "spritesets/level_105_spritegfx8_8x8.png"
 assert sprite_tileset["vram"]["format"] == "snes_4bpp_tiles_in_sprite_vram_order_0x6000_to_0x7fff"
 assert sprite_tileset["palette_mapping"]["final_oam_palette_selection_pending"] is True
+assert sprite_tileset["palette_mapping"]["preview_row"] == 14
+assert sprite_tileset["palette_assets"]["file"] == "palettes/level_105_palette.json"
+assert sprite_tileset["gfx_source"]["source"] == "vanilla_sprite_gfx_list"
 
 tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
 assert tilemap["status"] == "partial"
@@ -72,6 +88,8 @@ assert tilemap["placed_tile_count"] > 1000, tilemap["placed_tile_count"]
 assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
 assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
 assert any("Map16 tile word's palette" in note for note in tilemap["notes"]), tilemap["notes"]
+assert tilemap["palette_assets"]["file"] == "palettes/level_105_palette.json"
+assert tilemap["gfx_source"]["source"] == "vanilla_fg_bg_gfx_list"
 
 pipe_target_tilemap = json.loads((out_dir / "levels" / "level_0CB_partial_tilemap.json").read_text())
 assert pipe_target_tilemap["placed_tile_count"] > 100, pipe_target_tilemap["placed_tile_count"]
@@ -84,6 +102,7 @@ assert "rope_mushroom_column_left" in target_sources, target_sources
 pipe_target_sprite_tileset = json.loads((out_dir / "spritesets" / "level_0CB_spritegfx4.json").read_text())
 assert pipe_target_sprite_tileset["sprite_graphics"] == 4, pipe_target_sprite_tileset
 assert [entry["gfx_id"] for entry in pipe_target_sprite_tileset["uploads"]] == ["06", "13", "01", "00"], pipe_target_sprite_tileset["uploads"]
+assert pipe_target_sprite_tileset["gfx_source"]["source"] == "vanilla_sprite_gfx_list"
 
 audio = manifest["assets"]["audio"]
 assert audio["status"] == "partial", audio
@@ -114,9 +133,10 @@ for sample in audio_manifest["decoded_samples"]:
 
 print("smw-import check: YI1 pipe route 105 screen 07 -> 0CB secondary=0")
 print("smw-import check: player GFX32/GFX33 PNG atlases and categorization manifest present")
-print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview present")
-print("smw-import check: level 105 and 0CB sprite GFX VRAM atlases present")
-print("smw-import check: level 105 partial layout preview uses Map16 palette bits")
+print("smw-import check: per-level full CGRAM palettes generated for 105 and 0CB")
+print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview use level CGRAM rows")
+print("smw-import check: level 105 and 0CB sprite GFX VRAM atlases use level sprite palette rows")
+print("smw-import check: level 105 partial layout preview uses Map16 palette bits against full CGRAM")
 print("smw-import check: level 0CB rope pipe target layout expands horizontal pipes and mushroom platforms")
 print("smw-import check: SPC banks and BRR preview WAVs present")
 PY
