@@ -17,6 +17,7 @@ The current first slice covers:
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
 - Partial object expansion for the Yoshi Island 1 direct pipe target `0CB`, including horizontal pipes and rope mushroom platforms in the generated Map16 tilemap.
 - Manifest-driven runtime asset selection for the current level's tilemap, preview, and tileset atlases, rather than hardcoded generated filenames.
+- Runtime world rebuild scaffolding for loading imported level targets; headless checks currently verify both startup level `105` and direct pipe target `0CB`.
 - A C# fixed-step Mario movement prototype using SMW velocity units and jump/gravity constants from the native reference.
 - Headless/import/build validation scripts that avoid opening a Wayland window and assert audio, Map16, collision, and player sprite loading.
 
@@ -39,6 +40,8 @@ Run headless Godot smoke tests:
 ```bash
 tools/check-headless.sh
 ```
+
+The headless check runs the default playable level and a direct target load using `--smw-test-level=0CB`.
 
 Run a short visible Wayland smoke test:
 

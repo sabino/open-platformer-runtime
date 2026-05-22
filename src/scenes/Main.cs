@@ -15,12 +15,27 @@ public partial class Main : Node2D
         AddChild(_audio);
         ShowMenu();
 
+        var autostart = false;
+        string? testLevel = null;
         foreach (var arg in OS.GetCmdlineArgs())
         {
             if (arg == "--smw-test-autostart")
             {
-                StartGame();
+                autostart = true;
             }
+            else if (arg.StartsWith("--smw-test-level=", StringComparison.Ordinal))
+            {
+                testLevel = arg["--smw-test-level=".Length..].ToUpperInvariant();
+            }
+        }
+
+        if (autostart || testLevel != null)
+        {
+            StartGame();
+        }
+        if (testLevel != null)
+        {
+            _game?.DebugEnterLevel(testLevel);
         }
     }
 

@@ -20,6 +20,8 @@ public partial class GameScene : Node2D
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
     private Label? _hud;
+    private CanvasLayer? _hudLayer;
+    private Node2D? _worldRoot;
     private SmwAudio? _audio;
     private ImageTexture? _playerTexture;
     private string _currentLevelId = "105";
@@ -29,6 +31,7 @@ public partial class GameScene : Node2D
     private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
     private float _cameraX;
     private int _lastPlayerPose = -1;
+    private bool _pipeTransitionLatch;
 
     public override void _Ready()
     {
@@ -39,7 +42,7 @@ public partial class GameScene : Node2D
         BuildWorld();
         BuildPlayer();
         BuildHud();
-        GD.Print($"smw-runtime: level={_currentLevelId} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} player_sprites={_playerTileSprites.Count}");
+        PrintRuntimeState();
     }
 
     public override void _PhysicsProcess(double delta)
@@ -298,8 +301,26 @@ public partial class GameScene : Node2D
         }
     }
 
+    private void StartWorldRoot()
+    {
+        _worldRoot?.QueueFree();
+        _worldRoot = new Node2D
+        {
+            Name = $"World_{_currentLevelId}",
+        };
+        AddChild(_worldRoot);
+    }
+
+    private void AddWorldChild(Node node)
+    {
+        (_worldRoot ?? this).AddChild(node);
+    }
+
     private void BuildWorld()
     {
+        _solids.Clear();
+        StartWorldRoot();
+
         if (AddGeneratedMap16Tiles())
         {
             AddGeneratedCollision();
@@ -312,7 +333,10 @@ public partial class GameScene : Node2D
             AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 0.22f), debugVisible: true);
         }
 
-        AddPipeMarker(new Rect2(416, 112, 32, 80));
+        if (_screenExits.Count > 0)
+        {
+            AddPipeMarker(new Rect2(416, 112, 32, 80));
+        }
         AddObjectMarkers();
 
         for (var i = 0; i < 15; i++)
@@ -340,7 +364,7 @@ public partial class GameScene : Node2D
             Name = "GeneratedMap16Tiles",
             ZIndex = -10,
         };
-        AddChild(container);
+        AddWorldChild(container);
 
         foreach (var tile in _placedTiles)
         {
@@ -500,7 +524,7 @@ public partial class GameScene : Node2D
             Position = rect.Position,
             Size = rect.Size,
         };
-        AddChild(node);
+        AddWorldChild(node);
     }
 
     private void AddGeneratedLevelPreview()
@@ -525,7 +549,7 @@ public partial class GameScene : Node2D
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             ZIndex = -10,
         };
-        AddChild(sprite);
+        AddWorldChild(sprite);
     }
 
     private void AddPipeMarker(Rect2 rect)
@@ -537,7 +561,7 @@ public partial class GameScene : Node2D
             Position = rect.Position,
             Size = rect.Size,
         };
-        AddChild(node);
+        AddWorldChild(node);
     }
 
     private void AddScreenLine(int index)
@@ -548,7 +572,7 @@ public partial class GameScene : Node2D
             Position = new Vector2(index * 256, 0),
             Size = new Vector2(1, 224),
         };
-        AddChild(line);
+        AddWorldChild(line);
 
         var label = new Label
         {
@@ -556,7 +580,7 @@ public partial class GameScene : Node2D
             Position = new Vector2(index * 256 + 4, 4),
         };
         label.AddThemeFontSizeOverride("font_size", 10);
-        AddChild(label);
+        AddWorldChild(label);
     }
 
     private void AddObjectMarkers()
@@ -579,7 +603,7 @@ public partial class GameScene : Node2D
                 Size = new Vector2(8, 8),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            AddChild(marker);
+            AddWorldChild(marker);
         }
     }
 
@@ -724,7 +748,10 @@ public partial class GameScene : Node2D
     {
         foreach (var tile in _placedTiles)
         {
-            if (tile.X >= 8 && tile.Source.Contains("ledge_top", StringComparison.Ordinal))
+            if (tile.X >= 8 &&
+                (tile.Source.Contains("ledge_top", StringComparison.Ordinal) ||
+                    tile.Source.Contains("mushroom_top", StringComparison.Ordinal) ||
+                    tile.Source.Contains("horizontal_pipe", StringComparison.Ordinal)))
             {
                 return _physics.MakeState(
                     tile.X * Map16TileSize + Map16TileSize,
@@ -742,7 +769,12 @@ public partial class GameScene : Node2D
 
     private void BuildHud()
     {
-        var layer = new CanvasLayer();
+        _hudLayer?.QueueFree();
+        var layer = new CanvasLayer
+        {
+            Name = "HudLayer",
+        };
+        _hudLayer = layer;
         AddChild(layer);
         _hud = new Label { Position = new Vector2(12, 10) };
         _hud.AddThemeFontSizeOverride("font_size", 13);
@@ -822,12 +854,51 @@ public partial class GameScene : Node2D
             $"exits={_screenExits.Count} player={_playerTileSprites.Count}";
     }
 
+    private void PrintRuntimeState()
+    {
+        GD.Print($"smw-runtime: level={_currentLevelId} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} player_sprites={_playerTileSprites.Count}");
+    }
+
+    public void DebugEnterLevel(string levelId)
+    {
+        EnterLevel(levelId);
+    }
+
+    private void EnterLevel(string levelId)
+    {
+        if (!LoadLevelData(levelId))
+        {
+            GD.PrintErr($"smw-runtime: unable to load level {levelId}");
+            return;
+        }
+
+        _state = MakeInitialPlayerState();
+        _cameraX = MathF.Max(0.0f, _state.XFloat - 160.0f);
+        Position = new Vector2(-MathF.Round(_cameraX), 0);
+        BuildWorld();
+        BuildHud();
+        if (_player != null)
+        {
+            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+        }
+
+        _lastPlayerPose = -1;
+        UpdatePlayerGraphic(force: true);
+        PrintRuntimeState();
+    }
+
     private void CheckPipeDebug()
     {
         if (!Input.IsActionPressed("smw_down"))
         {
+            _pipeTransitionLatch = false;
             return;
         }
+        if (_pipeTransitionLatch)
+        {
+            return;
+        }
+        _pipeTransitionLatch = true;
 
         var pipeRect = new Rect2(416, 112, 32, 80);
         if (!_physics.PlayerRect(_state).Intersects(pipeRect))
@@ -847,5 +918,10 @@ public partial class GameScene : Node2D
         }
 
         GD.Print($"pipe-debug screen={screen:X2} exit={Json.Stringify(exitData ?? new Godot.Collections.Dictionary())}");
+        if (exitData != null &&
+            exitData.TryGetValue("vanilla_destination", out var destinationVariant))
+        {
+            EnterLevel($"{destinationVariant.AsInt32():X3}");
+        }
     }
 }

@@ -7,4 +7,5 @@
 - Replaced the runtime player placeholder rectangle with an eight-sprite Mario composite sourced from generated GFX32 data and ROM-derived `PlayerGFXRt` head/body tile pointer tables.
 - Expanded importer support for the direct pipe target level `0CB` by porting horizontal pipe plus rope mushroom platform object placement into the partial Map16 tilemap generator.
 - Moved runtime level asset selection onto manifest-provided per-level tilemap, preview, and tileset paths instead of hardcoded `105` resource names.
+- Added runtime world rebuild scaffolding and a headless `0CB` load smoke test so imported transition target layouts can be loaded by Godot.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.

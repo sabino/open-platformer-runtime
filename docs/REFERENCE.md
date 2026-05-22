@@ -30,6 +30,8 @@ Pipe target layout note: level `0CB` uses rope tileset `8`. The partial object e
 
 Runtime level asset note: `GameScene` loads the current level through `generated/smw/manifest.json` and uses the manifest's per-level `tileset_assets` and `layout_preview` paths. Level `105` is still the startup level, but the renderer no longer assumes `level_105_tileset7_*` filenames internally.
 
+Runtime transition scaffolding note: `GameScene` can rebuild world geometry, collision rectangles, HUD previews, and player spawn from another imported level. The CLI argument `--smw-test-level=0CB` is used by `tools/check-headless.sh` to verify that the imported direct pipe target loads with 131 Map16 placements and generated collision rectangles.
+
 The key transition invariant is:
 
 ```text

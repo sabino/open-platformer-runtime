@@ -21,3 +21,6 @@ trap 'rm -f "$LOG_FILE"' EXIT
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
 grep -q "smw-runtime: level=105 map16_tiles=1408 collision_rects=" "$LOG_FILE"
 grep -q "player_sprites=8" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-level=0CB 2>&1 | tee "$LOG_FILE"
+grep -q "smw-runtime: level=0CB map16_tiles=131 collision_rects=" "$LOG_FILE"
