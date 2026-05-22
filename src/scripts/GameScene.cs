@@ -7,6 +7,8 @@ public partial class GameScene : Node2D
     private const float LevelVisualYOffset = -64.0f;
     private const int Map16TileSize = 16;
     private const int Map16AtlasColumns = 16;
+    private const int PlayerOamSpriteSlots = 8;
+    private const int BigMarioPowerup = 1;
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -18,6 +20,14 @@ public partial class GameScene : Node2D
     private readonly List<PipeEntrance> _pipeEntrances = [];
     private readonly List<int> _headTilePointers = [];
     private readonly List<int> _bodyTilePointers = [];
+    private readonly List<int> _playerXYDispIndexIndex = [];
+    private readonly List<int> _playerXYDispIndex = [];
+    private readonly List<int> _playerXDisp = [];
+    private readonly List<int> _playerYDisp = [];
+    private readonly List<int> _playerPowerupTilesetIndex = [];
+    private readonly List<int> _playerTileDescriptors = [];
+    private readonly List<int> _playerTilesIndex = [];
+    private readonly List<int> _playerTileXFlip = [];
     private readonly List<Sprite2D> _playerTileSprites = [];
 
     private SmwPhysics.PlayerState _state;
@@ -35,6 +45,7 @@ public partial class GameScene : Node2D
     private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
     private float _cameraX;
     private int _lastPlayerPose = -1;
+    private int _lastPlayerFacing = -1;
     private bool _pipeTransitionLatch;
 
     public override void _Ready()
@@ -356,6 +367,22 @@ public partial class GameScene : Node2D
         var tables = tablesVariant.AsGodotDictionary();
         LoadTilePointerArray(tables, "head", _headTilePointers);
         LoadTilePointerArray(tables, "body", _bodyTilePointers);
+
+        if (!metadata.TryGetValue("oam_tables", out var oamTablesVariant) ||
+            oamTablesVariant.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var oamTables = oamTablesVariant.AsGodotDictionary();
+        LoadOamTableValues(oamTables, "player_xy_disp_index_index", _playerXYDispIndexIndex);
+        LoadOamTableValues(oamTables, "player_xy_disp_index", _playerXYDispIndex);
+        LoadOamTableValues(oamTables, "x_disp", _playerXDisp);
+        LoadOamTableValues(oamTables, "y_disp", _playerYDisp);
+        LoadOamTableValues(oamTables, "powerup_tileset_index", _playerPowerupTilesetIndex);
+        LoadOamTableValues(oamTables, "tiles", _playerTileDescriptors);
+        LoadOamTableValues(oamTables, "tiles_index", _playerTilesIndex);
+        LoadOamTableValues(oamTables, "tile_x_flip", _playerTileXFlip);
     }
 
     private static void LoadTilePointerArray(Godot.Collections.Dictionary tables, string key, List<int> target)
@@ -367,6 +394,28 @@ public partial class GameScene : Node2D
         }
 
         foreach (var entry in variant.AsGodotArray())
+        {
+            target.Add(entry.AsInt32());
+        }
+    }
+
+    private static void LoadOamTableValues(Godot.Collections.Dictionary tables, string key, List<int> target)
+    {
+        target.Clear();
+        if (!tables.TryGetValue(key, out var tableVariant) ||
+            tableVariant.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var table = tableVariant.AsGodotDictionary();
+        if (!table.TryGetValue("values", out var valuesVariant) ||
+            valuesVariant.VariantType != Variant.Type.Array)
+        {
+            return;
+        }
+
+        foreach (var entry in valuesVariant.AsGodotArray())
         {
             target.Add(entry.AsInt32());
         }
@@ -791,8 +840,7 @@ public partial class GameScene : Node2D
     {
         const string playerAtlasPath = "res://generated/smw/player/gfx32_player_palette0.png";
         if (_player == null ||
-            _headTilePointers.Count == 0 ||
-            _bodyTilePointers.Count == 0 ||
+            !HasPlayerOamMetadata() ||
             !FileAccess.FileExists(playerAtlasPath))
         {
             return false;
@@ -805,26 +853,16 @@ public partial class GameScene : Node2D
         }
 
         _playerTexture = ImageTexture.CreateFromImage(image);
-        var offsets = new[]
-        {
-            new Vector2(-1, 0),
-            new Vector2(7, 0),
-            new Vector2(-1, 8),
-            new Vector2(7, 8),
-            new Vector2(-1, 16),
-            new Vector2(7, 16),
-            new Vector2(-1, 24),
-            new Vector2(7, 24),
-        };
 
-        foreach (var offset in offsets)
+        for (var i = 0; i < PlayerOamSpriteSlots; i++)
         {
             var sprite = new Sprite2D
             {
                 Texture = _playerTexture,
                 RegionEnabled = true,
                 Centered = false,
-                Position = offset,
+                Visible = false,
+                Position = Vector2.Zero,
                 TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
                 ZIndex = 10,
             };
@@ -843,18 +881,15 @@ public partial class GameScene : Node2D
         }
 
         var pose = ChoosePlayerPose();
-        if (!force && pose == _lastPlayerPose)
+        var nativeFacing = _state.Facing == 0 ? 0 : 1;
+        if (!force && pose == _lastPlayerPose && nativeFacing == _lastPlayerFacing)
         {
-            UpdatePlayerFacing();
             return;
         }
 
         _lastPlayerPose = pose;
-        var headTile = _headTilePointers[Math.Clamp(pose, 0, _headTilePointers.Count - 1)];
-        var bodyTile = _bodyTilePointers[Math.Clamp(pose, 0, _bodyTilePointers.Count - 1)];
-        SetPlayerTileBlock(0, headTile);
-        SetPlayerTileBlock(4, bodyTile);
-        UpdatePlayerFacing();
+        _lastPlayerFacing = nativeFacing;
+        RenderPlayerOamPose(pose, BigMarioPowerup, nativeFacing);
     }
 
     private int ChoosePlayerPose()
@@ -866,40 +901,113 @@ public partial class GameScene : Node2D
 
         if (Math.Abs(_state.XSpeed) >= 4)
         {
-            return 1 + (int)((Time.GetTicksMsec() / 110) % 3);
+            var walkFrame = (int)((Time.GetTicksMsec() / 110) % 3);
+            return 2 - walkFrame;
         }
 
         return 0;
     }
 
-    private void SetPlayerTileBlock(int spriteIndex, int topLeftTile)
+    private bool HasPlayerOamMetadata()
     {
-        SetPlayerTile(spriteIndex, topLeftTile);
-        SetPlayerTile(spriteIndex + 1, topLeftTile + 1);
-        SetPlayerTile(spriteIndex + 2, topLeftTile + 16);
-        SetPlayerTile(spriteIndex + 3, topLeftTile + 17);
+        return _headTilePointers.Count >= 192 &&
+            _bodyTilePointers.Count >= 192 &&
+            _playerXYDispIndexIndex.Count >= 70 &&
+            _playerXYDispIndex.Count >= 28 &&
+            _playerXDisp.Count >= 114 &&
+            _playerYDisp.Count >= 114 &&
+            _playerPowerupTilesetIndex.Count >= 4 &&
+            _playerTileDescriptors.Count >= 50 &&
+            _playerTilesIndex.Count >= 192 &&
+            _playerTileXFlip.Count >= 2;
     }
 
-    private void SetPlayerTile(int spriteIndex, int tile)
+    private void RenderPlayerOamPose(int pose, int powerup, int nativeFacing)
+    {
+        var tablePose = pose;
+        if (pose < 0x3D)
+        {
+            tablePose += _playerPowerupTilesetIndex[Math.Clamp(powerup, 0, _playerPowerupTilesetIndex.Count - 1)];
+        }
+
+        tablePose = Math.Clamp(tablePose, 0, _playerTilesIndex.Count - 1);
+        var xyIndexOffset = _playerXYDispIndexIndex[Math.Clamp(pose, 0, _playerXYDispIndexIndex.Count - 1)] | nativeFacing;
+        xyIndexOffset = Math.Clamp(xyIndexOffset, 0, _playerXYDispIndex.Count - 1);
+        var dispBase = _playerXYDispIndex[xyIndexOffset] / 2;
+        var descriptorBase = _playerTilesIndex[tablePose];
+        var headBase = _headTilePointers[tablePose];
+        var bodyBase = _bodyTilePointers[tablePose];
+        var flipH = (_playerTileXFlip[Math.Clamp(nativeFacing, 0, _playerTileXFlip.Count - 1)] & 0x40) != 0;
+
+        foreach (var sprite in _playerTileSprites)
+        {
+            sprite.Visible = false;
+        }
+
+        // Normal big Mario uses four PlayerGFXRt OAM calls. The high bits in
+        // 0xC8 select which slots are 16x16 rather than 8x8.
+        const int normalSizeMask = 0xC8;
+        var slotMasks = new[] { 0x80, 0x40, 0x20, 0x10 };
+        for (var slot = 0; slot < 4 && slot < _playerTileSprites.Count; slot++)
+        {
+            var descriptorIndex = descriptorBase + slot;
+            var dispIndex = dispBase + slot;
+            if (descriptorIndex < 0 ||
+                descriptorIndex >= _playerTileDescriptors.Count ||
+                dispIndex < 0 ||
+                dispIndex >= _playerXDisp.Count ||
+                dispIndex >= _playerYDisp.Count)
+            {
+                continue;
+            }
+
+            var descriptor = _playerTileDescriptors[descriptorIndex];
+            if (descriptor == 0x80)
+            {
+                continue;
+            }
+
+            var tile = ResolvePlayerDynamicTile(descriptor, headBase, bodyBase);
+            var large = (normalSizeMask & slotMasks[slot]) != 0;
+            SetPlayerOamSprite(slot, tile, _playerXDisp[dispIndex], _playerYDisp[dispIndex], large, flipH);
+        }
+    }
+
+    private static int ResolvePlayerDynamicTile(int descriptor, int headPointer, int bodyPointer)
+    {
+        return descriptor switch
+        {
+            0 => PlayerPointerToSourceTile(headPointer),
+            1 => PlayerPointerToSourceTile(headPointer) + 1,
+            2 => PlayerPointerToSourceTile(bodyPointer),
+            3 => PlayerPointerToSourceTile(bodyPointer) + 1,
+            _ => descriptor,
+        };
+    }
+
+    private static int PlayerPointerToSourceTile(int pointer)
+    {
+        var sourceOffset = ((pointer & 0xF7) << 6) | ((pointer & 0x08) != 0 ? 0x4000 : 0);
+        return sourceOffset / 32;
+    }
+
+    private void SetPlayerOamSprite(int spriteIndex, int tile, int x, int y, bool large, bool flipH)
     {
         if (spriteIndex < 0 || spriteIndex >= _playerTileSprites.Count)
         {
             return;
         }
 
-        _playerTileSprites[spriteIndex].RegionRect = new Rect2(
+        var spriteSize = large ? 16 : 8;
+        var sprite = _playerTileSprites[spriteIndex];
+        sprite.Position = new Vector2(x, y);
+        sprite.FlipH = flipH;
+        sprite.RegionRect = new Rect2(
             (tile % 16) * 8,
             (tile / 16) * 8,
-            8,
-            8);
-    }
-
-    private void UpdatePlayerFacing()
-    {
-        foreach (var sprite in _playerTileSprites)
-        {
-            sprite.FlipH = _state.Facing == 0;
-        }
+            spriteSize,
+            spriteSize);
+        sprite.Visible = true;
     }
 
     private SmwPhysics.PlayerState MakeInitialPlayerState()

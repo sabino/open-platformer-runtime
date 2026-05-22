@@ -31,6 +31,18 @@ NORMAL_GFX_3BPP_EXPAND = (
     False, False, False, False, False, True, True, True, False, True, True, False,
     True,
 )
+PLAYER_GFX_OAM_TABLES = {
+    "player_xy_disp_index_index": {"addr": 0x00DCEC, "count": 70, "format": "u8"},
+    "player_xy_disp_index": {"addr": 0x00DD32, "count": 28, "format": "u8"},
+    "x_disp": {"addr": 0x00DD4E, "count": 114, "format": "s16"},
+    "y_disp": {"addr": 0x00DE32, "count": 114, "format": "s16"},
+    "powerup_tileset_index": {"addr": 0x00DF16, "count": 4, "format": "u8"},
+    "tiles_index": {"addr": 0x00DF4C, "count": 192, "format": "u8"},
+    "tiles": {"addr": 0x00DFDA, "count": 50, "format": "u8"},
+    "head_tile_pointer_index": {"addr": 0x00E00C, "count": 192, "format": "u8"},
+    "body_tile_pointer_index": {"addr": 0x00E0CC, "count": 192, "format": "u8"},
+    "tile_x_flip": {"addr": 0x00E18C, "count": 2, "format": "u8"},
+}
 LM_CUSTOM_PALETTE_POINTER_TABLE = 0x0EF600
 LM_CUSTOM_PALETTE_HIJACK_ADDR = 0x00A5C0
 LM_CUSTOM_PALETTE_ROUTINE_ADDR = 0x0EF570
@@ -480,6 +492,40 @@ def snes_words_to_rgb(words: list[int]) -> list[list[int]]:
         b5 = (word >> 10) & 0x1F
         colors.append([(r5 << 3) | (r5 >> 2), (g5 << 3) | (g5 >> 2), (b5 << 3) | (b5 >> 2)])
     return colors
+
+
+def signed16(word: int) -> int:
+    return word - 0x10000 if word & 0x8000 else word
+
+
+def extract_player_oam_tables(rom: Rom) -> dict[str, Any]:
+    tables: dict[str, Any] = {}
+    for name, spec in PLAYER_GFX_OAM_TABLES.items():
+        addr = int(spec["addr"])
+        count = int(spec["count"])
+        fmt = str(spec["format"])
+        if fmt == "s16":
+            values = [signed16(value) for value in rom.get_words(addr, count)]
+        elif fmt == "u8":
+            values = list(rom.get_bytes(addr, count))
+        else:
+            raise ImportErrorWithExit(f"Unsupported player OAM table format {fmt!r} for {name}")
+
+        tables[name] = {
+            "source_addr": f"0x{addr:06X}",
+            "count": count,
+            "format": fmt,
+            "values": values,
+        }
+    return tables
+
+
+def build_player_sprite_palette_words(rom: Rom, player: int = 0) -> list[int]:
+    palette = [PALETTE_BLACK, PALETTE_WHITE] + [PALETTE_BLACK] * 14
+    copy_palette_words(palette, 0, 2, rom.get_words(OBJECT_PALETTE_ADDR + 4 * 0x0C, 6))
+    player_index = max(0, min(player, 3))
+    copy_palette_words(palette, 0, 6, rom.get_words(PLAYER_PALETTE_ADDR + player_index * 0x14, 10))
+    return palette
 
 
 def decode_4bpp_tile(tile: bytes) -> list[list[int]]:
@@ -1833,12 +1879,15 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
         "sha1": write_json(secondary_path, secondary_payload),
     }
 
+    player_sprite_palette_words = build_player_sprite_palette_words(rom, player=0)
+    player_sprite_palette_rgb = snes_words_to_rgb(player_sprite_palette_words)
+
     for name, pointer_addr in {"gfx32": 0x00B8D8, "gfx33": 0x00B88B}.items():
         gfx_addr = 0x080000 | rom.get_word(pointer_addr)
         gfx_data, compressed_len = smw_decomp(rom, gfx_addr)
         gfx_path = out_dir / "gfx" / f"{name}.bin"
         atlas_path = out_dir / "player" / f"{name}_player_palette0.png"
-        atlas = write_4bpp_atlas_png(atlas_path, gfx_data, palettes_payload["player"]["rgb888"][:16])
+        atlas = write_4bpp_atlas_png(atlas_path, gfx_data, player_sprite_palette_rgb)
         atlas["file"] = rel(atlas_path, out_dir)
         assets[name] = {
             "file": rel(gfx_path, out_dir),
@@ -1861,13 +1910,16 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
             "source": "palettes/global_palettes.json",
             "set": "player",
             "variant": 0,
-            "colors": palettes_payload["player"]["rgb888"][:16],
+            "snes_bgr555": player_sprite_palette_words,
+            "colors": player_sprite_palette_rgb,
+            "layout": "full OBJ palette row 8: colors 0-1 fixed, 2-5 object row, 6-15 dynamic Mario palette from $00B2C8",
         },
         "tile_pointer_tables": {
             "head": list(rom.get_bytes(0x00E00C, 192)),
             "body": list(rom.get_bytes(0x00E0CC, 192)),
             "walking_pose_count": list(rom.get_bytes(0x00DC78, 4)),
         },
+        "oam_tables": extract_player_oam_tables(rom),
         "categories": {
             "player": {
                 "small": [],
@@ -1893,7 +1945,8 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
         },
         "notes": [
             "PNG atlases are usable in Godot now.",
-            "Frame/state categorization is intentionally empty until PlayerGFXRt OAM tables are ported 1:1.",
+            "The runtime uses native PlayerGFXRt OAM placement tables for the first big-Mario pose set.",
+            "Full frame/state categorization, cape, Yoshi, powerup transition, and damage transition rendering are still pending.",
         ],
     }
     assets["player_graphics"] = {

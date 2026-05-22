@@ -3,6 +3,7 @@
 Reference inputs used for this port:
 
 - Native repo: `/path/to/native-reference`
+- Secondary disassembly reference: `SMWDisX` at `https://github.com/IsoFrieze/SMWDisX`
 - Godot .NET executable: `godot4-mono`
 - Older Godot source tree available locally: `<local Godot source checkout>`
 - Local ROM used for validation: `/path/to/compatible-rom.sfc`
@@ -15,7 +16,7 @@ Importer references translated into `tools/smw_import.py`:
 - Foreground/background GFX upload order from `kUploadGraphicsFiles_FGAndBGGFXList` in `src/smw_00.cpp`; level `105` uses tileset `7`, which uploads GFX `15`, `1B`, `17`, and `14` into level VRAM order.
 - Sprite GFX upload order from `kUploadGraphicsFiles_SpriteGFXList` and `UploadGraphicsFiles` in `src/smw_00.cpp`; level `105` uses sprite GFX setting `8`, which uploads GFX `20`, `13`, `01`, and `00` into the `$6000-$7FFF` sprite VRAM window, while direct pipe target `0CB` uses setting `4`, which uploads `06`, `13`, `01`, and `00`.
 - Screen-exit property semantics from `src/smw_0d.cpp` and level-load destination construction from `src/smw_05.cpp`
-- Player graphics source data from `GFX32`/`GFX33`, player palettes, and `PlayerGFXRt` tile pointer tables. Current PNG atlases are usable, but state/frame categorization remains pending until the OAM assembly tables are ported directly.
+- Player graphics source data from `GFX32`/`GFX33`, player palettes, and `PlayerGFXRt` tile pointer/OAM placement tables.
 - SPC upload bank addresses from `assets/compile_resources.py`: engine `0x0E8000`, samples `0x0F8000`, level music `0x0EAED6`, overworld music `0x0E98B1`, and credits music `0x03E400`.
 - BRR preview decoding follows the native `assets/util.py` BRR decoder and the SPC upload block format used by `src/smw_spc_player.cpp`. The vanilla DSP sample directory starts at SPC RAM `$8000`.
 
@@ -29,7 +30,9 @@ Audio note: the importer preserves the original SPC engine/sample/music banks. G
 
 Runtime collision note: `GameScene` now renders the generated Yoshi Island 1 Map16 placements as individual tiles from the palette-aware Map16 preview atlas and derives temporary merged AABB collision rectangles from the imported placement source labels. This is useful for playable traversal, but it is not a substitute for the final Map16 act-as table, slope semantics, and block interaction routines.
 
-Runtime player graphics note: `GameScene` now draws Mario from the generated GFX32 player atlas by composing the imported `PlayerGFXRt` head/body tile pointer entries into eight 8x8 sprites. The pose picker currently maps idle, walk, jump, and spin-jump to early pointer-table entries so the runtime uses original graphics instead of a placeholder rectangle. Exact animation states, cape/fire/small variants, tile flips, tile size selection, and OAM priority still need the direct SMW OAM assembly port.
+Runtime player graphics note: `GameScene` now draws Mario from the generated GFX32 player atlas through the native `PlayerGFXRt` data path for the first big-Mario pose set. The importer preserves `player_xy_disp_index_index` from `$00DCEC`, `player_xy_disp_index` from `$00DD32`, signed X/Y displacement words from `$00DD4E/$00DE32`, `powerup_tileset_index` from `$00DF16`, `tiles_index` from `$00DF4C`, OAM tile descriptors from `$00DFDA`, head/body tile pointer indices from `$00E00C/$00E0CC`, and tile X-flip flags from `$00E18C`. The runtime maps OAM descriptors `0/1/2/3` through the dynamic upload pointer math used by `PlayerGFXRt_00F636`, so head/body source tiles come from GFX32 offsets instead of treating descriptor bytes as raw source tile IDs. The generated PNG atlas uses a full OBJ palette row 8 layout: fixed colors `0-1`, vanilla object colors `2-5`, and Mario's dynamic palette colors `6-F` from `$00B2C8`. The current temporary animation picker cycles normal big-Mario walking poses `2,1,0`; the exact animation timer, high-speed pose branch, small/fire/cape/Yoshi variants, cape OAM, priority, and hide-mask behavior still need the direct SMW pose/OAM port.
+
+Asset-pipeline note: Python is currently used only for the offline development extractor because it is fast to iterate and easy to compare against ROM bytes. The Godot runtime consumes generated assets and does not call Python. The intended end state is a C# importer/editor tool or C# asset-pipeline project so asset extraction can live inside the Godot/.NET codebase.
 
 Pipe target layout note: level `0CB` uses rope tileset `8`. The partial object expander now covers standard horizontal pipes and the rope mushroom top/column objects used there, so the generated `level_0CB_partial_tilemap.json` contains a usable platform layout instead of only the goal tape and Yoshi coin markers.
 

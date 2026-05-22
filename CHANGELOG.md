@@ -16,4 +16,6 @@
 - Corrected vanilla GFX preview extraction to expand SMW 3bpp graphics into 4bpp and populate the full 512-tile BG/sprite VRAM windows used by Map16 tile words.
 - Ported the native per-tileset Map16 pointer initialization for level previews, fixing Yoshi Island 1 grassland ledge art that was previously pulled from the wrong linear Map16 offset.
 - Added a Sway/Wayland compositor capture wrapper that places Godot on workspace 6, waits for the runtime level log, and captures the exact Godot PID instead of matching unrelated `smw` terminal windows.
+- Ported the first big-Mario runtime render path to imported `PlayerGFXRt` OAM tables, including dynamic head/body tile pointer mapping, native displacement/facing data, corrected OBJ row 8 palette layout, and the normal `2,1,0` walking pose cycle.
+- Documented that the Python importer is an offline extraction tool for now and should eventually move into C# Godot tooling or a C# asset-pipeline project.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.

@@ -60,6 +60,23 @@ for palette_json in [
 player_graphics = json.loads((out_dir / "player" / "player_graphics.json").read_text())
 assert player_graphics["status"] == "partial"
 assert player_graphics["categories"]["states_pending_direct_oam_port"], player_graphics
+assert player_graphics["palette"]["layout"].startswith("full OBJ palette row 8"), player_graphics["palette"]
+assert player_graphics["palette"]["snes_bgr555"][:8] == [0x0000, 0x7FDD, 0x0000, 0x0D71, 0x1E9B, 0x3B7F, 0x635F, 0x581D]
+oam_tables = player_graphics["oam_tables"]
+assert oam_tables["player_xy_disp_index_index"]["source_addr"] == "0x00DCEC"
+assert oam_tables["player_xy_disp_index"]["source_addr"] == "0x00DD32"
+assert oam_tables["x_disp"]["source_addr"] == "0x00DD4E"
+assert oam_tables["y_disp"]["source_addr"] == "0x00DE32"
+assert oam_tables["powerup_tileset_index"]["source_addr"] == "0x00DF16"
+assert oam_tables["tiles_index"]["source_addr"] == "0x00DF4C"
+assert oam_tables["tiles"]["source_addr"] == "0x00DFDA"
+assert oam_tables["head_tile_pointer_index"]["source_addr"] == "0x00E00C"
+assert oam_tables["body_tile_pointer_index"]["source_addr"] == "0x00E0CC"
+assert oam_tables["tile_x_flip"]["values"] == [0, 64]
+assert oam_tables["powerup_tileset_index"]["values"] == [0, 70, 131, 70]
+assert oam_tables["tiles"]["values"][:8] == [0, 2, 128, 128, 0, 2, 12, 128]
+assert len(oam_tables["x_disp"]["values"]) == 114
+assert len(oam_tables["tiles_index"]["values"]) == 192
 
 tileset = json.loads((out_dir / "tilesets" / "level_105_tileset7.json").read_text())
 assert tileset["status"] == "preview"

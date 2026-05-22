@@ -24,6 +24,7 @@ The current first slice covers:
 - Per-level sprite GFX extraction through vanilla and Lunar Magic-aware GFX slot resolution, producing raw `$6000-$7FFF` sprite VRAM atlases for Yoshi Island 1 and the direct pipe target.
 - Vanilla GFX preview extraction expands SMW 3bpp slots into 4bpp and fills the full 512-tile BG/sprite VRAM windows used by Map16 and OAM tile numbers.
 - Level Map16 previews are resolved through the native per-tileset Map16 pointer table, so level `105` uses its grassland/YI1 tile definitions instead of treating `$0D8000` as a flat linear Map16 page.
+- Mario runtime rendering now uses imported `PlayerGFXRt` OAM placement tables, signed X/Y displacement tables, dynamic head/body tile upload pointer mapping, native facing flips, and the proper OBJ row 8 player palette layout for the first big-Mario pose set.
 - A C# fixed-step Mario movement prototype using SMW velocity units, native flat-ground walk/run/P-meter caps, native ground friction, and jump/gravity constants from the native reference.
 - Headless/import/build validation scripts that avoid opening a Wayland window and assert audio, Map16, collision, and player sprite loading.
 - Wayland/Sway graphical wrappers default to workspace `6` through `SMW_SWAY_WORKSPACE`, and the capture wrapper can grab a compositor screenshot of the Godot PID for visual inspection.
@@ -71,6 +72,8 @@ tools/check-dotnet.sh
 ```
 
 This also runs the standalone C# physics smoke executable.
+
+Importer note: `tools/smw_import.py` is an offline development extractor, not a runtime dependency. The shipped Godot scene consumes generated JSON/PNG/BIN assets and runs in C#. The long-term target is to port this extraction pipeline into C# Godot tooling or a C# asset-pipeline project so Python is no longer required for normal project workflows.
 
 The Godot scripts default to the local 4.6.3 .NET build:
 
