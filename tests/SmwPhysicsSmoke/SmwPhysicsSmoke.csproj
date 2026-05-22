@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="GodotSharp" Version="4.6.3" />
+    <Compile Include="../PhysicsSmoke.cs" Link="PhysicsSmoke.cs" />
+    <Compile Include="../../src/smw/SmwPhysics.cs" Link="SmwPhysics.cs" />
+  </ItemGroup>
+</Project>

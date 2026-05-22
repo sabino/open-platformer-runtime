@@ -7,14 +7,17 @@ public sealed class SmwPhysics
     public const int PlayerWidth = 14;
     public const int PlayerHeight = 28;
 
-    private const int WalkMax = 0x24;
-    private const int RunMax = 0x30;
+    private const int WalkMax = 0x14;
+    private const int RunMax = 0x24;
+    private const int SprintMax = 0x30;
     private const int WalkAccel = 0x0180;
     private const int RunAccel = 0x0180;
     private const int TurnAccel = 0x0600;
-    private const int GroundFriction = 0x0100;
+    private const int GroundFriction = 0x0020;
     private const int AirAccel = 0x0100;
-    private const int AirFriction = 0x0080;
+    private const int AirFriction = 0x0100;
+    private const int PMeterMax = 0x70;
+    private const int PMeterSprintThreshold = 0x23;
     private const int MaxFall = 0x40;
 
     public static readonly sbyte[] HorizontalMaxSpeedTable =
@@ -138,7 +141,8 @@ public sealed class SmwPhysics
         if (dir != 0)
         {
             state.Facing = dir > 0 ? 1 : 0;
-            var target = input.Run ? RunMax : WalkMax;
+            UpdatePMeter(ref state, input, Math.Abs(state.XSpeed));
+            var target = HorizontalTarget(input.Run, Math.Abs(state.XSpeed), state.PMeter);
             var accel = input.Run ? RunAccel : WalkAccel;
             if (!state.OnGround)
             {
@@ -158,6 +162,7 @@ public sealed class SmwPhysics
         }
         else
         {
+            UpdatePMeter(ref state, input, Math.Abs(state.XSpeed));
             var friction = state.OnGround ? GroundFriction : AirFriction;
             if (state.XSpeed > 0)
             {
@@ -178,16 +183,28 @@ public sealed class SmwPhysics
                 }
             }
         }
+    }
 
-        var absSpeed = Math.Abs(state.XSpeed);
-        if (state.OnGround && input.Run && absSpeed >= WalkMax)
+    private static void UpdatePMeter(ref PlayerState state, FrameInput input, int absSpeed)
+    {
+        if (state.OnGround && input.Run && absSpeed >= PMeterSprintThreshold)
         {
-            state.PMeter = Math.Min(0x70, state.PMeter + 2);
+            state.PMeter = Math.Min(PMeterMax, state.PMeter + 2);
         }
         else
         {
             state.PMeter = Math.Max(0, state.PMeter - 1);
         }
+    }
+
+    private static int HorizontalTarget(bool runHeld, int absSpeed, int pMeter)
+    {
+        if (!runHeld)
+        {
+            return WalkMax;
+        }
+
+        return pMeter >= PMeterMax && absSpeed >= PMeterSprintThreshold ? SprintMax : RunMax;
     }
 
     private static void ApplyJumpAndGravity(ref PlayerState state, FrameInput input)

@@ -5,4 +5,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
 </Project>

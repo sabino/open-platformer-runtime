@@ -7,6 +7,15 @@ public static class PhysicsSmoke
     public static int Main()
     {
         var physics = new SmwPhysics();
+        if (!CheckReferenceTables())
+        {
+            return 1;
+        }
+        if (!CheckFlatGroundHorizontalPhysics(physics))
+        {
+            return 1;
+        }
+
         var solids = new List<Rect2> { new(0, 128, 512, 32) };
         var state = physics.MakeState(32, 64);
 
@@ -44,5 +53,77 @@ public static class PhysicsSmoke
 
         Console.WriteLine("smw-godot C# physics smoke: ok");
         return 0;
+    }
+
+    private static bool CheckReferenceTables()
+    {
+        sbyte[] expected =
+        [
+            unchecked((sbyte)0xec), 0x14,
+            unchecked((sbyte)0xdc), 0x24,
+            unchecked((sbyte)0xdc), 0x24,
+            unchecked((sbyte)0xd0), 0x30,
+        ];
+
+        for (var i = 0; i < expected.Length; i++)
+        {
+            if (SmwPhysics.HorizontalMaxSpeedTable[i] != expected[i])
+            {
+                Console.Error.WriteLine($"horizontal max speed table mismatch at {i}");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool CheckFlatGroundHorizontalPhysics(SmwPhysics physics)
+    {
+        var state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        for (var i = 0; i < 90; i++)
+        {
+            physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, []);
+        }
+        if (state.XSpeed != 0x14)
+        {
+            Console.Error.WriteLine($"expected flat walk speed cap 0x14, got 0x{state.XSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        for (var i = 0; i < 90; i++)
+        {
+            physics.Step(ref state, new SmwPhysics.FrameInput { Right = true, Run = true }, []);
+        }
+        if (state.XSpeed != 0x24)
+        {
+            Console.Error.WriteLine($"expected flat run speed cap 0x24 before P-meter, got 0x{state.XSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x23;
+        state.PMeter = 0x6E;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true, Run = true }, []);
+        if (state.PMeter != 0x70 || state.XSpeed <= 0x23 || state.XSpeed > 0x30)
+        {
+            Console.Error.WriteLine($"expected P-meter sprint acceleration, got xs=0x{state.XSpeed:X2} p=0x{state.PMeter:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x14;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.XSpeed != 0x13 || state.SubXSpeed != 0xE0)
+        {
+            Console.Error.WriteLine($"expected ground friction 0x0020, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        return true;
     }
 }
