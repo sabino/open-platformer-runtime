@@ -9,6 +9,8 @@ public partial class GameScene : Node2D
     private const int Map16AtlasColumns = 16;
     private const int PlayerOamSpriteSlots = 8;
     private const int BigMarioPowerup = 1;
+    private const float LogicalViewportWidth = 256.0f;
+    private const float LogicalViewportHeight = 224.0f;
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -44,6 +46,7 @@ public partial class GameScene : Node2D
     private string _levelLayoutPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
     private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
     private float _cameraX;
+    private float _cameraY;
     private int _lastPlayerPose = -1;
     private int _lastPlayerFacing = -1;
     private bool _pipeTransitionLatch;
@@ -85,8 +88,7 @@ public partial class GameScene : Node2D
         }
 
         _physics.Step(ref _state, frameInput, _solids);
-        _cameraX = MathF.Max(0.0f, _state.XFloat - 160.0f);
-        Position = new Vector2(-MathF.Round(_cameraX), 0);
+        UpdateCamera();
 
         if (_player != null)
         {
@@ -731,8 +733,8 @@ public partial class GameScene : Node2D
         var line = new ColorRect
         {
             Color = new Color(1, 1, 1, 0.14f),
-            Position = new Vector2(index * 256, 0),
-            Size = new Vector2(1, 224),
+            Position = new Vector2(index * 256, LevelVisualYOffset),
+            Size = new Vector2(1, 1024),
         };
         AddWorldChild(line);
 
@@ -1116,7 +1118,7 @@ public partial class GameScene : Node2D
         }
 
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} tiles={_placedTiles.Count} solids={_solids.Count} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} " +
             $"exits={_screenExits.Count} sprites={_levelSprites.Count} player={_playerTileSprites.Count}";
     }
 
@@ -1128,6 +1130,26 @@ public partial class GameScene : Node2D
     public void DebugEnterLevel(string levelId)
     {
         EnterLevel(levelId);
+    }
+
+    public void DebugSetPlayerPosition(Vector2 position)
+    {
+        _state.X = (int)MathF.Round(position.X);
+        _state.Y = (int)MathF.Round(position.Y);
+        _state.SubX = 0;
+        _state.SubY = 0;
+        _state.XSpeed = 0;
+        _state.YSpeed = 0;
+        _state.SubXSpeed = 0;
+        _state.SubYSpeed = 0;
+        _state.OnGround = false;
+        UpdateCamera();
+        if (_player != null)
+        {
+            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+        }
+        UpdateHud();
+        GD.Print($"smw-test-spawn: x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
     }
 
     public async void DebugCaptureViewport(string capturePath, int frames, bool quitAfterCapture)
@@ -1175,8 +1197,7 @@ public partial class GameScene : Node2D
         }
 
         _state = MakeInitialPlayerState();
-        _cameraX = MathF.Max(0.0f, _state.XFloat - 160.0f);
-        Position = new Vector2(-MathF.Round(_cameraX), 0);
+        UpdateCamera();
         BuildWorld();
         BuildHud();
         if (_player != null)
@@ -1234,5 +1255,36 @@ public partial class GameScene : Node2D
         {
             EnterLevel($"{destinationVariant.AsInt32():X3}");
         }
+    }
+
+    private void UpdateCamera()
+    {
+        var maxCameraX = MathF.Max(0.0f, GetLevelPixelRight() - LogicalViewportWidth);
+        var maxCameraY = MathF.Max(0.0f, GetLevelPixelBottom() - LogicalViewportHeight);
+        _cameraX = Math.Clamp(_state.XFloat - 160.0f, 0.0f, maxCameraX);
+        _cameraY = Math.Clamp(_state.YFloat - 176.0f, 0.0f, maxCameraY);
+        Position = new Vector2(-MathF.Round(_cameraX), -MathF.Round(_cameraY));
+    }
+
+    private float GetLevelPixelRight()
+    {
+        var maxTileX = 0;
+        foreach (var tile in _placedTiles)
+        {
+            maxTileX = Math.Max(maxTileX, tile.X);
+        }
+
+        return MathF.Max(LogicalViewportWidth, (maxTileX + 1) * Map16TileSize);
+    }
+
+    private float GetLevelPixelBottom()
+    {
+        var maxTileY = 0;
+        foreach (var tile in _placedTiles)
+        {
+            maxTileY = Math.Max(maxTileY, tile.Y);
+        }
+
+        return MathF.Max(LogicalViewportHeight, (maxTileY + 1) * Map16TileSize + LevelVisualYOffset);
     }
 }

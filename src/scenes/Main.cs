@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 public partial class Main : Node2D
 {
@@ -29,6 +30,7 @@ public partial class Main : Node2D
         var autostart = false;
         string? testLevel = null;
         string? capturePath = null;
+        Vector2? testSpawn = null;
         var captureFrames = 8;
         foreach (var arg in OS.GetCmdlineArgs())
         {
@@ -43,6 +45,11 @@ public partial class Main : Node2D
             else if (arg.StartsWith("--smw-capture=", StringComparison.Ordinal))
             {
                 capturePath = arg["--smw-capture=".Length..];
+                autostart = true;
+            }
+            else if (arg.StartsWith("--smw-test-spawn=", StringComparison.Ordinal))
+            {
+                testSpawn = ParseTestSpawn(arg["--smw-test-spawn=".Length..]);
                 autostart = true;
             }
             else if (arg.StartsWith("--smw-capture-frames=", StringComparison.Ordinal) &&
@@ -60,10 +67,32 @@ public partial class Main : Node2D
         {
             _game?.DebugEnterLevel(testLevel);
         }
+        if (testSpawn != null)
+        {
+            _game?.DebugSetPlayerPosition(testSpawn.Value);
+        }
         if (capturePath != null)
         {
             _game?.DebugCaptureViewport(capturePath, captureFrames, quitAfterCapture: true);
         }
+    }
+
+    private static Vector2? ParseTestSpawn(string value)
+    {
+        var parts = value.Split(',', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
+        {
+            GD.PrintErr($"smw-test-spawn: expected x,y but got {value}");
+            return null;
+        }
+        if (!float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var x) ||
+            !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+        {
+            GD.PrintErr($"smw-test-spawn: invalid coordinates {value}");
+            return null;
+        }
+
+        return new Vector2(x, y);
     }
 
     public override void _UnhandledInput(InputEvent @event)

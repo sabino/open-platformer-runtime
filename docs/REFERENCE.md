@@ -40,7 +40,9 @@ Runtime level asset note: `GameScene` loads the current level through `generated
 
 Runtime transition scaffolding note: `GameScene` can rebuild world geometry, collision rectangles, HUD previews, and player spawn from another imported level. The CLI argument `--smw-test-level=0CB` is used by `tools/check-headless.sh` to verify that the imported direct pipe target loads with 131 Map16 placements and generated collision rectangles.
 
-Runtime viewport note: the game scene now uses a `256x224` logical viewport, matching the SNES visible level area, while `Main` requests a `768x672` Wayland window for normal visible runs. Debug asset previews no longer determine the playable viewport scale.
+Runtime viewport note: the game scene now uses a `256x224` logical viewport, matching the SNES visible level area, while `Main` requests a `768x672` Wayland window for normal visible runs. The camera follows horizontally and vertically, clamped to generated tile bounds, so lower terrain in Yoshi Island 1 remains inspectable during drops. Debug asset previews no longer determine the playable viewport scale.
+
+Runtime debug launch note: `--smw-test-spawn=x,y` places Mario at an explicit world coordinate after the level is loaded. It is intended for reproducible viewport captures and lower-route inspection while autoplay/TAS input playback is still being ported.
 
 Runtime pipe note: pipe debug rectangles are rebuilt from imported screen-exit records and the corresponding generated `vertical_pipe_top_left` Map16 placements. For level `105`, this puts the active pipe trigger on the screen `07` pipe instead of the old hardcoded screen `01` marker.
 
