@@ -16,6 +16,8 @@ Importer references translated into `tools/smw_import.py`:
 - Screen-exit property semantics from `src/smw_0d.cpp` and level-load destination construction from `src/smw_05.cpp`
 - Player graphics source data from `GFX32`/`GFX33`, player palettes, and `PlayerGFXRt` tile pointer tables. Current PNG atlases are usable, but state/frame categorization remains pending until the OAM assembly tables are ported directly.
 
+Palette note: raw 8x8 GFX tiles are not enough to show final colors. The level layout preview renders through Map16 tile words because those words carry BG palette bits 10-12, priority, and flip flags. The current importer maps BG palette rows 2-7 to the vanilla foreground palette rows extracted from `0x00B190`.
+
 The key transition invariant is:
 
 ```text

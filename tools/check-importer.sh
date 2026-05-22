@@ -32,6 +32,7 @@ for png in [
     out_dir / "player" / "gfx33_player_palette0.png",
     out_dir / "tilesets" / "level_105_tileset7_8x8.png",
     out_dir / "tilesets" / "level_105_tileset7_map16_preview.png",
+    out_dir / "levels" / "level_105_partial_layout.png",
 ]:
     data = png.read_bytes()
     assert data.startswith(b"\x89PNG\r\n\x1a\n"), png
@@ -49,8 +50,16 @@ assert tileset["status"] == "preview"
 assert [entry["gfx_id"] for entry in tileset["uploads"]] == ["15", "1B", "17", "14"], tileset["uploads"]
 assert tileset["atlas_png"]["file"] == "tilesets/level_105_tileset7_8x8.png"
 assert tileset["map16_preview_png"]["file"] == "tilesets/level_105_tileset7_map16_preview.png"
+assert tileset["palette_mapping"]["tile_word_palette_bits"] == "bits 10-12"
+
+tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
+assert tilemap["status"] == "partial"
+assert tilemap["placed_tile_count"] > 1000, tilemap["placed_tile_count"]
+assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
+assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
 
 print("smw-import check: YI1 pipe route 105 screen 07 -> 0CB secondary=0")
 print("smw-import check: player GFX32/GFX33 PNG atlases and categorization manifest present")
 print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview present")
+print("smw-import check: level 105 partial layout preview uses Map16 palette bits")
 PY

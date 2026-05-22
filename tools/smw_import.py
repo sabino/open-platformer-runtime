@@ -51,6 +51,26 @@ FG_AND_BG_GFX_LIST = [
     0x14, 0x17, 0x19, 0x2C,
     0x19, 0x17, 0x1B, 0x18,
 ]
+GENERIC_REPEATED_TILES = [0x02, 0x21, 0x23, 0x2A, 0x2B, 0x3F, 0x03, 0x13, 0x1E, 0x24, 0x2E, 0x2F, 0x30, 0x32, 0x65]
+VERTICAL_PIPE_TOP_LEFT = [0x33, 0x37, 0x39, 0x00, 0x00]
+VERTICAL_PIPE_TOP_RIGHT = [0x34, 0x38, 0x3A, 0x00, 0x00]
+VERTICAL_PIPE_BOTTOM_LEFT = [0x00, 0x00, 0x39, 0x33, 0x37]
+VERTICAL_PIPE_BOTTOM_RIGHT = [0x00, 0x00, 0x3A, 0x34, 0x38]
+GROUND_EDGE_TOP = [0x40, 0x41, 0x06, 0x45, 0x4B, 0x48, 0x4C, 0x01, 0x03, 0xB6, 0xB7, 0x45, 0x4B, 0x48, 0x4C]
+GROUND_EDGE_MIDDLE1 = [0x40, 0x41, 0x06, 0x4B, 0x4B, 0x4C, 0x4C, 0x40, 0x41, 0x4B, 0x4C, 0x4B, 0x4B, 0x4C, 0x4C]
+GROUND_EDGE_MIDDLE2 = [0x40, 0x41, 0x06, 0x4B, 0x4B, 0x4C, 0x4C, 0x40, 0x41, 0x4B, 0x4C, 0x4B, 0x4B, 0x4C, 0x4C]
+GROUND_EDGE_BOTTOM = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xE2, 0xE2, 0xE4, 0xE4]
+MIDWAY_TOP = [0x2F, 0x25, 0x32]
+MIDWAY_MIDDLE = [0x30, 0x25, 0x33]
+MIDWAY_BOTTOM = [0x31, 0x25, 0x34]
+GOAL_TOP = [0x39, 0x25, 0x3C]
+GOAL_MIDDLE = [0x3A, 0x25, 0x3D]
+GOAL_BOTTOM = [0x3B, 0x25, 0x3E]
+ROPE_CLOUD_LINE = [0x05, 0x06]
+SMALL_BUSH_LEFT = [0x73, 0x7A, 0x85, 0x88, 0xC3]
+SMALL_BUSH_MIDDLE = [0x74, 0x7B, 0x86, 0x89, 0xC3]
+SMALL_BUSH_RIGHT = [0x79, 0x80, 0x87, 0x8E, 0xC3]
+DIAGONAL_PIPE_TILES = [0xC4, 0xC5, 0xC7, 0xEC, 0xED, 0xC6, 0xC7, 0xEE, 0x59, 0x5A, 0xEF, 0xC7, 0xEE, 0x59, 0x5B, 0x5C]
 LEVEL_VERTICAL_TABLE = [
     0x00, 0x00, 0x80, 0x01, 0x81, 0x02, 0x82, 0x03,
     0x83, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
@@ -609,6 +629,290 @@ def write_map16_preview_png(
     }
 
 
+def map16_tile_words(map16_words: list[int], map16_id: int) -> list[int] | None:
+    word_offset = map16_id * 4
+    if word_offset < 0 or word_offset + 4 > len(map16_words):
+        return None
+    return map16_words[word_offset : word_offset + 4]
+
+
+def blit_map16_tile(
+    rgba: bytearray,
+    canvas_width: int,
+    x0: int,
+    y0: int,
+    map16_id: int,
+    map16_words: list[int],
+    vram_4bpp: bytes,
+    fg_palettes_rgb: list[list[int]],
+) -> bool:
+    words = map16_tile_words(map16_words, map16_id)
+    if words is None:
+        return False
+    vram_tile_count = len(vram_4bpp) // 32
+    for sub, word in enumerate(words):
+        tile_id = word & 0x03FF
+        if tile_id >= vram_tile_count:
+            continue
+        tile_bytes = vram_4bpp[tile_id * 32 : (tile_id + 1) * 32]
+        tile_pixels = decode_4bpp_tile(tile_bytes)
+        sub_x = x0 + (8 if sub & 1 else 0)
+        sub_y = y0 + (8 if sub & 2 else 0)
+        blit_8x8_tile(
+            rgba,
+            canvas_width,
+            sub_x,
+            sub_y,
+            tile_pixels,
+            palette_from_tile_word(word, fg_palettes_rgb),
+            x_flip=(word & 0x4000) != 0,
+            y_flip=(word & 0x8000) != 0,
+        )
+    return True
+
+
+def write_level_layout_preview_png(
+    path: Path,
+    width_tiles: int,
+    height_tiles: int,
+    placed_tiles: list[dict[str, Any]],
+    map16_words: list[int],
+    vram_4bpp: bytes,
+    fg_palettes_rgb: list[list[int]],
+) -> dict[str, Any]:
+    width = width_tiles * 16
+    height = height_tiles * 16
+    rgba = bytearray([0, 0, 0, 0] * width * height)
+    rendered = 0
+    for placed in placed_tiles:
+        x = int(placed["x"])
+        y = int(placed["y"])
+        if x < 0 or y < 0 or x >= width_tiles or y >= height_tiles:
+            continue
+        if blit_map16_tile(
+            rgba,
+            width,
+            x * 16,
+            y * 16,
+            int(placed["map16"]),
+            map16_words,
+            vram_4bpp,
+            fg_palettes_rgb,
+        ):
+            rendered += 1
+    return {
+        "file": str(path),
+        "sha1": write_rgba_png(path, width, height, bytes(rgba)),
+        "width": width,
+        "height": height,
+        "width_tiles": width_tiles,
+        "height_tiles": height_tiles,
+        "placed_tile_count": len(placed_tiles),
+        "rendered_tile_count": rendered,
+        "format": "partial_level_preview_from_object_map16_ids",
+    }
+
+
+def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, Any]]) -> dict[str, Any]:
+    width_tiles = int(header["width_tiles"])
+    height_tiles = max(int(header["height_tiles"]), 32)
+    placed: list[dict[str, Any]] = []
+    unsupported: dict[str, int] = {}
+
+    def place(x: int, y: int, page: int, low: int, source: str) -> None:
+        if low == 0xFF:
+            return
+        if 0 <= x < width_tiles and 0 <= y < height_tiles:
+            placed.append({"x": x, "y": y, "map16": page * 0x100 + low, "source": source})
+
+    def fill_rect(x: int, y: int, width: int, height: int, page: int, low: int, source: str) -> None:
+        for yy in range(height):
+            for xx in range(width):
+                place(x + xx, y + yy, page, low, source)
+
+    def render_generic(obj: dict[str, Any], x: int, y: int, width: int, height: int) -> None:
+        k = int(obj["object_id"]) - 1
+        if 0 <= k < len(GENERIC_REPEATED_TILES):
+            page = 1 if k >= 7 else 0
+            fill_rect(x, y, width, height, page, GENERIC_REPEATED_TILES[k], f"std_generic_{k:02X}")
+
+    def render_standard_ledge(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        width = (size & 0x0F) + 1
+        lower_rows = size >> 4
+        for xx in range(width):
+            place(x + xx, y, 1, 0x00, "standard_ledge_top")
+        for yy in range(1, lower_rows + 1):
+            for xx in range(width):
+                place(x + xx, y + yy, 0, 0x3F, "standard_ledge_fill")
+
+    def render_ground_edge(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        kind = size & 0x0F
+        rows = (size >> 4) + 1
+        if kind >= len(GROUND_EDGE_TOP):
+            return
+        top_page = 1 if kind >= 3 else 0
+        place(x, y, top_page, GROUND_EDGE_TOP[kind], "ground_edge_top")
+        if rows <= 1:
+            return
+        mid_page = 1 if kind >= 3 and kind < 9 or kind >= 11 else 0
+        place(x, y + 1, mid_page, GROUND_EDGE_MIDDLE1[kind], "ground_edge_middle")
+        for yy in range(2, rows):
+            place(x, y + yy, mid_page, GROUND_EDGE_MIDDLE2[kind], "ground_edge_middle")
+        if kind >= 11:
+            place(x, y + rows, 1, GROUND_EDGE_BOTTOM[kind], "ground_edge_bottom")
+
+    def render_vertical_pipe(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        rows = (size >> 4) + 1
+        pipe_type = size & 0x0F
+        if pipe_type >= len(VERTICAL_PIPE_TOP_LEFT):
+            pipe_type = 0
+        place(x, y, 1, VERTICAL_PIPE_TOP_LEFT[pipe_type], "vertical_pipe_top_left")
+        place(x + 1, y, 1, VERTICAL_PIPE_TOP_RIGHT[pipe_type], "vertical_pipe_top_right")
+        for yy in range(1, rows):
+            place(x, y + yy, 1, 0x35, "vertical_pipe_shaft_left")
+            place(x + 1, y + yy, 1, 0x36, "vertical_pipe_shaft_right")
+        if pipe_type >= 2:
+            place(x, y + rows, 1, VERTICAL_PIPE_BOTTOM_LEFT[pipe_type], "vertical_pipe_bottom_left")
+            place(x + 1, y + rows, 1, VERTICAL_PIPE_BOTTOM_RIGHT[pipe_type], "vertical_pipe_bottom_right")
+
+    def render_midway_goal(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        rows = max(1, size >> 4)
+        goal = (size & 0x0F) != 0
+        top = GOAL_TOP if goal else MIDWAY_TOP
+        middle = GOAL_MIDDLE if goal else MIDWAY_MIDDLE
+        bottom = GOAL_BOTTOM if goal else MIDWAY_BOTTOM
+        for xx in range(3):
+            place(x + xx, y, 0, top[xx], "goal_top" if goal else "midway_top")
+            for yy in range(1, rows):
+                place(x + xx, y + yy, 0, middle[xx], "goal_middle" if goal else "midway_middle")
+            place(x + xx, y + rows, 0, bottom[xx], "goal_bottom" if goal else "midway_bottom")
+
+    def render_small_bush(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        width = (size & 0x0F) + 1
+        kind = min(size >> 4, len(SMALL_BUSH_LEFT) - 1)
+        place(x, y, 0, SMALL_BUSH_LEFT[kind], "small_bush_left")
+        for xx in range(1, max(1, width - 1)):
+            place(x + xx, y, 0, SMALL_BUSH_MIDDLE[kind], "small_bush_middle")
+        if width > 1:
+            place(x + width - 1, y, 0, SMALL_BUSH_RIGHT[kind], "small_bush_right")
+
+    def render_diagonal_pipe(obj: dict[str, Any], x: int, y: int) -> None:
+        for yy in range(4):
+            for xx in range(4):
+                place(x + xx, y + yy, 1, DIAGONAL_PIPE_TILES[yy * 4 + xx], "diagonal_pipe")
+
+    def render_slope_block(obj: dict[str, Any], x: int, y: int, size: int, left: bool) -> None:
+        rows = (size >> 4) + 1
+        width = max(2, (size & 0x0F) + 1)
+        for yy in range(rows):
+            solid = min(width, yy + 1)
+            start = 0 if left else width - solid
+            for xx in range(start, start + solid):
+                place(x + xx, y + yy, 0, 0x3F, "slope_fill")
+            edge_x = start + solid - 1 if left else start
+            place(x + edge_x, y + yy, 1, 0xAA if left else 0xAF, "slope_edge")
+
+    for obj in objects:
+        placement = obj["placement"]
+        x = int(placement["x_tile"])
+        y = int(placement["y_tile"])
+        obj_id = int(obj["object_id"])
+        size = int(obj["size_or_type"])
+        width = (size & 0x0F) + 1
+        height = (size >> 4) + 1
+
+        if 1 <= obj_id <= 0x0E:
+            render_generic(obj, x, y, width, height)
+        elif obj_id == 0x0F:
+            render_vertical_pipe(obj, x, y, size)
+        elif obj_id == 0x12:
+            render_slope_block(obj, x, y, size, left=((size & 0x0F) <= 2))
+        elif obj_id == 0x13:
+            render_ground_edge(obj, x, y, size)
+        elif obj_id == 0x14:
+            render_standard_ledge(obj, x, y, size)
+        elif obj_id == 0x15:
+            render_midway_goal(obj, x, y, size)
+        elif obj_id == 0x17:
+            tile_kind = min(size >> 4, len(ROPE_CLOUD_LINE) - 1)
+            fill_rect(x, y, width, 1, 1, ROPE_CLOUD_LINE[tile_kind], "rope_cloud_line")
+        elif obj_id == 0x1F:
+            rows = max(1, size >> 4)
+            place(x, y, 1, 0x53, "skinny_vertical_top")
+            for yy in range(1, rows):
+                place(x, y + yy, 1, 0x54, "skinny_vertical_middle")
+            place(x, y + rows, 1, 0x55, "skinny_vertical_bottom")
+        elif obj_id == 0x21:
+            fill_width = size + 1
+            for xx in range(fill_width):
+                place(x + xx, y, 1, 0x00, "wide_scale_ledge_top")
+            for yy in range(1, 3):
+                for xx in range(fill_width):
+                    place(x + xx, y + yy, 0, 0x3F, "wide_scale_ledge_fill")
+        elif obj_id == 0x39:
+            render_diagonal_pipe(obj, x, y)
+        elif obj_id == 0x3A:
+            render_slope_block(obj, x, y, size, left=True)
+        elif obj_id == 0x3B:
+            render_slope_block(obj, x, y, size, left=False)
+        elif obj_id == 0x3F:
+            render_small_bush(obj, x, y, size)
+        elif obj_id == 0x00 and size == 0x41:
+            place(x, y, 0, 0x2D, "yoshi_coin_top")
+            place(x, y + 1, 0, 0x2E, "yoshi_coin_bottom")
+        elif obj_id == 0x00 and size in (0x86, 0x8E):
+            place(x, y, 0, 0x6A, "extended_switch_or_goal_marker")
+        elif obj_id == 0x00 and size == 0x00:
+            continue
+        else:
+            unsupported[f"{obj_id:02X}"] = unsupported.get(f"{obj_id:02X}", 0) + 1
+
+    return {
+        "status": "partial",
+        "width_tiles": width_tiles,
+        "height_tiles": height_tiles,
+        "placed_tiles": placed,
+        "placed_tile_count": len(placed),
+        "unsupported_object_counts": unsupported,
+        "notes": [
+            "This is a partial visual tilemap generated from a focused port of common vanilla object placement routines.",
+            "It preserves Map16 ids so final rendering uses each Map16 tile word's palette, priority, and flip bits.",
+            "It is not yet a complete 1:1 port of ProcessStandardAndTilesetSpecificObjects.",
+        ],
+    }
+
+
+def extract_level_layout_preview(
+    rom: Rom,
+    out_dir: Path,
+    level_key: str,
+    header: dict[str, Any],
+    objects: list[dict[str, Any]],
+) -> dict[str, Any]:
+    tilemap = build_partial_level_tilemap(header, objects)
+    tileset = int(header["tileset"])
+    fg_palettes_rgb = snes_words_to_rgb(rom.get_words(0x00B190, 96))
+    vram_4bpp, _uploads = level_fg_bg_vram(rom, tileset)
+    map16_words = rom.get_words(0x0D8000, (0xA100 - 0x8000) // 2)
+    key = f"level_{level_key}"
+    preview_path = out_dir / "levels" / f"{key}_partial_layout.png"
+    tilemap_path = out_dir / "levels" / f"{key}_partial_tilemap.json"
+    preview = write_level_layout_preview_png(
+        preview_path,
+        int(tilemap["width_tiles"]),
+        int(tilemap["height_tiles"]),
+        tilemap["placed_tiles"],
+        map16_words,
+        vram_4bpp,
+        fg_palettes_rgb,
+    )
+    preview["file"] = rel(preview_path, out_dir)
+    tilemap["preview_png"] = preview
+    tilemap["file"] = rel(tilemap_path, out_dir)
+    tilemap["sha1"] = write_json(tilemap_path, tilemap)
+    return tilemap
+
+
 def extract_level_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header: dict[str, Any]) -> dict[str, Any]:
     tileset = int(header["tileset"])
     fg_palette_index = int(header["fg_palette"])
@@ -636,11 +940,17 @@ def extract_level_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header
         "status": "preview",
         "notes": [
             "Uses the vanilla foreground/background GFX upload list for this level tileset.",
-            "Map16 preview renders raw Map16 tile words; object expansion into the level tilemap is still pending.",
+            "Map16 preview renders raw Map16 tile words; full 1:1 object expansion is still pending.",
+            "SNES 4bpp BG graphics do not carry a final palette by themselves; Map16/tilemap words provide the palette bits used by layout previews.",
         ],
         "level_id": level_key,
         "tileset": tileset,
         "fg_palette": fg_palette_index,
+        "palette_mapping": {
+            "tile_word_palette_bits": "bits 10-12",
+            "foreground_palette_source": "palettes/global_palettes.json foreground rows",
+            "foreground_rows_used_for_bg_palettes_2_to_7": True,
+        },
         "uploads": uploads,
         "vram": {
             "file": rel(vram_path, out_dir),
@@ -716,6 +1026,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
 
     level_key = f"{level_id:03X}"
     tileset_assets = extract_level_tileset_assets(rom, out_dir, level_key, header)
+    layout_preview = extract_level_layout_preview(rom, out_dir, level_key, header, parsed_layer1["objects"])
     level_path = out_dir / "levels" / f"level_{level_key}.json"
     payload = {
         "level_id": level_key,
@@ -751,6 +1062,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
         },
         "screen_exits": parsed_layer1["screen_exits"],
         "tileset_assets": tileset_assets,
+        "layout_preview": layout_preview,
     }
     level_sha = write_json(level_path, payload)
     return {
@@ -766,6 +1078,12 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
             "file": tileset_assets["file"],
             "atlas_png": tileset_assets["atlas_png"]["file"],
             "map16_preview_png": tileset_assets["map16_preview_png"]["file"],
+        },
+        "layout_preview": {
+            "file": layout_preview["file"],
+            "preview_png": layout_preview["preview_png"]["file"],
+            "status": layout_preview["status"],
+            "placed_tile_count": layout_preview["placed_tile_count"],
         },
     }
 

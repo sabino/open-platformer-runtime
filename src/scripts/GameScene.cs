@@ -140,9 +140,10 @@ public partial class GameScene : Node2D
 
     private void BuildWorld()
     {
-        AddSolid(new Rect2(0, 192, 3584, 64), new Color(0.20f, 0.55f, 0.25f, 1.0f));
-        AddSolid(new Rect2(240, 160, 48, 32), new Color(0.55f, 0.42f, 0.20f, 1.0f));
-        AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 1.0f));
+        AddGeneratedLevelPreview();
+        AddSolid(new Rect2(0, 192, 3584, 64), new Color(0.20f, 0.55f, 0.25f, 0.22f));
+        AddSolid(new Rect2(240, 160, 48, 32), new Color(0.55f, 0.42f, 0.20f, 0.22f));
+        AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 0.22f));
         AddPipeMarker(new Rect2(416, 112, 32, 80));
         AddObjectMarkers();
 
@@ -162,6 +163,32 @@ public partial class GameScene : Node2D
             Size = rect.Size,
         };
         AddChild(node);
+    }
+
+    private void AddGeneratedLevelPreview()
+    {
+        const string previewPath = "res://generated/smw/levels/level_105_partial_layout.png";
+        if (!FileAccess.FileExists(previewPath))
+        {
+            return;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(previewPath));
+        if (image == null || image.IsEmpty())
+        {
+            return;
+        }
+
+        var sprite = new Sprite2D
+        {
+            Name = "GeneratedLevelLayoutPreview",
+            Texture = ImageTexture.CreateFromImage(image),
+            Position = Vector2.Zero,
+            Centered = false,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            ZIndex = -10,
+        };
+        AddChild(sprite);
     }
 
     private void AddPipeMarker(Rect2 rect)
@@ -257,8 +284,11 @@ public partial class GameScene : Node2D
         AddPreviewLabel(layer, "Map16", new Vector2(636, 20));
         AddPreviewImage(layer, "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png", new Vector2(636, 44), new Vector2(0.42f, 0.42f));
 
-        AddPreviewLabel(layer, "Player GFX32", new Vector2(496, 188));
-        AddPreviewImage(layer, "res://generated/smw/player/gfx32_player_palette0.png", new Vector2(496, 212), new Vector2(0.42f, 0.42f));
+        AddPreviewLabel(layer, "Layout", new Vector2(496, 188));
+        AddPreviewImage(layer, "res://generated/smw/levels/level_105_partial_layout.png", new Vector2(496, 212), new Vector2(0.08f, 0.08f));
+
+        AddPreviewLabel(layer, "Player GFX32", new Vector2(636, 188));
+        AddPreviewImage(layer, "res://generated/smw/player/gfx32_player_palette0.png", new Vector2(636, 212), new Vector2(0.42f, 0.42f));
     }
 
     private static void AddPreviewLabel(Node parent, string text, Vector2 position)
