@@ -28,6 +28,8 @@ Runtime player graphics note: `GameScene` now draws Mario from the generated GFX
 
 Pipe target layout note: level `0CB` uses rope tileset `8`. The partial object expander now covers standard horizontal pipes and the rope mushroom top/column objects used there, so the generated `level_0CB_partial_tilemap.json` contains a usable platform layout instead of only the goal tape and Yoshi coin markers.
 
+Runtime level asset note: `GameScene` loads the current level through `generated/smw/manifest.json` and uses the manifest's per-level `tileset_assets` and `layout_preview` paths. Level `105` is still the startup level, but the renderer no longer assumes `level_105_tileset7_*` filenames internally.
+
 The key transition invariant is:
 
 ```text

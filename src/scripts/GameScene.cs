@@ -22,6 +22,11 @@ public partial class GameScene : Node2D
     private Label? _hud;
     private SmwAudio? _audio;
     private ImageTexture? _playerTexture;
+    private string _currentLevelId = "105";
+    private string _levelGfxAtlasPath = "res://generated/smw/tilesets/level_105_tileset7_8x8.png";
+    private string _levelMap16AtlasPath = "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png";
+    private string _levelLayoutPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
+    private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
     private float _cameraX;
     private int _lastPlayerPose = -1;
 
@@ -34,7 +39,7 @@ public partial class GameScene : Node2D
         BuildWorld();
         BuildPlayer();
         BuildHud();
-        GD.Print($"smw-runtime: map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public override void _PhysicsProcess(double delta)
@@ -77,99 +82,136 @@ public partial class GameScene : Node2D
 
     private void LoadAssetPack()
     {
+        LoadPlayerGraphicsMetadata();
+        LoadLevelData(_currentLevelId);
+    }
+
+    private bool LoadLevelData(string levelId)
+    {
+        _screenExits.Clear();
+        _levelObjects.Clear();
+        _placedTiles.Clear();
+
         if (!FileAccess.FileExists("res://generated/smw/manifest.json"))
         {
-            return;
+            return false;
         }
 
         using var file = FileAccess.Open("res://generated/smw/manifest.json", FileAccess.ModeFlags.Read);
         if (file == null)
         {
-            return;
+            return false;
         }
 
         var parsed = Json.ParseString(file.GetAsText());
         if (parsed.VariantType != Variant.Type.Dictionary)
         {
-            return;
+            return false;
         }
 
         var manifest = parsed.AsGodotDictionary();
         if (!manifest.TryGetValue("levels", out var levelsVariant) || levelsVariant.VariantType != Variant.Type.Dictionary)
         {
-            return;
+            return false;
         }
 
         var levels = levelsVariant.AsGodotDictionary();
-        if (!levels.TryGetValue("105", out var levelVariant) || levelVariant.VariantType != Variant.Type.Dictionary)
+        if (!levels.TryGetValue(levelId, out var levelVariant) || levelVariant.VariantType != Variant.Type.Dictionary)
         {
-            return;
+            return false;
         }
 
         var level = levelVariant.AsGodotDictionary();
-        if (!level.TryGetValue("screen_exits", out var exitsVariant) || exitsVariant.VariantType != Variant.Type.Array)
-        {
-            return;
-        }
+        _currentLevelId = levelId;
+        ApplyLevelAssetPaths(level);
 
-        foreach (var exitVariant in exitsVariant.AsGodotArray())
+        if (level.TryGetValue("screen_exits", out var exitsVariant) && exitsVariant.VariantType == Variant.Type.Array)
         {
-            if (exitVariant.VariantType == Variant.Type.Dictionary)
+            foreach (var exitVariant in exitsVariant.AsGodotArray())
             {
-                _screenExits.Add(exitVariant.AsGodotDictionary());
+                if (exitVariant.VariantType == Variant.Type.Dictionary)
+                {
+                    _screenExits.Add(exitVariant.AsGodotDictionary());
+                }
             }
         }
 
         if (!level.TryGetValue("file", out var fileVariant))
         {
-            return;
+            return false;
         }
 
         var levelPath = $"res://generated/smw/{fileVariant.AsString()}";
         if (!FileAccess.FileExists(levelPath))
         {
-            return;
+            return false;
         }
 
         using var levelFile = FileAccess.Open(levelPath, FileAccess.ModeFlags.Read);
         if (levelFile == null)
         {
-            return;
+            return false;
         }
 
         var levelParsed = Json.ParseString(levelFile.GetAsText());
         if (levelParsed.VariantType != Variant.Type.Dictionary)
         {
-            return;
+            return false;
         }
 
         var levelDetails = levelParsed.AsGodotDictionary();
         if (!levelDetails.TryGetValue("layer1", out var layer1Variant) || layer1Variant.VariantType != Variant.Type.Dictionary)
         {
-            return;
+            return false;
         }
 
         var layer1 = layer1Variant.AsGodotDictionary();
-        if (!layer1.TryGetValue("objects", out var objectsVariant) || objectsVariant.VariantType != Variant.Type.Array)
+        if (layer1.TryGetValue("objects", out var objectsVariant) && objectsVariant.VariantType == Variant.Type.Array)
         {
-            return;
-        }
-
-        foreach (var objectVariant in objectsVariant.AsGodotArray())
-        {
-            if (objectVariant.VariantType == Variant.Type.Dictionary)
+            foreach (var objectVariant in objectsVariant.AsGodotArray())
             {
-                _levelObjects.Add(objectVariant.AsGodotDictionary());
+                if (objectVariant.VariantType == Variant.Type.Dictionary)
+                {
+                    _levelObjects.Add(objectVariant.AsGodotDictionary());
+                }
             }
         }
 
-        LoadPlacedTiles();
-        LoadPlayerGraphicsMetadata();
+        LoadPlacedTiles(_levelTilemapPath);
+        return true;
     }
 
-    private void LoadPlacedTiles()
+    private void ApplyLevelAssetPaths(Godot.Collections.Dictionary level)
     {
-        const string tilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
+        if (level.TryGetValue("tileset_assets", out var tilesetVariant) && tilesetVariant.VariantType == Variant.Type.Dictionary)
+        {
+            var tileset = tilesetVariant.AsGodotDictionary();
+            if (tileset.TryGetValue("atlas_png", out var atlasVariant))
+            {
+                _levelGfxAtlasPath = $"res://generated/smw/{atlasVariant.AsString()}";
+            }
+            if (tileset.TryGetValue("map16_preview_png", out var map16Variant))
+            {
+                _levelMap16AtlasPath = $"res://generated/smw/{map16Variant.AsString()}";
+            }
+        }
+
+        if (level.TryGetValue("layout_preview", out var layoutVariant) && layoutVariant.VariantType == Variant.Type.Dictionary)
+        {
+            var layout = layoutVariant.AsGodotDictionary();
+            if (layout.TryGetValue("file", out var tilemapVariant))
+            {
+                _levelTilemapPath = $"res://generated/smw/{tilemapVariant.AsString()}";
+            }
+            if (layout.TryGetValue("preview_png", out var previewVariant))
+            {
+                _levelLayoutPreviewPath = $"res://generated/smw/{previewVariant.AsString()}";
+            }
+        }
+    }
+
+    private void LoadPlacedTiles(string tilemapPath)
+    {
         if (!FileAccess.FileExists(tilemapPath))
         {
             return;
@@ -281,13 +323,12 @@ public partial class GameScene : Node2D
 
     private bool AddGeneratedMap16Tiles()
     {
-        const string map16AtlasPath = "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png";
-        if (_placedTiles.Count == 0 || !FileAccess.FileExists(map16AtlasPath))
+        if (_placedTiles.Count == 0 || !FileAccess.FileExists(_levelMap16AtlasPath))
         {
             return false;
         }
 
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(map16AtlasPath));
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelMap16AtlasPath));
         if (image == null || image.IsEmpty())
         {
             return false;
@@ -464,13 +505,12 @@ public partial class GameScene : Node2D
 
     private void AddGeneratedLevelPreview()
     {
-        const string previewPath = "res://generated/smw/levels/level_105_partial_layout.png";
-        if (!FileAccess.FileExists(previewPath))
+        if (!FileAccess.FileExists(_levelLayoutPreviewPath))
         {
             return;
         }
 
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(previewPath));
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelLayoutPreviewPath));
         if (image == null || image.IsEmpty())
         {
             return;
@@ -723,13 +763,13 @@ public partial class GameScene : Node2D
         layer.AddChild(panel);
 
         AddPreviewLabel(layer, "Level GFX", new Vector2(496, 20));
-        AddPreviewImage(layer, "res://generated/smw/tilesets/level_105_tileset7_8x8.png", new Vector2(496, 44), Vector2.One);
+        AddPreviewImage(layer, _levelGfxAtlasPath, new Vector2(496, 44), Vector2.One);
 
         AddPreviewLabel(layer, "Map16", new Vector2(636, 20));
-        AddPreviewImage(layer, "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png", new Vector2(636, 44), new Vector2(0.42f, 0.42f));
+        AddPreviewImage(layer, _levelMap16AtlasPath, new Vector2(636, 44), new Vector2(0.42f, 0.42f));
 
         AddPreviewLabel(layer, "Layout", new Vector2(496, 188));
-        AddPreviewImage(layer, "res://generated/smw/levels/level_105_partial_layout.png", new Vector2(496, 212), new Vector2(0.08f, 0.08f));
+        AddPreviewImage(layer, _levelLayoutPreviewPath, new Vector2(496, 212), new Vector2(0.08f, 0.08f));
 
         AddPreviewLabel(layer, "Player GFX32", new Vector2(636, 188));
         AddPreviewImage(layer, "res://generated/smw/player/gfx32_player_palette0.png", new Vector2(636, 212), new Vector2(0.42f, 0.42f));
