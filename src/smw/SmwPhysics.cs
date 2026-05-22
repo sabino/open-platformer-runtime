@@ -91,6 +91,8 @@ public sealed class SmwPhysics
         public bool Run;
     }
 
+    public readonly record struct SlopeSurface(float X0, float Y0, float X1, float Y1);
+
     public PlayerState MakeState(int xPx, int yPx)
     {
         return new PlayerState
@@ -103,6 +105,15 @@ public sealed class SmwPhysics
 
     public void Step(ref PlayerState state, FrameInput input, IReadOnlyList<Rect2> solids)
     {
+        Step(ref state, input, solids, Array.Empty<SlopeSurface>());
+    }
+
+    public void Step(
+        ref PlayerState state,
+        FrameInput input,
+        IReadOnlyList<Rect2> solids,
+        IReadOnlyList<SlopeSurface> slopes)
+    {
         ApplyHorizontal(ref state, input);
         ApplyJumpAndGravity(ref state, input);
 
@@ -112,6 +123,7 @@ public sealed class SmwPhysics
         IntegrateY(ref state);
         state.OnGround = false;
         ResolveAxis(ref state, solids, horizontal: false);
+        ResolveSlopes(ref state, slopes);
     }
 
     public TraceState CaptureTrace(PlayerState state)
@@ -280,6 +292,48 @@ public sealed class SmwPhysics
             }
 
             rect = PlayerRect(state);
+        }
+    }
+
+    private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes)
+    {
+        if (slopes.Count == 0)
+        {
+            return;
+        }
+
+        var footX = state.XFloat + PlayerWidth * 0.5f;
+        var bottom = state.YFloat + PlayerHeight;
+        foreach (var slope in slopes)
+        {
+            var minX = MathF.Min(slope.X0, slope.X1);
+            var maxX = MathF.Max(slope.X0, slope.X1);
+            if (footX < minX || footX > maxX)
+            {
+                continue;
+            }
+
+            var t = maxX == minX ? 0.0f : (footX - slope.X0) / (slope.X1 - slope.X0);
+            if (t < 0.0f || t > 1.0f)
+            {
+                continue;
+            }
+
+            var surfaceY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            if (bottom < surfaceY - 6.0f || bottom > surfaceY + 16.0f)
+            {
+                continue;
+            }
+
+            state.Y = (int)MathF.Round(surfaceY - PlayerHeight);
+            state.SubY = 0;
+            state.SubYSpeed = 0;
+            if (state.YSpeed > 0)
+            {
+                state.YSpeed = 0;
+            }
+            state.OnGround = true;
+            return;
         }
     }
 

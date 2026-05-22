@@ -23,4 +23,5 @@
 - Decoded vanilla Layer 2 RLE background tilemaps into generated preview layers and rendered them behind the runtime Layer 1 Map16 placements.
 - Corrected sprite spawn metadata and runtime markers to use the native `yyyyEESY / XXXXssss / id` screen, X, and Y bit layout.
 - Corrected imported Level 1/2 object placement to match Lunar Magic Universal's `x=b1 low nibble` and `y=b0 low 5 bits` decode, and aligned more pipe/slope/diagonal ledge Map16 projection rules with its `lmcore` renderer.
+- Added runtime slope-surface collision for imported diagonal pipe, diagonal ledge, and steep-slope tile clusters so those objects no longer become rectangular walls.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.

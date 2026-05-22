@@ -14,6 +14,7 @@ public partial class GameScene : Node2D
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
+    private readonly List<SmwPhysics.SlopeSurface> _slopes = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
     private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
     private readonly List<Godot.Collections.Dictionary> _layer2Objects = [];
@@ -88,7 +89,7 @@ public partial class GameScene : Node2D
             _audio?.PlaySpinJump();
         }
 
-        _physics.Step(ref _state, frameInput, _solids);
+        _physics.Step(ref _state, frameInput, _solids, _slopes);
         UpdateCamera();
 
         if (_player != null)
@@ -458,6 +459,7 @@ public partial class GameScene : Node2D
     private void BuildWorld()
     {
         _solids.Clear();
+        _slopes.Clear();
         StartWorldRoot();
         AddWorldBackground();
         AddLayer2BackgroundPreview();
@@ -580,9 +582,14 @@ public partial class GameScene : Node2D
     private void AddGeneratedCollision()
     {
         var solidTiles = new HashSet<(int X, int Y)>();
+        var slopeTiles = new HashSet<(int X, int Y)>();
         foreach (var tile in _placedTiles)
         {
-            if (IsSolidMap16Source(tile.Source))
+            if (IsSlopeSurfaceSource(tile.Source))
+            {
+                slopeTiles.Add((tile.X, tile.Y));
+            }
+            else if (IsSolidMap16Source(tile.Source))
             {
                 solidTiles.Add((tile.X, tile.Y));
             }
@@ -592,6 +599,94 @@ public partial class GameScene : Node2D
         {
             AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), debugVisible: true);
         }
+
+        foreach (var slope in BuildSlopeSurfaces(slopeTiles))
+        {
+            AddSlope(slope, debugVisible: true);
+        }
+    }
+
+    private static List<SmwPhysics.SlopeSurface> BuildSlopeSurfaces(HashSet<(int X, int Y)> slopeTiles)
+    {
+        var slopes = new List<SmwPhysics.SlopeSurface>();
+        foreach (var component in ConnectedTileComponents(slopeTiles))
+        {
+            var minX = int.MaxValue;
+            var maxX = int.MinValue;
+            var minY = int.MaxValue;
+            var maxY = int.MinValue;
+            foreach (var tile in component)
+            {
+                minX = Math.Min(minX, tile.X);
+                maxX = Math.Max(maxX, tile.X);
+                minY = Math.Min(minY, tile.Y);
+                maxY = Math.Max(maxY, tile.Y);
+            }
+
+            if (minX == int.MaxValue)
+            {
+                continue;
+            }
+
+            slopes.Add(new SmwPhysics.SlopeSurface(
+                minX * Map16TileSize,
+                (maxY + 1) * Map16TileSize + LevelVisualYOffset,
+                (maxX + 1) * Map16TileSize,
+                minY * Map16TileSize + LevelVisualYOffset));
+        }
+
+        return slopes;
+    }
+
+    private static List<List<(int X, int Y)>> ConnectedTileComponents(HashSet<(int X, int Y)> tiles)
+    {
+        var pending = new HashSet<(int X, int Y)>(tiles);
+        var components = new List<List<(int X, int Y)>>();
+        while (pending.Count > 0)
+        {
+            var start = FirstTile(pending);
+            pending.Remove(start);
+            var component = new List<(int X, int Y)>();
+            var queue = new Queue<(int X, int Y)>();
+            queue.Enqueue(start);
+            while (queue.Count > 0)
+            {
+                var tile = queue.Dequeue();
+                component.Add(tile);
+                foreach (var neighbor in NeighborTiles(tile))
+                {
+                    if (pending.Remove(neighbor))
+                    {
+                        queue.Enqueue(neighbor);
+                    }
+                }
+            }
+            components.Add(component);
+        }
+
+        return components;
+    }
+
+    private static (int X, int Y) FirstTile(HashSet<(int X, int Y)> tiles)
+    {
+        foreach (var tile in tiles)
+        {
+            return tile;
+        }
+
+        return (0, 0);
+    }
+
+    private static IEnumerable<(int X, int Y)> NeighborTiles((int X, int Y) tile)
+    {
+        yield return (tile.X + 1, tile.Y);
+        yield return (tile.X - 1, tile.Y);
+        yield return (tile.X, tile.Y + 1);
+        yield return (tile.X, tile.Y - 1);
+        yield return (tile.X + 1, tile.Y + 1);
+        yield return (tile.X - 1, tile.Y - 1);
+        yield return (tile.X + 1, tile.Y - 1);
+        yield return (tile.X - 1, tile.Y + 1);
     }
 
     private static List<Rect2> BuildMergedSolidRects(HashSet<(int X, int Y)> solidTiles)
@@ -689,6 +784,13 @@ public partial class GameScene : Node2D
             source.StartsWith("std_generic_", StringComparison.Ordinal);
     }
 
+    private static bool IsSlopeSurfaceSource(string source)
+    {
+        return source.Contains("diagonal_pipe", StringComparison.Ordinal) ||
+            source.Contains("diagonal_ledge", StringComparison.Ordinal) ||
+            source.Contains("steep_right_slope", StringComparison.Ordinal);
+    }
+
     private void AddSolid(Rect2 rect, Color color, bool debugVisible)
     {
         _solids.Add(rect);
@@ -703,6 +805,25 @@ public partial class GameScene : Node2D
             Position = rect.Position,
             Size = rect.Size,
         };
+        AddWorldChild(node);
+    }
+
+    private void AddSlope(SmwPhysics.SlopeSurface slope, bool debugVisible)
+    {
+        _slopes.Add(slope);
+        if (!debugVisible)
+        {
+            return;
+        }
+
+        var node = new Line2D
+        {
+            Width = 2.0f,
+            DefaultColor = new Color(1.0f, 0.15f, 0.65f, 0.75f),
+            ZIndex = 120,
+        };
+        node.AddPoint(new Vector2(slope.X0, slope.Y0));
+        node.AddPoint(new Vector2(slope.X1, slope.Y1));
         AddWorldChild(node);
     }
 
@@ -1168,7 +1289,7 @@ public partial class GameScene : Node2D
     private void PrintRuntimeState()
     {
         var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
-        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
