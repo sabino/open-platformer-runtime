@@ -26,6 +26,8 @@ Runtime collision note: `GameScene` now renders the generated Yoshi Island 1 Map
 
 Runtime player graphics note: `GameScene` now draws Mario from the generated GFX32 player atlas by composing the imported `PlayerGFXRt` head/body tile pointer entries into eight 8x8 sprites. The pose picker currently maps idle, walk, jump, and spin-jump to early pointer-table entries so the runtime uses original graphics instead of a placeholder rectangle. Exact animation states, cape/fire/small variants, tile flips, tile size selection, and OAM priority still need the direct SMW OAM assembly port.
 
+Pipe target layout note: level `0CB` uses rope tileset `8`. The partial object expander now covers standard horizontal pipes and the rope mushroom top/column objects used there, so the generated `level_0CB_partial_tilemap.json` contains a usable platform layout instead of only the goal tape and Yoshi coin markers.
+
 The key transition invariant is:
 
 ```text

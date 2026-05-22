@@ -15,6 +15,7 @@ The current first slice covers:
 - A debug asset overlay showing the imported level GFX, palette-aware Map16 preview, partial level layout preview, and player atlas while the level renderer is still being ported.
 - Runtime placement of the generated Yoshi Island 1 Map16 tilemap, with temporary merged collision rectangles derived from imported tile placement sources.
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
+- Partial object expansion for the Yoshi Island 1 direct pipe target `0CB`, including horizontal pipes and rope mushroom platforms in the generated Map16 tilemap.
 - A C# fixed-step Mario movement prototype using SMW velocity units and jump/gravity constants from the native reference.
 - Headless/import/build validation scripts that avoid opening a Wayland window and assert audio, Map16, collision, and player sprite loading.
 

@@ -57,6 +57,8 @@ VERTICAL_PIPE_TOP_LEFT = [0x33, 0x37, 0x39, 0x00, 0x00]
 VERTICAL_PIPE_TOP_RIGHT = [0x34, 0x38, 0x3A, 0x00, 0x00]
 VERTICAL_PIPE_BOTTOM_LEFT = [0x00, 0x00, 0x39, 0x33, 0x37]
 VERTICAL_PIPE_BOTTOM_RIGHT = [0x00, 0x00, 0x3A, 0x34, 0x38]
+HORIZONTAL_PIPE_END = [0x3B, 0x3C, 0x3B, 0x3F, 0x3B, 0x3C, 0x3B, 0x3F]
+HORIZONTAL_PIPE_SHAFT = [0x3D, 0x3E, 0x3D, 0x3E, 0x3D, 0x3E, 0x3D, 0x3E]
 GROUND_EDGE_TOP = [0x40, 0x41, 0x06, 0x45, 0x4B, 0x48, 0x4C, 0x01, 0x03, 0xB6, 0xB7, 0x45, 0x4B, 0x48, 0x4C]
 GROUND_EDGE_MIDDLE1 = [0x40, 0x41, 0x06, 0x4B, 0x4B, 0x4C, 0x4C, 0x40, 0x41, 0x4B, 0x4C, 0x4B, 0x4B, 0x4C, 0x4C]
 GROUND_EDGE_MIDDLE2 = [0x40, 0x41, 0x06, 0x4B, 0x4B, 0x4C, 0x4C, 0x40, 0x41, 0x4B, 0x4C, 0x4B, 0x4B, 0x4C, 0x4C]
@@ -72,6 +74,7 @@ SMALL_BUSH_LEFT = [0x73, 0x7A, 0x85, 0x88, 0xC3]
 SMALL_BUSH_MIDDLE = [0x74, 0x7B, 0x86, 0x89, 0xC3]
 SMALL_BUSH_RIGHT = [0x79, 0x80, 0x87, 0x8E, 0xC3]
 DIAGONAL_PIPE_TILES = [0xC4, 0xC5, 0xC7, 0xEC, 0xED, 0xC6, 0xC7, 0xEE, 0x59, 0x5A, 0xEF, 0xC7, 0xEE, 0x59, 0x5B, 0x5C]
+ROPE_TILESETS = {2, 6, 8}
 LEVEL_VERTICAL_TABLE = [
     0x00, 0x00, 0x80, 0x01, 0x81, 0x02, 0x82, 0x03,
     0x83, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
@@ -776,6 +779,16 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             place(x, y + rows, 1, VERTICAL_PIPE_BOTTOM_LEFT[pipe_type], "vertical_pipe_bottom_left")
             place(x + 1, y + rows, 1, VERTICAL_PIPE_BOTTOM_RIGHT[pipe_type], "vertical_pipe_bottom_right")
 
+    def render_horizontal_pipe(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        width = (size & 0x0F) + 2
+        pipe_type = (size & 0xF0) >> 3
+        for row in range(2):
+            tile_kind = min(pipe_type + row, len(HORIZONTAL_PIPE_END) - 1)
+            place(x, y + row, 1, HORIZONTAL_PIPE_END[tile_kind], "horizontal_pipe_end")
+            for xx in range(1, width - 1):
+                place(x + xx, y + row, 1, HORIZONTAL_PIPE_SHAFT[tile_kind], "horizontal_pipe_shaft")
+            place(x + width - 1, y + row, 1, HORIZONTAL_PIPE_END[tile_kind], "horizontal_pipe_end")
+
     def render_midway_goal(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         rows = max(1, size >> 4)
         goal = (size & 0x0F) != 0
@@ -813,12 +826,31 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             edge_x = start + solid - 1 if left else start
             place(x + edge_x, y + yy, 1, 0xAA if left else 0xAF, "slope_edge")
 
+    def render_rope_mushroom_top(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        width = (size & 0x0F) + 1
+        place(x, y, 1, 0x07, "rope_mushroom_top_left")
+        for xx in range(1, width - 1):
+            place(x + xx, y, 1, 0x08, "rope_mushroom_top_middle")
+        if width > 1:
+            place(x + width - 1, y, 1, 0x09, "rope_mushroom_top_right")
+
+    def render_rope_mushroom_column(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        width = (size & 0x0F) + 1
+        rows = (size >> 4) + 1
+        for yy in range(rows):
+            place(x, y + yy, 0, 0x73, "rope_mushroom_column_left")
+            for xx in range(1, width - 1):
+                place(x + xx, y + yy, 0, 0x74, "rope_mushroom_column_middle")
+            if width > 1:
+                place(x + width - 1, y + yy, 0, 0x75, "rope_mushroom_column_right")
+
     for obj in objects:
         placement = obj["placement"]
         x = int(placement["x_tile"])
         y = int(placement["y_tile"])
         obj_id = int(obj["object_id"])
         size = int(obj["size_or_type"])
+        tileset = int(header["tileset"])
         width = (size & 0x0F) + 1
         height = (size >> 4) + 1
 
@@ -826,6 +858,8 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             render_generic(obj, x, y, width, height)
         elif obj_id == 0x0F:
             render_vertical_pipe(obj, x, y, size)
+        elif obj_id == 0x10:
+            render_horizontal_pipe(obj, x, y, size)
         elif obj_id == 0x12:
             render_slope_block(obj, x, y, size, left=((size & 0x0F) <= 2))
         elif obj_id == 0x13:
@@ -856,6 +890,10 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             render_slope_block(obj, x, y, size, left=True)
         elif obj_id == 0x3B:
             render_slope_block(obj, x, y, size, left=False)
+        elif obj_id == 0x3C and tileset in ROPE_TILESETS:
+            render_rope_mushroom_top(obj, x, y, size)
+        elif obj_id == 0x3D and tileset in ROPE_TILESETS:
+            render_rope_mushroom_column(obj, x, y, size)
         elif obj_id == 0x3F:
             render_small_bush(obj, x, y, size)
         elif obj_id == 0x00 and size == 0x41:

@@ -32,7 +32,10 @@ for png in [
     out_dir / "player" / "gfx33_player_palette0.png",
     out_dir / "tilesets" / "level_105_tileset7_8x8.png",
     out_dir / "tilesets" / "level_105_tileset7_map16_preview.png",
+    out_dir / "tilesets" / "level_0CB_tileset8_8x8.png",
+    out_dir / "tilesets" / "level_0CB_tileset8_map16_preview.png",
     out_dir / "levels" / "level_105_partial_layout.png",
+    out_dir / "levels" / "level_0CB_partial_layout.png",
 ]:
     data = png.read_bytes()
     assert data.startswith(b"\x89PNG\r\n\x1a\n"), png
@@ -59,6 +62,14 @@ assert tilemap["placed_tile_count"] > 1000, tilemap["placed_tile_count"]
 assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
 assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
 assert any("Map16 tile word's palette" in note for note in tilemap["notes"]), tilemap["notes"]
+
+pipe_target_tilemap = json.loads((out_dir / "levels" / "level_0CB_partial_tilemap.json").read_text())
+assert pipe_target_tilemap["placed_tile_count"] > 100, pipe_target_tilemap["placed_tile_count"]
+assert pipe_target_tilemap["unsupported_object_counts"] == {}, pipe_target_tilemap["unsupported_object_counts"]
+target_sources = {tile["source"] for tile in pipe_target_tilemap["placed_tiles"]}
+assert "horizontal_pipe_end" in target_sources, target_sources
+assert "rope_mushroom_top_left" in target_sources, target_sources
+assert "rope_mushroom_column_left" in target_sources, target_sources
 
 audio = manifest["assets"]["audio"]
 assert audio["status"] == "partial", audio
@@ -91,5 +102,6 @@ print("smw-import check: YI1 pipe route 105 screen 07 -> 0CB secondary=0")
 print("smw-import check: player GFX32/GFX33 PNG atlases and categorization manifest present")
 print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview present")
 print("smw-import check: level 105 partial layout preview uses Map16 palette bits")
+print("smw-import check: level 0CB rope pipe target layout expands horizontal pipes and mushroom platforms")
 print("smw-import check: SPC banks and BRR preview WAVs present")
 PY

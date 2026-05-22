@@ -439,6 +439,7 @@ public partial class GameScene : Node2D
     {
         return source.Contains("ledge", StringComparison.Ordinal) ||
             source.Contains("ground", StringComparison.Ordinal) ||
+            source.Contains("mushroom", StringComparison.Ordinal) ||
             source.Contains("pipe", StringComparison.Ordinal) ||
             source.Contains("slope", StringComparison.Ordinal) ||
             source.StartsWith("std_generic_", StringComparison.Ordinal);
