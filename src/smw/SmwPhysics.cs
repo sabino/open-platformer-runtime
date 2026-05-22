@@ -5,7 +5,13 @@ using System.Collections.Generic;
 public sealed class SmwPhysics
 {
     public const int PlayerWidth = 14;
-    public const int PlayerHeight = 28;
+    public const int SmallPowerup = 0;
+    public const int BigPowerup = 1;
+    public const int CapePowerup = 2;
+    public const int FirePowerup = 3;
+    public const int SmallPlayerHeight = 16;
+    public const int BigPlayerHeight = 32;
+    public const int PlayerHeight = BigPlayerHeight;
 
     private const int WalkMax = 0x14;
     private const int RunMax = 0x24;
@@ -49,6 +55,7 @@ public sealed class SmwPhysics
         public int Facing;
         public int JumpHeldFrames;
         public int PMeter;
+        public int Powerup;
         public bool SpinJump;
 
         public float XFloat => X + SubX / 256.0f;
@@ -95,14 +102,24 @@ public sealed class SmwPhysics
 
     public readonly record struct SlopeSurface(float X0, float Y0, float X1, float Y1);
 
-    public PlayerState MakeState(int xPx, int yPx)
+    public PlayerState MakeState(int xPx, int yPx, int powerup = BigPowerup)
     {
         return new PlayerState
         {
             X = xPx,
             Y = yPx,
             Facing = 1,
+            Powerup = Math.Clamp(powerup, SmallPowerup, FirePowerup),
         };
+    }
+
+    public void SetPowerup(ref PlayerState state, int powerup)
+    {
+        powerup = Math.Clamp(powerup, SmallPowerup, FirePowerup);
+        var oldHeight = PlayerHeightForPowerup(state.Powerup);
+        state.Powerup = powerup;
+        var newHeight = PlayerHeightForPowerup(state.Powerup);
+        state.Y += oldHeight - newHeight;
     }
 
     public void Step(ref PlayerState state, FrameInput input, IReadOnlyList<Rect2> solids)
@@ -178,7 +195,17 @@ public sealed class SmwPhysics
     {
         return new Rect2(
             new Vector2(state.XFloat, state.YFloat),
-            new Vector2(PlayerWidth, PlayerHeight));
+            new Vector2(PlayerWidth, PlayerHeightFor(state)));
+    }
+
+    public static int PlayerHeightFor(PlayerState state)
+    {
+        return PlayerHeightForPowerup(state.Powerup);
+    }
+
+    public static int PlayerHeightForPowerup(int powerup)
+    {
+        return powerup == SmallPowerup ? SmallPlayerHeight : BigPlayerHeight;
     }
 
     private static void ApplyHorizontal(ref PlayerState state, FrameInput input)
@@ -308,7 +335,7 @@ public sealed class SmwPhysics
 
             if (horizontal)
             {
-                if (TryStepUp(ref state, solid, rect))
+                if (TryStepUp(ref state, solid, rect, PlayerHeightFor(state)))
                 {
                     rect = PlayerRect(state);
                     steppedOntoSolid = true;
@@ -331,7 +358,7 @@ public sealed class SmwPhysics
             {
                 if (state.YSpeed > 0)
                 {
-                    state.Y = (int)MathF.Round(solid.Position.Y - PlayerHeight);
+                    state.Y = (int)MathF.Round(solid.Position.Y - PlayerHeightFor(state));
                     state.OnGround = true;
                 }
                 else if (state.YSpeed < 0)
@@ -349,7 +376,7 @@ public sealed class SmwPhysics
         return steppedOntoSolid;
     }
 
-    private static bool TryStepUp(ref PlayerState state, Rect2 solid, Rect2 playerRect)
+    private static bool TryStepUp(ref PlayerState state, Rect2 solid, Rect2 playerRect, int playerHeight)
     {
         if (state.YSpeed < 0)
         {
@@ -363,7 +390,7 @@ public sealed class SmwPhysics
             return false;
         }
 
-        state.Y = (int)MathF.Round(solidTop - PlayerHeight);
+        state.Y = (int)MathF.Round(solidTop - playerHeight);
         state.SubY = 0;
         state.SubYSpeed = 0;
         return true;
@@ -377,7 +404,8 @@ public sealed class SmwPhysics
         }
 
         var footX = state.XFloat + PlayerWidth * 0.5f;
-        var bottom = state.YFloat + PlayerHeight;
+        var playerHeight = PlayerHeightFor(state);
+        var bottom = state.YFloat + playerHeight;
         foreach (var slope in slopes)
         {
             var minX = MathF.Min(slope.X0, slope.X1);
@@ -399,7 +427,7 @@ public sealed class SmwPhysics
                 continue;
             }
 
-            state.Y = (int)MathF.Round(surfaceY - PlayerHeight);
+            state.Y = (int)MathF.Round(surfaceY - playerHeight);
             state.SubY = 0;
             state.SubYSpeed = 0;
             if (state.YSpeed > 0)

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added explicit runtime player power-up state and small/big hitbox heights, preserving the player's feet when the form changes and exposing `--smw-test-powerup=small|big|cape|fire`.
+- Expanded `--smw-debug-overlays` with player hitbox/feet labels, camera bounds, collision outlines, sprite actor hitboxes, goal-tape trigger bounds, pipe trigger bounds, and coin/block semantic markers.
 - Added a C# internal APU probe that streams BRR samples from imported SPC banks through `AudioStreamGenerator`, including port-1 jump and two-note command probes.
 - Enabled the menu music-bank buttons with a native C# pattern sequencer that plays level, overworld, and credits previews from imported BRR instruments without WAV/MP3 playback.
 - Rendered generated Yoshi Island 1 Map16 tile placements at runtime and derived temporary merged collision rectangles from imported tile placement sources.

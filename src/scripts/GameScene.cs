@@ -8,7 +8,6 @@ public partial class GameScene : Node2D
     private const int Map16TileSize = 16;
     private const int Map16AtlasColumns = 16;
     private const int PlayerOamSpriteSlots = 8;
-    private const int BigMarioPowerup = 1;
     private const float LogicalViewportWidth = 256.0f;
     private const float LogicalViewportHeight = 224.0f;
     private const float CameraHorizontalAnchor = 0x80;
@@ -23,6 +22,7 @@ public partial class GameScene : Node2D
     private const float SpriteActorMaxFall = 4.0f;
     private const int PlayerHurtCooldownFrames = 90;
     private const int GoalTapeSpriteId = 0x7B;
+    private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -49,6 +49,10 @@ public partial class GameScene : Node2D
 
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
+    private Line2D? _playerHitboxGizmo;
+    private ColorRect? _playerFootGizmo;
+    private Label? _playerDebugLabel;
+    private Line2D? _cameraGizmo;
     private Label? _hud;
     private Label? _courseClearLabel;
     private CanvasLayer? _hudLayer;
@@ -68,6 +72,7 @@ public partial class GameScene : Node2D
     private bool _cameraInitialized;
     private int _lastPlayerPose = -1;
     private int _lastPlayerFacing = -1;
+    private int _lastPlayerPowerup = -1;
     private bool _pipeTransitionLatch;
     private int _playerHurtCooldown;
     private bool _courseClear;
@@ -125,6 +130,7 @@ public partial class GameScene : Node2D
         UpdateSpriteActors();
         CheckGoalTape();
         UpdateHud();
+        UpdateDebugGizmos();
         CheckPipeDebug();
     }
 
@@ -551,6 +557,8 @@ public partial class GameScene : Node2D
         _slopes.Clear();
         _spriteActors.Clear();
         _goalTapeTriggers.Clear();
+        _cameraGizmo?.QueueFree();
+        _cameraGizmo = null;
         StartWorldRoot();
         AddWorldBackground();
         AddLayer2BackgroundPreview();
@@ -573,8 +581,11 @@ public partial class GameScene : Node2D
         if (DebugOverlays)
         {
             AddPipeMarkers();
+            AddGoalTapeMarkers();
             AddObjectMarkers();
             AddSpriteMarkers();
+            AddTileSemanticMarkers();
+            BuildCameraGizmo();
 
             for (var i = 0; i < 20; i++)
             {
@@ -637,7 +648,7 @@ public partial class GameScene : Node2D
                 continue;
             }
 
-            var actor = CreateRuntimeSpriteActor(spawn);
+            var actor = CreateRuntimeSpriteActor(spawn, DebugOverlays);
             _spriteActors.Add(actor);
             AddWorldChild(actor.Node);
         }
@@ -648,7 +659,7 @@ public partial class GameScene : Node2D
         return spriteId is 0x4F or 0x83 or 0x8E or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7;
     }
 
-    private static RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn)
+    private static RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn, bool debugOverlays)
     {
         var color = SpriteActorColor(spawn.SpriteId);
         var node = new Node2D
@@ -665,6 +676,15 @@ public partial class GameScene : Node2D
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         node.AddChild(body);
+        if (debugOverlays)
+        {
+            AddRectOutline(
+                node,
+                new Rect2(Vector2.Zero, new Vector2(SpriteActorWidth, SpriteActorHeight)),
+                new Color(1.0f, 0.10f, 0.10f, 0.88f),
+                1.0f,
+                60);
+        }
         return new RuntimeSpriteActor
         {
             Node = node,
@@ -1048,6 +1068,20 @@ public partial class GameScene : Node2D
         };
     }
 
+    private static bool IsCoinMarkerTile(PlacedMap16Tile tile)
+    {
+        return tile.Source.Contains("coin", StringComparison.OrdinalIgnoreCase) ||
+            tile.Map16 is 0x002B or 0x002C or 0x002D or 0x002E;
+    }
+
+    private static bool IsDebugBlockMarkerTile(PlacedMap16Tile tile)
+    {
+        return tile.Source.StartsWith("std_generic_", StringComparison.Ordinal) ||
+            tile.Source.Contains("switch", StringComparison.OrdinalIgnoreCase) ||
+            tile.Source.Contains("goal_marker", StringComparison.OrdinalIgnoreCase) ||
+            tile.Source.Contains("midway", StringComparison.OrdinalIgnoreCase);
+    }
+
     private void AddSolid(Rect2 rect, Color color, bool debugVisible)
     {
         _solids.Add(rect);
@@ -1058,11 +1092,63 @@ public partial class GameScene : Node2D
 
         var node = new ColorRect
         {
+            Name = "CollisionDebugFill",
             Color = color,
             Position = rect.Position,
             Size = rect.Size,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = 90,
         };
         AddWorldChild(node);
+        AddRectOutline(
+            _worldRoot ?? this,
+            rect,
+            new Color(0.05f, 1.0f, 0.25f, 0.55f),
+            1.0f,
+            95);
+    }
+
+    private static void AddRectOutline(Node parent, Rect2 rect, Color color, float width, int zIndex)
+    {
+        var top = new ColorRect
+        {
+            Color = color,
+            Position = rect.Position,
+            Size = new Vector2(rect.Size.X, width),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = zIndex,
+        };
+        parent.AddChild(top);
+
+        var bottom = new ColorRect
+        {
+            Color = color,
+            Position = rect.Position + new Vector2(0, rect.Size.Y - width),
+            Size = new Vector2(rect.Size.X, width),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = zIndex,
+        };
+        parent.AddChild(bottom);
+
+        var left = new ColorRect
+        {
+            Color = color,
+            Position = rect.Position,
+            Size = new Vector2(width, rect.Size.Y),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = zIndex,
+        };
+        parent.AddChild(left);
+
+        var right = new ColorRect
+        {
+            Color = color,
+            Position = rect.Position + new Vector2(rect.Size.X - width, 0),
+            Size = new Vector2(width, rect.Size.Y),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = zIndex,
+        };
+        parent.AddChild(right);
     }
 
     private void AddSlope(SmwPhysics.SlopeSurface slope, bool debugVisible)
@@ -1121,6 +1207,35 @@ public partial class GameScene : Node2D
                 Size = entrance.Rect.Size,
             };
             AddWorldChild(node);
+            AddRectOutline(
+                _worldRoot ?? this,
+                entrance.Rect,
+                new Color(0.20f, 1.0f, 0.40f, 0.9f),
+                1.0f,
+                135);
+        }
+    }
+
+    private void AddGoalTapeMarkers()
+    {
+        foreach (var trigger in _goalTapeTriggers)
+        {
+            var node = new ColorRect
+            {
+                Name = "GoalTapeTriggerDebug",
+                Color = new Color(1.0f, 0.80f, 0.08f, 0.25f),
+                Position = trigger.Position,
+                Size = trigger.Size,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                ZIndex = 130,
+            };
+            AddWorldChild(node);
+            AddRectOutline(
+                _worldRoot ?? this,
+                trigger,
+                new Color(1.0f, 0.86f, 0.10f, 0.95f),
+                1.0f,
+                136);
         }
     }
 
@@ -1245,6 +1360,111 @@ public partial class GameScene : Node2D
         }
     }
 
+    private void AddTileSemanticMarkers()
+    {
+        foreach (var tile in _placedTiles)
+        {
+            if (!IsCoinMarkerTile(tile) && !IsDebugBlockMarkerTile(tile))
+            {
+                continue;
+            }
+
+            var rect = new Rect2(TileToWorld(tile.X, tile.Y), new Vector2(Map16TileSize, Map16TileSize));
+            var coin = IsCoinMarkerTile(tile);
+            var node = new ColorRect
+            {
+                Name = coin ? "CoinDebugMarker" : "BlockDebugMarker",
+                Color = coin ? new Color(1.0f, 0.90f, 0.05f, 0.32f) : new Color(0.35f, 0.65f, 1.0f, 0.24f),
+                Position = rect.Position + new Vector2(3, 3),
+                Size = rect.Size - new Vector2(6, 6),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                ZIndex = 125,
+            };
+            AddWorldChild(node);
+            AddRectOutline(
+                _worldRoot ?? this,
+                rect,
+                coin ? new Color(1.0f, 0.94f, 0.20f, 0.92f) : new Color(0.40f, 0.78f, 1.0f, 0.72f),
+                1.0f,
+                128);
+        }
+    }
+
+    private void BuildCameraGizmo()
+    {
+        if (!DebugOverlays)
+        {
+            return;
+        }
+
+        _cameraGizmo = new Line2D
+        {
+            Name = "CameraDebugGizmo",
+            Width = 1.0f,
+            DefaultColor = new Color(0.20f, 0.95f, 1.0f, 0.95f),
+            ZIndex = 250,
+        };
+        AddChild(_cameraGizmo);
+        UpdateCameraGizmo();
+    }
+
+    private void UpdateDebugGizmos()
+    {
+        if (!DebugOverlays)
+        {
+            return;
+        }
+
+        UpdatePlayerDebugGizmos();
+        UpdateCameraGizmo();
+    }
+
+    private void UpdateCameraGizmo()
+    {
+        if (_cameraGizmo == null)
+        {
+            return;
+        }
+
+        SetLineRect(
+            _cameraGizmo,
+            new Rect2(
+                new Vector2(MathF.Round(_cameraX), MathF.Round(_cameraY)),
+                new Vector2(LogicalViewportWidth, LogicalViewportHeight)));
+    }
+
+    private void UpdatePlayerDebugGizmos()
+    {
+        var height = SmwPhysics.PlayerHeightFor(_state);
+        if (_playerHitboxGizmo != null)
+        {
+            SetLineRect(_playerHitboxGizmo, new Rect2(Vector2.Zero, new Vector2(SmwPhysics.PlayerWidth, height)));
+        }
+        if (_playerFootGizmo != null)
+        {
+            _playerFootGizmo.Position = new Vector2(SmwPhysics.PlayerWidth * 0.5f - 1.0f, height - 2.0f);
+        }
+        if (_playerDebugLabel != null)
+        {
+            _playerDebugLabel.Text = $"pow={_state.Powerup} h={height} g={(_state.OnGround ? 1 : 0)}";
+            _playerDebugLabel.Position = new Vector2(-8.0f, -18.0f);
+        }
+    }
+
+    private static void SetLineRect(Line2D line, Rect2 rect)
+    {
+        line.ClearPoints();
+        var left = rect.Position.X;
+        var top = rect.Position.Y;
+        var right = rect.Position.X + rect.Size.X;
+        var bottom = rect.Position.Y + rect.Size.Y;
+        line.AddPoint(new Vector2(left, top));
+        line.AddPoint(new Vector2(right, top));
+        line.AddPoint(new Vector2(right, bottom));
+        line.AddPoint(new Vector2(left, bottom));
+        line.AddPoint(new Vector2(left, top));
+    }
+
     private void UpdateSpriteActors()
     {
         if (_playerHurtCooldown > 0)
@@ -1340,7 +1560,7 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var playerBottom = _state.YFloat + SmwPhysics.PlayerHeight;
+        var playerBottom = _state.YFloat + SmwPhysics.PlayerHeightFor(_state);
         var stomped = _state.YSpeed > 0 && playerBottom <= actor.Y + 10.0f;
         if (stomped)
         {
@@ -1358,6 +1578,11 @@ public partial class GameScene : Node2D
         }
 
         _playerHurtCooldown = PlayerHurtCooldownFrames;
+        if (_state.Powerup > SmwPhysics.SmallPowerup)
+        {
+            _physics.SetPowerup(ref _state, SmwPhysics.SmallPowerup);
+            UpdatePlayerGraphic(force: true);
+        }
         _state.XSpeed = _state.XFloat < actor.X ? -24 : 24;
         _state.YSpeed = -32;
         _state.SubXSpeed = 0;
@@ -1398,6 +1623,9 @@ public partial class GameScene : Node2D
 
     private void BuildPlayer()
     {
+        _playerHitboxGizmo = null;
+        _playerFootGizmo = null;
+        _playerDebugLabel = null;
         _player = new Node2D
         {
             Name = "MarioPlayer",
@@ -1410,12 +1638,56 @@ public partial class GameScene : Node2D
             _player.AddChild(new ColorRect
             {
                 Color = new Color(0.88f, 0.12f, 0.10f, 1.0f),
-                Size = new Vector2(SmwPhysics.PlayerWidth, SmwPhysics.PlayerHeight),
+                Size = new Vector2(SmwPhysics.PlayerWidth, SmwPhysics.PlayerHeightFor(_state)),
             });
+            BuildPlayerDebugGizmos();
             return;
         }
 
         UpdatePlayerGraphic(force: true);
+        BuildPlayerDebugGizmos();
+    }
+
+    private void BuildPlayerDebugGizmos()
+    {
+        if (!DebugOverlays || _player == null)
+        {
+            return;
+        }
+
+        _playerHitboxGizmo = new Line2D
+        {
+            Name = "PlayerHitboxDebug",
+            Width = 1.0f,
+            DefaultColor = new Color(1.0f, 0.20f, 0.12f, 0.96f),
+            ZIndex = 220,
+        };
+        _player.AddChild(_playerHitboxGizmo);
+
+        _playerFootGizmo = new ColorRect
+        {
+            Name = "PlayerFootDebug",
+            Color = new Color(0.0f, 1.0f, 1.0f, 0.92f),
+            Size = new Vector2(3, 3),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = 225,
+        };
+        _player.AddChild(_playerFootGizmo);
+
+        _playerDebugLabel = new Label
+        {
+            Name = "PlayerStateDebug",
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = 230,
+        };
+        _playerDebugLabel.AddThemeFontSizeOverride("font_size", 8);
+        _playerDebugLabel.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
+        _playerDebugLabel.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 1.0f));
+        _playerDebugLabel.AddThemeConstantOverride("shadow_offset_x", 1);
+        _playerDebugLabel.AddThemeConstantOverride("shadow_offset_y", 1);
+        _player.AddChild(_playerDebugLabel);
+
+        UpdatePlayerDebugGizmos();
     }
 
     private bool TryBuildPlayerSprites()
@@ -1464,14 +1736,15 @@ public partial class GameScene : Node2D
 
         var pose = ChoosePlayerPose();
         var nativeFacing = _state.Facing == 0 ? 0 : 1;
-        if (!force && pose == _lastPlayerPose && nativeFacing == _lastPlayerFacing)
+        if (!force && pose == _lastPlayerPose && nativeFacing == _lastPlayerFacing && _state.Powerup == _lastPlayerPowerup)
         {
             return;
         }
 
         _lastPlayerPose = pose;
         _lastPlayerFacing = nativeFacing;
-        RenderPlayerOamPose(pose, BigMarioPowerup, nativeFacing);
+        _lastPlayerPowerup = _state.Powerup;
+        RenderPlayerOamPose(pose, _state.Powerup, nativeFacing);
     }
 
     private int ChoosePlayerPose()
@@ -1594,6 +1867,7 @@ public partial class GameScene : Node2D
 
     private SmwPhysics.PlayerState MakeInitialPlayerState()
     {
+        var playerHeight = SmwPhysics.PlayerHeightForPowerup(DefaultPlayerPowerup);
         foreach (var tile in _placedTiles)
         {
             if (tile.X >= 8 &&
@@ -1603,11 +1877,12 @@ public partial class GameScene : Node2D
             {
                 return _physics.MakeState(
                     tile.X * Map16TileSize + Map16TileSize,
-                    (int)(tile.Y * Map16TileSize + LevelVisualYOffset - SmwPhysics.PlayerHeight));
+                    (int)(tile.Y * Map16TileSize + LevelVisualYOffset - playerHeight),
+                    DefaultPlayerPowerup);
             }
         }
 
-        return _physics.MakeState(64, 64);
+        return _physics.MakeState(64, 64, DefaultPlayerPowerup);
     }
 
     private static Vector2 TileToWorld(int x, int y)
@@ -1746,7 +2021,8 @@ public partial class GameScene : Node2D
         }
 
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} " +
+            $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
             $"exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
     }
 
@@ -1779,7 +2055,22 @@ public partial class GameScene : Node2D
             _player.Position = new Vector2(_state.XFloat, _state.YFloat);
         }
         UpdateHud();
+        UpdateDebugGizmos();
         GD.Print($"smw-test-spawn: x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
+    }
+
+    public void DebugSetPlayerPowerup(int powerup)
+    {
+        _physics.SetPowerup(ref _state, powerup);
+        if (_player != null)
+        {
+            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+        }
+
+        UpdatePlayerGraphic(force: true);
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)}");
     }
 
     public async void DebugCaptureViewport(string capturePath, int frames, bool quitAfterCapture)
@@ -1854,6 +2145,7 @@ public partial class GameScene : Node2D
         }
 
         _lastPlayerPose = -1;
+        _lastPlayerPowerup = -1;
         UpdatePlayerGraphic(force: true);
         PrintRuntimeState();
     }

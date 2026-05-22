@@ -36,5 +36,8 @@ grep -q "goal_tapes=0" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=4828,282 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: course_clear level=105" "$LOG_FILE"
 
+"$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=small 2>&1 | tee "$LOG_FILE"
+grep -q "smw-test-powerup: powerup=0 height=16" "$LOG_FILE"
+
 "$GODOT_BIN" --headless --audio-driver Dummy --path . --quit-after 1 --smw-audio-preview=Level 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: music_preview=Level events=12 loop_frames=96" "$LOG_FILE"

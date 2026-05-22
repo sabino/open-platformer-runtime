@@ -33,6 +33,7 @@ public partial class Main : Node2D
         string? capturePath = null;
         string? audioPreview = null;
         Vector2? testSpawn = null;
+        int? testPowerup = null;
         var captureFrames = 8;
         foreach (var arg in OS.GetCmdlineArgs())
         {
@@ -62,6 +63,11 @@ public partial class Main : Node2D
                 testSpawn = ParseTestSpawn(arg["--smw-test-spawn=".Length..]);
                 autostart = true;
             }
+            else if (arg.StartsWith("--smw-test-powerup=", StringComparison.Ordinal))
+            {
+                testPowerup = ParseTestPowerup(arg["--smw-test-powerup=".Length..]);
+                autostart = true;
+            }
             else if (arg.StartsWith("--smw-capture-frames=", StringComparison.Ordinal) &&
                 int.TryParse(arg["--smw-capture-frames=".Length..], out var parsedFrames))
             {
@@ -80,6 +86,10 @@ public partial class Main : Node2D
         if (testSpawn != null)
         {
             _game?.DebugSetPlayerPosition(testSpawn.Value);
+        }
+        if (testPowerup != null)
+        {
+            _game?.DebugSetPlayerPowerup(testPowerup.Value);
         }
         if (capturePath != null)
         {
@@ -107,6 +117,24 @@ public partial class Main : Node2D
         }
 
         return new Vector2(x, y);
+    }
+
+    private static int? ParseTestPowerup(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        if (int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out var powerup))
+        {
+            return powerup;
+        }
+
+        return normalized switch
+        {
+            "small" => SmwPhysics.SmallPowerup,
+            "big" => SmwPhysics.BigPowerup,
+            "cape" => SmwPhysics.CapePowerup,
+            "fire" => SmwPhysics.FirePowerup,
+            _ => null,
+        };
     }
 
     public override void _UnhandledInput(InputEvent @event)
