@@ -351,6 +351,8 @@ public partial class GameScene : Node2D
             return;
         }
 
+        var finalTiles = new Dictionary<(int X, int Y), PlacedMap16Tile>();
+        var finalTileOrder = new List<(int X, int Y)>();
         foreach (var placedVariant in placedTilesVariant.AsGodotArray())
         {
             if (placedVariant.VariantType != Variant.Type.Dictionary)
@@ -363,7 +365,18 @@ public partial class GameScene : Node2D
             var y = placed.TryGetValue("y", out var yVariant) ? yVariant.AsInt32() : 0;
             var map16 = placed.TryGetValue("map16", out var map16Variant) ? map16Variant.AsInt32() : 0;
             var source = placed.TryGetValue("source", out var sourceVariant) ? sourceVariant.AsString() : "";
-            _placedTiles.Add(new PlacedMap16Tile(x, y, map16, source));
+            var key = (x, y);
+            if (!finalTiles.ContainsKey(key))
+            {
+                finalTileOrder.Add(key);
+            }
+
+            finalTiles[key] = new PlacedMap16Tile(x, y, map16, source);
+        }
+
+        foreach (var key in finalTileOrder)
+        {
+            _placedTiles.Add(finalTiles[key]);
         }
     }
 
