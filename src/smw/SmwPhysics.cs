@@ -19,6 +19,7 @@ public sealed class SmwPhysics
     private const int PMeterMax = 0x70;
     private const int PMeterSprintThreshold = 0x23;
     private const int MaxFall = 0x40;
+    private const float StepUpTolerance = 12.0f;
 
     public static readonly sbyte[] HorizontalMaxSpeedTable =
     [
@@ -119,12 +120,16 @@ public sealed class SmwPhysics
         ApplyJumpAndGravity(ref state, input);
 
         IntegrateX(ref state);
-        ResolveAxis(ref state, solids, horizontal: true);
+        var steppedOntoSolid = ResolveAxis(ref state, solids, horizontal: true);
 
         IntegrateY(ref state);
         state.OnGround = false;
         ResolveAxis(ref state, solids, horizontal: false);
         ResolveSlopes(ref state, slopes);
+        if (steppedOntoSolid && state.YSpeed >= 0)
+        {
+            state.OnGround = true;
+        }
     }
 
     public void Step(
@@ -290,9 +295,10 @@ public sealed class SmwPhysics
         }
     }
 
-    private void ResolveAxis(ref PlayerState state, IReadOnlyList<Rect2> solids, bool horizontal)
+    private bool ResolveAxis(ref PlayerState state, IReadOnlyList<Rect2> solids, bool horizontal)
     {
         var rect = PlayerRect(state);
+        var steppedOntoSolid = false;
         foreach (var solid in solids)
         {
             if (!rect.Intersects(solid))
@@ -302,6 +308,13 @@ public sealed class SmwPhysics
 
             if (horizontal)
             {
+                if (TryStepUp(ref state, solid, rect))
+                {
+                    rect = PlayerRect(state);
+                    steppedOntoSolid = true;
+                    continue;
+                }
+
                 if (state.XSpeed > 0)
                 {
                     state.X = (int)MathF.Round(solid.Position.X - PlayerWidth);
@@ -332,6 +345,28 @@ public sealed class SmwPhysics
 
             rect = PlayerRect(state);
         }
+
+        return steppedOntoSolid;
+    }
+
+    private static bool TryStepUp(ref PlayerState state, Rect2 solid, Rect2 playerRect)
+    {
+        if (state.YSpeed < 0)
+        {
+            return false;
+        }
+
+        var solidTop = solid.Position.Y;
+        var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+        if (playerBottom <= solidTop || playerBottom > solidTop + StepUpTolerance)
+        {
+            return false;
+        }
+
+        state.Y = (int)MathF.Round(solidTop - PlayerHeight);
+        state.SubY = 0;
+        state.SubYSpeed = 0;
+        return true;
     }
 
     private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes)

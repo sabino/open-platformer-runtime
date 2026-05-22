@@ -23,6 +23,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckStepUpCollision(physics))
+        {
+            return 1;
+        }
 
         var solids = new List<Rect2> { new(0, 128, 512, 32) };
         var state = physics.MakeState(32, 64);
@@ -222,6 +226,31 @@ public static class PhysicsSmoke
         if (!state.OnGround)
         {
             Console.Error.WriteLine("expected falling player to land on slope");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckStepUpCollision(SmwPhysics physics)
+    {
+        var state = physics.MakeState(49, 84);
+        state.OnGround = true;
+        state.XSpeed = 0x30;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, [new Rect2(64, 108, 16, 16)]);
+        if (state.Y > 80 || state.XSpeed == 0)
+        {
+            Console.Error.WriteLine($"expected low ledge side impact to step up, got x={state.X} y={state.Y}");
+            return false;
+        }
+
+        state = physics.MakeState(49, 84);
+        state.OnGround = true;
+        state.XSpeed = 0x30;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, [new Rect2(64, 96, 16, 32)]);
+        if (state.X > 50 || state.Y <= 80)
+        {
+            Console.Error.WriteLine($"expected high wall side impact to block, got x={state.X} y={state.Y}");
             return false;
         }
 
