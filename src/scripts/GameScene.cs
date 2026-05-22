@@ -1772,8 +1772,21 @@ public partial class GameScene : Node2D
 
             var tile = ResolvePlayerDynamicTile(descriptor, headBase, bodyBase);
             var large = (normalSizeMask & slotMasks[slot]) != 0;
-            SetPlayerOamSprite(slot, tile, _playerXDisp[dispIndex], _playerYDisp[dispIndex], large, flipH);
+            SetPlayerOamSprite(
+                slot,
+                tile,
+                _playerXDisp[dispIndex],
+                _playerYDisp[dispIndex] + PlayerRenderYOffsetForPowerup(powerup),
+                large,
+                flipH);
         }
+    }
+
+    private static int PlayerRenderYOffsetForPowerup(int powerup)
+    {
+        return powerup == SmwPhysics.SmallPowerup
+            ? SmwPhysics.SmallPlayerHeight - SmwPhysics.BigPlayerHeight
+            : 0;
     }
 
     private static int ResolvePlayerDynamicTile(int descriptor, int headPointer, int bodyPointer)
@@ -2018,7 +2031,7 @@ public partial class GameScene : Node2D
         UpdatePlayerGraphic(force: true);
         UpdateHud();
         UpdateDebugGizmos();
-        GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)}");
+        GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} render_y={PlayerRenderYOffsetForPowerup(_state.Powerup)}");
     }
 
     public async void DebugCaptureViewport(string capturePath, int frames, bool quitAfterCapture)

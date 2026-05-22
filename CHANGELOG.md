@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Shifted the small-Mario OAM render anchor upward relative to the 16px collision box so the visible sprite sits on the hitbox floor instead of below it.
+- Ported Lunar Magic Universal's latest left diagonal ledge lower-row projection tweak into the offline importer, reducing over-wide slope fill rows in generated Yoshi Island 1 layout data.
 - Replaced long merged runtime slope collision lines with per-Map16-tile slope segments for diagonal ledges, diagonal pipes, and steep right slopes, reducing false slope surfaces when nearby slope objects touch.
 - Added explicit runtime player power-up state and small/big hitbox heights, preserving the player's feet when the form changes and exposing `--smw-test-powerup=small|big|cape|fire`.
 - Expanded `--smw-debug-overlays` with player hitbox/feet labels, camera bounds, collision outlines, sprite actor hitboxes, goal-tape trigger bounds, pipe trigger bounds, and coin/block semantic markers.

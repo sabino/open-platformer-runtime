@@ -19,7 +19,7 @@ LOG_FILE="$(mktemp)"
 trap 'rm -f "$LOG_FILE"' EXIT
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1491 collision_rects=" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1488 collision_rects=" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
 grep -q "sprite_actors=31" "$LOG_FILE"
@@ -37,7 +37,7 @@ grep -q "goal_tapes=0" "$LOG_FILE"
 grep -q "smw-runtime: course_clear level=105" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=small 2>&1 | tee "$LOG_FILE"
-grep -q "smw-test-powerup: powerup=0 height=16" "$LOG_FILE"
+grep -q "smw-test-powerup: powerup=0 height=16 render_y=-16" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --audio-driver Dummy --path . --quit-after 1 --smw-audio-preview=Level 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: music_preview=Level events=12 loop_frames=96" "$LOG_FILE"

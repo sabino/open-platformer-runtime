@@ -1408,18 +1408,21 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
 
         bottom_y = diagonal_rows
         bottom_left = -(diagonal_rows - 1)
+        lower_row_width = row_width - 1 if row_width > 0 else row_width
         place_relative(x, y, bottom_left, bottom_y, 0x01F7, "left_diagonal_ledge_bottom")
-        for xx in range(1, row_width):
+        for xx in range(1, lower_row_width):
             place_relative(x, y, bottom_left + xx, bottom_y, 0x00A3 if xx == 1 else 0x003F, "left_diagonal_ledge_fill")
-        place_relative(x, y, bottom_left + row_width, bottom_y, 0x00A6, "left_diagonal_ledge_edge")
+        place_relative(x, y, bottom_left + lower_row_width, bottom_y, 0x00A6, "left_diagonal_ledge_edge")
 
         for yy in range(1, fill_rows):
             fill_y = bottom_y + yy
             fill_left = bottom_left + yy
+            if yy == 1:
+                place_relative(x, y, fill_left - 1, fill_y, 0x003F, "left_diagonal_ledge_fill")
             place_relative(x, y, fill_left, fill_y, 0x00A3, "left_diagonal_ledge_fill")
-            for xx in range(1, row_width):
+            for xx in range(1, lower_row_width):
                 place_relative(x, y, fill_left + xx, fill_y, 0x003F, "left_diagonal_ledge_fill")
-            place_relative(x, y, fill_left + row_width, fill_y, 0x00A6, "left_diagonal_ledge_edge")
+            place_relative(x, y, fill_left + lower_row_width, fill_y, 0x00A6, "left_diagonal_ledge_edge")
 
     def render_rope_mushroom_top(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         width = (size & 0x0F) + 1
