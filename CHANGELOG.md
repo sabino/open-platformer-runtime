@@ -12,6 +12,7 @@
 - Corrected flat-ground walk/run/P-meter horizontal caps and ground friction toward the native `HandlePlayerPhysics` tables, and wired the C# physics smoke test into `tools/check-dotnet.sh`.
 - Loaded generated sprite spawn records in the Godot runtime and rendered debug markers for the imported Yoshi Island 1 and transition-target sprite layers.
 - Added a first runtime actor layer for imported Yoshi Island 1 enemy sprite records, with simple movement, gravity, stomp removal, and player knockback.
+- Added a course-clear trigger from the imported native goal-tape sprite `0x7B`, including a visible tape marker, HUD message, and headless spawn-near-goal smoke check.
 - Added per-level sprite GFX VRAM atlas extraction from the vanilla sprite upload table, including generated previews for level `105` and level `1CB` sprite GFX `8`.
 - Switched the Godot logical viewport to SNES `256x224`, kept visible Wayland runs at 3x scale, and moved pipe debug triggers onto imported screen-exit pipe tiles.
 - Added per-level full CGRAM palette extraction for generated level previews, with Lunar Magic custom palette and Super GFX bypass table detection guarded by the documented ROM hooks.

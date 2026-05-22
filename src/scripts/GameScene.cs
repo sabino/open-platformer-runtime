@@ -22,6 +22,7 @@ public partial class GameScene : Node2D
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
     private const int PlayerHurtCooldownFrames = 90;
+    private const int GoalTapeSpriteId = 0x7B;
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -44,11 +45,14 @@ public partial class GameScene : Node2D
     private readonly List<int> _playerTileXFlip = [];
     private readonly List<Sprite2D> _playerTileSprites = [];
     private readonly List<RuntimeSpriteActor> _spriteActors = [];
+    private readonly List<Rect2> _goalTapeTriggers = [];
 
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
     private Label? _hud;
+    private Label? _courseClearLabel;
     private CanvasLayer? _hudLayer;
+    private CanvasLayer? _courseClearLayer;
     private Node2D? _worldRoot;
     private SmwAudio? _audio;
     private ImageTexture? _playerTexture;
@@ -66,6 +70,7 @@ public partial class GameScene : Node2D
     private int _lastPlayerFacing = -1;
     private bool _pipeTransitionLatch;
     private int _playerHurtCooldown;
+    private bool _courseClear;
 
     public bool DebugOverlays { get; set; }
 
@@ -85,7 +90,9 @@ public partial class GameScene : Node2D
 
     public override void _PhysicsProcess(double delta)
     {
-        var frameInput = new SmwPhysics.FrameInput
+        var frameInput = _courseClear
+            ? new SmwPhysics.FrameInput()
+            : new SmwPhysics.FrameInput
         {
             Left = Input.IsActionPressed("smw_left"),
             Right = Input.IsActionPressed("smw_right"),
@@ -116,6 +123,7 @@ public partial class GameScene : Node2D
 
         UpdatePlayerGraphic();
         UpdateSpriteActors();
+        CheckGoalTape();
         UpdateHud();
         CheckPipeDebug();
     }
@@ -542,6 +550,7 @@ public partial class GameScene : Node2D
         _solids.Clear();
         _slopes.Clear();
         _spriteActors.Clear();
+        _goalTapeTriggers.Clear();
         StartWorldRoot();
         AddWorldBackground();
         AddLayer2BackgroundPreview();
@@ -560,6 +569,7 @@ public partial class GameScene : Node2D
 
         RebuildPipeEntrances();
         AddRuntimeSpriteActors();
+        AddGoalTapeTriggers();
         if (DebugOverlays)
         {
             AddPipeMarkers();
@@ -570,6 +580,51 @@ public partial class GameScene : Node2D
             {
                 AddScreenLine(i);
             }
+        }
+    }
+
+    private void AddGoalTapeTriggers()
+    {
+        foreach (var spawn in _levelSprites)
+        {
+            if (spawn.SpriteId != GoalTapeSpriteId)
+            {
+                continue;
+            }
+
+            var top = spawn.Y - 72;
+            var rect = new Rect2(spawn.X - 8, top, 24, 88);
+            _goalTapeTriggers.Add(rect);
+
+            var postLeft = new ColorRect
+            {
+                Color = new Color(0.96f, 0.96f, 0.86f, 1.0f),
+                Position = new Vector2(spawn.X - 16, top),
+                Size = new Vector2(4, 88),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                ZIndex = 5,
+            };
+            AddWorldChild(postLeft);
+
+            var postRight = new ColorRect
+            {
+                Color = new Color(0.96f, 0.96f, 0.86f, 1.0f),
+                Position = new Vector2(spawn.X + 16, top),
+                Size = new Vector2(4, 88),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                ZIndex = 5,
+            };
+            AddWorldChild(postRight);
+
+            var tape = new ColorRect
+            {
+                Color = new Color(1.0f, 0.86f, 0.18f, 1.0f),
+                Position = new Vector2(spawn.X - 8, spawn.Y - 38),
+                Size = new Vector2(28, 6),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                ZIndex = 7,
+            };
+            AddWorldChild(tape);
         }
     }
 
@@ -1311,6 +1366,36 @@ public partial class GameScene : Node2D
         _audio?.PlayJump();
     }
 
+    private void CheckGoalTape()
+    {
+        if (_courseClear || _goalTapeTriggers.Count == 0)
+        {
+            return;
+        }
+
+        var playerRect = _physics.PlayerRect(_state);
+        foreach (var trigger in _goalTapeTriggers)
+        {
+            if (!playerRect.Intersects(trigger))
+            {
+                continue;
+            }
+
+            TriggerCourseClear();
+            return;
+        }
+    }
+
+    private void TriggerCourseClear()
+    {
+        _courseClear = true;
+        _state.XSpeed = 0;
+        _state.SubXSpeed = 0;
+        _audio?.PlayMusicPreview("Credits");
+        ShowCourseClearLabel();
+        GD.Print($"smw-runtime: course_clear level={_currentLevelId}");
+    }
+
     private void BuildPlayer()
     {
         _player = new Node2D
@@ -1534,9 +1619,13 @@ public partial class GameScene : Node2D
     {
         _hudLayer?.QueueFree();
         _hudLayer = null;
+        _courseClearLayer?.QueueFree();
+        _courseClearLayer = null;
         _hud = null;
+        _courseClearLabel = null;
         if (!DebugOverlays)
         {
+            BuildCourseClearLayer();
             return;
         }
 
@@ -1551,6 +1640,43 @@ public partial class GameScene : Node2D
         layer.AddChild(_hud);
         AddAssetPreviewOverlay(layer);
         UpdateHud();
+        BuildCourseClearLabel(layer);
+    }
+
+    private void BuildCourseClearLayer()
+    {
+        var layer = new CanvasLayer
+        {
+            Name = "CourseClearLayer",
+        };
+        _courseClearLayer = layer;
+        AddChild(layer);
+        BuildCourseClearLabel(layer);
+    }
+
+    private void BuildCourseClearLabel(CanvasLayer layer)
+    {
+        var label = new Label
+        {
+            Text = "COURSE CLEAR",
+            Position = new Vector2(56, 86),
+            Visible = _courseClear,
+        };
+        label.AddThemeFontSizeOverride("font_size", 20);
+        label.AddThemeColorOverride("font_color", new Color(1.0f, 0.95f, 0.35f, 1.0f));
+        label.AddThemeColorOverride("font_shadow_color", new Color(0.08f, 0.08f, 0.08f, 1.0f));
+        label.AddThemeConstantOverride("shadow_offset_x", 2);
+        label.AddThemeConstantOverride("shadow_offset_y", 2);
+        _courseClearLabel = label;
+        layer.AddChild(label);
+    }
+
+    private void ShowCourseClearLabel()
+    {
+        if (_courseClearLabel != null)
+        {
+            _courseClearLabel.Visible = true;
+        }
     }
 
     private void AddAssetPreviewOverlay(CanvasLayer layer)
@@ -1627,7 +1753,7 @@ public partial class GameScene : Node2D
     private void PrintRuntimeState()
     {
         var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
-        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
@@ -1715,6 +1841,8 @@ public partial class GameScene : Node2D
             return;
         }
 
+        _courseClear = false;
+        _playerHurtCooldown = 0;
         _state = MakeInitialPlayerState();
         _cameraInitialized = false;
         UpdateCamera();
