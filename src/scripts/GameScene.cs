@@ -17,6 +17,11 @@ public partial class GameScene : Node2D
     private const float CameraVerticalLower = 0x7C;
     private const float CameraMaxScrollUpPerFrame = 3.0f;
     private const float CameraMaxScrollDownPerFrame = 5.0f;
+    private const int SpriteActorWidth = 16;
+    private const int SpriteActorHeight = 16;
+    private const float SpriteActorGravity = 0.42f;
+    private const float SpriteActorMaxFall = 4.0f;
+    private const int PlayerHurtCooldownFrames = 90;
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -38,6 +43,7 @@ public partial class GameScene : Node2D
     private readonly List<int> _playerTilesIndex = [];
     private readonly List<int> _playerTileXFlip = [];
     private readonly List<Sprite2D> _playerTileSprites = [];
+    private readonly List<RuntimeSpriteActor> _spriteActors = [];
 
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
@@ -59,6 +65,7 @@ public partial class GameScene : Node2D
     private int _lastPlayerPose = -1;
     private int _lastPlayerFacing = -1;
     private bool _pipeTransitionLatch;
+    private int _playerHurtCooldown;
 
     public bool DebugOverlays { get; set; }
 
@@ -108,6 +115,7 @@ public partial class GameScene : Node2D
         }
 
         UpdatePlayerGraphic();
+        UpdateSpriteActors();
         UpdateHud();
         CheckPipeDebug();
     }
@@ -115,6 +123,20 @@ public partial class GameScene : Node2D
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
     private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
     private readonly record struct PipeEntrance(Rect2 Rect, int Screen);
+    private sealed class RuntimeSpriteActor
+    {
+        public required Node2D Node { get; init; }
+        public required ColorRect Body { get; init; }
+        public int SpriteId { get; init; }
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float XSpeed { get; set; }
+        public float YSpeed { get; set; }
+        public bool Alive { get; set; } = true;
+        public bool OnGround { get; set; }
+        public int WakeScreen { get; init; }
+        public Rect2 Rect => new(X, Y, SpriteActorWidth, SpriteActorHeight);
+    }
 
     private void LoadAssetPack()
     {
@@ -519,6 +541,7 @@ public partial class GameScene : Node2D
     {
         _solids.Clear();
         _slopes.Clear();
+        _spriteActors.Clear();
         StartWorldRoot();
         AddWorldBackground();
         AddLayer2BackgroundPreview();
@@ -536,6 +559,7 @@ public partial class GameScene : Node2D
         }
 
         RebuildPipeEntrances();
+        AddRuntimeSpriteActors();
         if (DebugOverlays)
         {
             AddPipeMarkers();
@@ -547,6 +571,81 @@ public partial class GameScene : Node2D
                 AddScreenLine(i);
             }
         }
+    }
+
+    private void AddRuntimeSpriteActors()
+    {
+        foreach (var spawn in _levelSprites)
+        {
+            if (!IsRuntimeEnemySprite(spawn.SpriteId))
+            {
+                continue;
+            }
+
+            var actor = CreateRuntimeSpriteActor(spawn);
+            _spriteActors.Add(actor);
+            AddWorldChild(actor.Node);
+        }
+    }
+
+    private static bool IsRuntimeEnemySprite(int spriteId)
+    {
+        return spriteId is 0x4F or 0x83 or 0x8E or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7;
+    }
+
+    private static RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn)
+    {
+        var color = SpriteActorColor(spawn.SpriteId);
+        var node = new Node2D
+        {
+            Name = $"Sprite_{spawn.SpriteId:X2}_{spawn.Offset:X2}",
+            Position = new Vector2(spawn.X, spawn.Y - SpriteActorHeight),
+            ZIndex = 6,
+        };
+        var body = new ColorRect
+        {
+            Color = color,
+            Position = Vector2.Zero,
+            Size = new Vector2(SpriteActorWidth, SpriteActorHeight),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        node.AddChild(body);
+        return new RuntimeSpriteActor
+        {
+            Node = node,
+            Body = body,
+            SpriteId = spawn.SpriteId,
+            X = spawn.X,
+            Y = spawn.Y - SpriteActorHeight,
+            XSpeed = InitialSpriteActorSpeed(spawn.SpriteId),
+            WakeScreen = spawn.Screen,
+        };
+    }
+
+    private static float InitialSpriteActorSpeed(int spriteId)
+    {
+        return spriteId switch
+        {
+            0x4F or 0x8E or 0x9F or 0xB9 or 0xBD or 0xC7 => -0.58f,
+            0xAB => -0.42f,
+            _ => 0.0f,
+        };
+    }
+
+    private static Color SpriteActorColor(int spriteId)
+    {
+        return spriteId switch
+        {
+            0x4F => new Color(0.92f, 0.88f, 0.18f, 1.0f),
+            0x83 => new Color(0.74f, 0.20f, 0.18f, 1.0f),
+            0x8E => new Color(0.18f, 0.76f, 0.28f, 1.0f),
+            0x9F => new Color(0.20f, 0.38f, 0.88f, 1.0f),
+            0xAB => new Color(0.76f, 0.32f, 0.16f, 1.0f),
+            0xB9 => new Color(0.88f, 0.30f, 0.80f, 1.0f),
+            0xBD => new Color(0.16f, 0.50f, 0.96f, 1.0f),
+            0xC7 => new Color(0.90f, 0.90f, 0.90f, 1.0f),
+            _ => new Color(0.92f, 0.20f, 0.70f, 1.0f),
+        };
     }
 
     private void AddLayer2BackgroundPreview()
@@ -1091,6 +1190,127 @@ public partial class GameScene : Node2D
         }
     }
 
+    private void UpdateSpriteActors()
+    {
+        if (_playerHurtCooldown > 0)
+        {
+            _playerHurtCooldown--;
+        }
+
+        if (_spriteActors.Count == 0)
+        {
+            return;
+        }
+
+        var playerRect = _physics.PlayerRect(_state);
+        for (var i = _spriteActors.Count - 1; i >= 0; i--)
+        {
+            var actor = _spriteActors[i];
+            if (!actor.Alive)
+            {
+                actor.Node.QueueFree();
+                _spriteActors.RemoveAt(i);
+                continue;
+            }
+
+            UpdateSpriteActorMotion(actor);
+            ResolvePlayerSpriteActorCollision(actor, playerRect);
+            actor.Node.Position = new Vector2(actor.X, actor.Y);
+        }
+    }
+
+    private void UpdateSpriteActorMotion(RuntimeSpriteActor actor)
+    {
+        if (MathF.Abs((actor.X + SpriteActorWidth * 0.5f) - (_cameraX + LogicalViewportWidth * 0.5f)) > LogicalViewportWidth + 48.0f)
+        {
+            return;
+        }
+
+        actor.X += actor.XSpeed;
+        var rect = actor.Rect;
+        foreach (var solid in _solids)
+        {
+            if (!rect.Intersects(solid))
+            {
+                continue;
+            }
+
+            if (actor.XSpeed > 0)
+            {
+                actor.X = solid.Position.X - SpriteActorWidth;
+            }
+            else if (actor.XSpeed < 0)
+            {
+                actor.X = solid.Position.X + solid.Size.X;
+            }
+            actor.XSpeed = -actor.XSpeed;
+            rect = actor.Rect;
+        }
+
+        actor.YSpeed = MathF.Min(SpriteActorMaxFall, actor.YSpeed + SpriteActorGravity);
+        actor.Y += actor.YSpeed;
+        actor.OnGround = false;
+        rect = actor.Rect;
+        foreach (var solid in _solids)
+        {
+            if (!rect.Intersects(solid))
+            {
+                continue;
+            }
+
+            if (actor.YSpeed >= 0)
+            {
+                actor.Y = solid.Position.Y - SpriteActorHeight;
+                actor.YSpeed = 0.0f;
+                actor.OnGround = true;
+            }
+            else
+            {
+                actor.Y = solid.Position.Y + solid.Size.Y;
+                actor.YSpeed = 0.0f;
+            }
+            rect = actor.Rect;
+        }
+
+        if (actor.Y > GetLevelPixelBottom() + 128.0f)
+        {
+            actor.Alive = false;
+        }
+    }
+
+    private void ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect)
+    {
+        if (!actor.Alive || !playerRect.Intersects(actor.Rect))
+        {
+            return;
+        }
+
+        var playerBottom = _state.YFloat + SmwPhysics.PlayerHeight;
+        var stomped = _state.YSpeed > 0 && playerBottom <= actor.Y + 10.0f;
+        if (stomped)
+        {
+            actor.Alive = false;
+            _state.YSpeed = -48;
+            _state.SubYSpeed = 0;
+            _state.OnGround = false;
+            _audio?.PlaySpinJump();
+            return;
+        }
+
+        if (_playerHurtCooldown > 0)
+        {
+            return;
+        }
+
+        _playerHurtCooldown = PlayerHurtCooldownFrames;
+        _state.XSpeed = _state.XFloat < actor.X ? -24 : 24;
+        _state.YSpeed = -32;
+        _state.SubXSpeed = 0;
+        _state.SubYSpeed = 0;
+        _state.OnGround = false;
+        _audio?.PlayJump();
+    }
+
     private void BuildPlayer()
     {
         _player = new Node2D
@@ -1401,13 +1621,13 @@ public partial class GameScene : Node2D
 
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} " +
-            $"exits={_screenExits.Count} sprites={_levelSprites.Count} player={_playerTileSprites.Count}";
+            $"exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
     }
 
     private void PrintRuntimeState()
     {
         var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
-        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
