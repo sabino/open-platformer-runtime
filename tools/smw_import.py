@@ -24,6 +24,13 @@ from typing import Any
 SMW_SHA1_US = "6B47BB75D16514B6A476AA0C73A683A2A4C18765"
 SCHEMA_VERSION = 1
 GFX_FILE_COUNT = 50
+NORMAL_GFX_3BPP_EXPAND = (
+    True, True, True, True, True, True, True, True, True, True, True, True, True,
+    True, True, True, True, True, True, True, True, True, True, True, True, True,
+    True, True, True, True, True, True, True, True, True, True, True, True, True,
+    False, False, False, False, False, True, True, True, False, True, True, False,
+    True,
+)
 LM_CUSTOM_PALETTE_POINTER_TABLE = 0x0EF600
 LM_CUSTOM_PALETTE_HIJACK_ADDR = 0x00A5C0
 LM_CUSTOM_PALETTE_ROUTINE_ADDR = 0x0EF570
@@ -482,6 +489,66 @@ def decode_4bpp_tile(tile: bytes) -> list[list[int]]:
     return pixels
 
 
+def expand_3bpp_to_4bpp(data: bytes) -> bytes:
+    if len(data) % 24 != 0:
+        raise ImportErrorWithExit(f"3bpp graphics length must be divisible by 24: {len(data)}")
+    expanded = bytearray()
+    for offset in range(0, len(data), 24):
+        expanded.extend(data[offset : offset + 16])
+        for row in range(8):
+            expanded.append(data[offset + 16 + row])
+            expanded.append(0)
+    return bytes(expanded)
+
+
+def patch_mask_rows(data: bytearray, begin: int, end: int) -> None:
+    offset = begin
+    while offset < end:
+        if (offset & 0x10) == 0:
+            offset += 0x10
+            continue
+        if offset + 1 < len(data) and offset >= 16:
+            data[offset + 1] = data[offset - 16] | data[offset - 15] | data[offset]
+        offset += 2
+
+
+def patch_sparse_mask_rows(data: bytearray, ranges: list[tuple[int, int]]) -> None:
+    existing = 0
+    for begin, end in ranges:
+        offset = begin
+        while offset < end:
+            if (offset & 0x10) == 0:
+                offset += 0x10
+                continue
+            if offset + 1 < len(data):
+                existing |= data[offset + 1]
+            offset += 2
+    if existing != 0:
+        return
+    for begin, end in ranges:
+        patch_mask_rows(data, begin, end)
+
+
+def patch_gfx08_mask_tiles(data: bytearray) -> None:
+    for tile in (
+        0x37, 0x38, 0x39, 0x3A, 0x3B, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x56, 0x57,
+        0x58, 0x59, 0x5A, 0x5B, 0x7A, 0x7B, 0x60, 0x70, 0x6E, 0x6F, 0x7E, 0x7F,
+    ):
+        begin = tile * 32 + 0x10
+        patch_mask_rows(data, begin, begin + 0x10)
+
+
+def apply_gfx_mask_fixes(data: bytes, gfx_id: int) -> bytes:
+    patched = bytearray(data)
+    if gfx_id in (0x01, 0x17, 0x31):
+        patch_sparse_mask_rows(patched, [(0x10, 0x40), (0x210, 0x240)])
+    elif gfx_id == 0x1E:
+        patch_mask_rows(patched, 0x10, 0x1000)
+    elif gfx_id == 0x08:
+        patch_gfx08_mask_tiles(patched)
+    return bytes(patched)
+
+
 def png_chunk(kind: bytes, payload: bytes) -> bytes:
     crc = binascii.crc32(kind)
     crc = binascii.crc32(payload, crc) & 0xFFFFFFFF
@@ -693,6 +760,9 @@ def graphics_file_address(rom: Rom, gfx_id: int) -> int:
 def decompress_graphics_file(rom: Rom, gfx_id: int) -> tuple[bytes, int, int]:
     addr = graphics_file_address(rom, gfx_id)
     data, compressed_len = smw_decomp(rom, addr)
+    if 0 <= gfx_id < len(NORMAL_GFX_3BPP_EXPAND) and NORMAL_GFX_3BPP_EXPAND[gfx_id]:
+        data = expand_3bpp_to_4bpp(data)
+        data = apply_gfx_mask_fixes(data, gfx_id)
     if len(data) % 32 != 0:
         raise ImportErrorWithExit(f"GFX{gfx_id:02X} decompressed to non-4bpp length {len(data)}")
     return data, addr, compressed_len
@@ -784,13 +854,13 @@ def resolve_sprite_gfx_ids(rom: Rom, level_id: int, header: dict[str, Any]) -> t
 
 
 def level_fg_bg_vram(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[bytes, list[dict[str, Any]], dict[str, Any]]:
-    vram = bytearray(0x2000)
+    vram = bytearray(0x4000)
     uploads: list[dict[str, Any]] = []
     gfx_ids, source = resolve_fg_bg_gfx_ids(rom, level_id, header)
     for slot, gfx_id in enumerate(gfx_ids):
         data, addr, compressed_len = decompress_graphics_file(rom, gfx_id)
-        dst = [0x1800, 0x1000, 0x0800, 0x0000][slot]
-        copy_len = min(0x800, len(data))
+        dst = [0x3000, 0x2000, 0x1000, 0x0000][slot]
+        copy_len = min(0x1000, len(data))
         vram[dst : dst + copy_len] = data[:copy_len]
         uploads.append(
             {
@@ -808,13 +878,13 @@ def level_fg_bg_vram(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[b
 
 
 def level_sprite_vram(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[bytes, list[dict[str, Any]], dict[str, Any]]:
-    vram = bytearray(0x2000)
+    vram = bytearray(0x4000)
     uploads: list[dict[str, Any]] = []
     gfx_ids, source = resolve_sprite_gfx_ids(rom, level_id, header)
     for slot, gfx_id in enumerate(gfx_ids):
         data, addr, compressed_len = decompress_graphics_file(rom, gfx_id)
-        dst = [0x1800, 0x1000, 0x0800, 0x0000][slot]
-        copy_len = min(0x800, len(data))
+        dst = [0x3000, 0x2000, 0x1000, 0x0000][slot]
+        copy_len = min(0x1000, len(data))
         vram[dst : dst + copy_len] = data[:copy_len]
         uploads.append(
             {
@@ -824,7 +894,7 @@ def level_sprite_vram(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[
                 "compressed_length": compressed_len,
                 "decompressed_length": len(data),
                 "vram_base": "0x6000",
-                "vram_addr": f"0x{0x6000 + dst:04X}",
+                "vram_addr": f"0x{0x6000 + dst // 2:04X}",
                 "vram_offset": f"0x{dst:04X}",
                 "tile_start": dst // 32,
                 "tile_count": copy_len // 32,

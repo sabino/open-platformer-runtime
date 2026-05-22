@@ -70,6 +70,10 @@ assert tileset["palette_mapping"]["tile_word_palette_bits"] == "bits 10-12"
 assert tileset["palette_mapping"]["cgram_row_indexing"] is True
 assert tileset["palette_assets"]["file"] == "palettes/level_105_palette.json"
 assert tileset["gfx_source"]["source"] == "vanilla_fg_bg_gfx_list"
+assert tileset["vram"]["tile_count"] == 512, tileset["vram"]
+assert [entry["tile_start"] for entry in tileset["uploads"]] == [384, 256, 128, 0], tileset["uploads"]
+assert all(entry["tile_count"] == 128 for entry in tileset["uploads"]), tileset["uploads"]
+assert tileset["map16_preview_png"]["map16_tile_count"] == 512, tileset["map16_preview_png"]
 
 sprite_tileset = json.loads((out_dir / "spritesets" / "level_105_spritegfx8.json").read_text())
 assert sprite_tileset["status"] == "preview"
@@ -81,6 +85,10 @@ assert sprite_tileset["palette_mapping"]["final_oam_palette_selection_pending"] 
 assert sprite_tileset["palette_mapping"]["preview_row"] == 14
 assert sprite_tileset["palette_assets"]["file"] == "palettes/level_105_palette.json"
 assert sprite_tileset["gfx_source"]["source"] == "vanilla_sprite_gfx_list"
+assert sprite_tileset["vram"]["tile_count"] == 512, sprite_tileset["vram"]
+assert [entry["tile_start"] for entry in sprite_tileset["uploads"]] == [384, 256, 128, 0], sprite_tileset["uploads"]
+assert [entry["vram_addr"] for entry in sprite_tileset["uploads"]] == ["0x7800", "0x7000", "0x6800", "0x6000"], sprite_tileset["uploads"]
+assert all(entry["tile_count"] == 128 for entry in sprite_tileset["uploads"]), sprite_tileset["uploads"]
 
 tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
 assert tilemap["status"] == "partial"

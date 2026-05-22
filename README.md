@@ -22,6 +22,7 @@ The current first slice covers:
 - Runtime pipe debug triggers derived from imported screen exits and placed pipe tiles instead of a hardcoded screen position.
 - Runtime loading and debug rendering of imported sprite spawn records, including 34 Yoshi Island 1 sprite spawns and the direct target's single spawn.
 - Per-level sprite GFX extraction through vanilla and Lunar Magic-aware GFX slot resolution, producing raw `$6000-$7FFF` sprite VRAM atlases for Yoshi Island 1 and the direct pipe target.
+- Vanilla GFX preview extraction expands SMW 3bpp slots into 4bpp and fills the full 512-tile BG/sprite VRAM windows used by Map16 and OAM tile numbers.
 - A C# fixed-step Mario movement prototype using SMW velocity units, native flat-ground walk/run/P-meter caps, native ground friction, and jump/gravity constants from the native reference.
 - Headless/import/build validation scripts that avoid opening a Wayland window and assert audio, Map16, collision, and player sprite loading.
 
