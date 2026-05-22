@@ -20,3 +20,4 @@ trap 'rm -f "$LOG_FILE"' EXIT
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
 grep -q "smw-runtime: map16_tiles=1408 collision_rects=" "$LOG_FILE"
+grep -q "player_sprites=8" "$LOG_FILE"

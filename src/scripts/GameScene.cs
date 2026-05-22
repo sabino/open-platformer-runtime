@@ -13,12 +13,17 @@ public partial class GameScene : Node2D
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
     private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
     private readonly List<PlacedMap16Tile> _placedTiles = [];
+    private readonly List<int> _headTilePointers = [];
+    private readonly List<int> _bodyTilePointers = [];
+    private readonly List<Sprite2D> _playerTileSprites = [];
 
     private SmwPhysics.PlayerState _state;
-    private ColorRect? _player;
+    private Node2D? _player;
     private Label? _hud;
     private SmwAudio? _audio;
+    private ImageTexture? _playerTexture;
     private float _cameraX;
+    private int _lastPlayerPose = -1;
 
     public override void _Ready()
     {
@@ -29,7 +34,7 @@ public partial class GameScene : Node2D
         BuildWorld();
         BuildPlayer();
         BuildHud();
-        GD.Print($"smw-runtime: map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count}");
+        GD.Print($"smw-runtime: map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public override void _PhysicsProcess(double delta)
@@ -63,6 +68,7 @@ public partial class GameScene : Node2D
             _player.Position = new Vector2(_state.XFloat, _state.YFloat);
         }
 
+        UpdatePlayerGraphic();
         UpdateHud();
         CheckPipeDebug();
     }
@@ -158,6 +164,7 @@ public partial class GameScene : Node2D
         }
 
         LoadPlacedTiles();
+        LoadPlayerGraphicsMetadata();
     }
 
     private void LoadPlacedTiles()
@@ -200,6 +207,52 @@ public partial class GameScene : Node2D
             var map16 = placed.TryGetValue("map16", out var map16Variant) ? map16Variant.AsInt32() : 0;
             var source = placed.TryGetValue("source", out var sourceVariant) ? sourceVariant.AsString() : "";
             _placedTiles.Add(new PlacedMap16Tile(x, y, map16, source));
+        }
+    }
+
+    private void LoadPlayerGraphicsMetadata()
+    {
+        const string playerGraphicsPath = "res://generated/smw/player/player_graphics.json";
+        if (!FileAccess.FileExists(playerGraphicsPath))
+        {
+            return;
+        }
+
+        using var file = FileAccess.Open(playerGraphicsPath, FileAccess.ModeFlags.Read);
+        if (file == null)
+        {
+            return;
+        }
+
+        var parsed = Json.ParseString(file.GetAsText());
+        if (parsed.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var metadata = parsed.AsGodotDictionary();
+        if (!metadata.TryGetValue("tile_pointer_tables", out var tablesVariant) ||
+            tablesVariant.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var tables = tablesVariant.AsGodotDictionary();
+        LoadTilePointerArray(tables, "head", _headTilePointers);
+        LoadTilePointerArray(tables, "body", _bodyTilePointers);
+    }
+
+    private static void LoadTilePointerArray(Godot.Collections.Dictionary tables, string key, List<int> target)
+    {
+        target.Clear();
+        if (!tables.TryGetValue(key, out var variant) || variant.VariantType != Variant.Type.Array)
+        {
+            return;
+        }
+
+        foreach (var entry in variant.AsGodotArray())
+        {
+            target.Add(entry.AsInt32());
         }
     }
 
@@ -491,13 +544,139 @@ public partial class GameScene : Node2D
 
     private void BuildPlayer()
     {
-        _player = new ColorRect
+        _player = new Node2D
         {
-            Color = new Color(0.88f, 0.12f, 0.10f, 1.0f),
+            Name = "MarioPlayer",
             Position = new Vector2(_state.XFloat, _state.YFloat),
-            Size = new Vector2(SmwPhysics.PlayerWidth, SmwPhysics.PlayerHeight),
         };
         AddChild(_player);
+
+        if (!TryBuildPlayerSprites())
+        {
+            _player.AddChild(new ColorRect
+            {
+                Color = new Color(0.88f, 0.12f, 0.10f, 1.0f),
+                Size = new Vector2(SmwPhysics.PlayerWidth, SmwPhysics.PlayerHeight),
+            });
+            return;
+        }
+
+        UpdatePlayerGraphic(force: true);
+    }
+
+    private bool TryBuildPlayerSprites()
+    {
+        const string playerAtlasPath = "res://generated/smw/player/gfx32_player_palette0.png";
+        if (_player == null ||
+            _headTilePointers.Count == 0 ||
+            _bodyTilePointers.Count == 0 ||
+            !FileAccess.FileExists(playerAtlasPath))
+        {
+            return false;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(playerAtlasPath));
+        if (image == null || image.IsEmpty())
+        {
+            return false;
+        }
+
+        _playerTexture = ImageTexture.CreateFromImage(image);
+        var offsets = new[]
+        {
+            new Vector2(-1, 0),
+            new Vector2(7, 0),
+            new Vector2(-1, 8),
+            new Vector2(7, 8),
+            new Vector2(-1, 16),
+            new Vector2(7, 16),
+            new Vector2(-1, 24),
+            new Vector2(7, 24),
+        };
+
+        foreach (var offset in offsets)
+        {
+            var sprite = new Sprite2D
+            {
+                Texture = _playerTexture,
+                RegionEnabled = true,
+                Centered = false,
+                Position = offset,
+                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+                ZIndex = 10,
+            };
+            _playerTileSprites.Add(sprite);
+            _player.AddChild(sprite);
+        }
+
+        return true;
+    }
+
+    private void UpdatePlayerGraphic(bool force = false)
+    {
+        if (_playerTileSprites.Count == 0)
+        {
+            return;
+        }
+
+        var pose = ChoosePlayerPose();
+        if (!force && pose == _lastPlayerPose)
+        {
+            UpdatePlayerFacing();
+            return;
+        }
+
+        _lastPlayerPose = pose;
+        var headTile = _headTilePointers[Math.Clamp(pose, 0, _headTilePointers.Count - 1)];
+        var bodyTile = _bodyTilePointers[Math.Clamp(pose, 0, _bodyTilePointers.Count - 1)];
+        SetPlayerTileBlock(0, headTile);
+        SetPlayerTileBlock(4, bodyTile);
+        UpdatePlayerFacing();
+    }
+
+    private int ChoosePlayerPose()
+    {
+        if (!_state.OnGround)
+        {
+            return _state.SpinJump ? 4 : 6;
+        }
+
+        if (Math.Abs(_state.XSpeed) >= 4)
+        {
+            return 1 + (int)((Time.GetTicksMsec() / 110) % 3);
+        }
+
+        return 0;
+    }
+
+    private void SetPlayerTileBlock(int spriteIndex, int topLeftTile)
+    {
+        SetPlayerTile(spriteIndex, topLeftTile);
+        SetPlayerTile(spriteIndex + 1, topLeftTile + 1);
+        SetPlayerTile(spriteIndex + 2, topLeftTile + 16);
+        SetPlayerTile(spriteIndex + 3, topLeftTile + 17);
+    }
+
+    private void SetPlayerTile(int spriteIndex, int tile)
+    {
+        if (spriteIndex < 0 || spriteIndex >= _playerTileSprites.Count)
+        {
+            return;
+        }
+
+        _playerTileSprites[spriteIndex].RegionRect = new Rect2(
+            (tile % 16) * 8,
+            (tile / 16) * 8,
+            8,
+            8);
+    }
+
+    private void UpdatePlayerFacing()
+    {
+        foreach (var sprite in _playerTileSprites)
+        {
+            sprite.FlipH = _state.Facing == 0;
+        }
     }
 
     private SmwPhysics.PlayerState MakeInitialPlayerState()
@@ -598,7 +777,8 @@ public partial class GameScene : Node2D
         }
 
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} tiles={_placedTiles.Count} solids={_solids.Count} exits={_screenExits.Count}";
+            $"xs={_state.XSpeed} ys={_state.YSpeed} tiles={_placedTiles.Count} solids={_solids.Count} " +
+            $"exits={_screenExits.Count} player={_playerTileSprites.Count}";
     }
 
     private void CheckPipeDebug()

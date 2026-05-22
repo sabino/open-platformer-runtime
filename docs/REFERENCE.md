@@ -24,6 +24,8 @@ Audio note: the importer preserves the original SPC engine/sample/music banks. G
 
 Runtime collision note: `GameScene` now renders the generated Yoshi Island 1 Map16 placements as individual tiles from the palette-aware Map16 preview atlas and derives temporary merged AABB collision rectangles from the imported placement source labels. This is useful for playable traversal, but it is not a substitute for the final Map16 act-as table, slope semantics, and block interaction routines.
 
+Runtime player graphics note: `GameScene` now draws Mario from the generated GFX32 player atlas by composing the imported `PlayerGFXRt` head/body tile pointer entries into eight 8x8 sprites. The pose picker currently maps idle, walk, jump, and spin-jump to early pointer-table entries so the runtime uses original graphics instead of a placeholder rectangle. Exact animation states, cape/fire/small variants, tile flips, tile size selection, and OAM priority still need the direct SMW OAM assembly port.
+
 The key transition invariant is:
 
 ```text
