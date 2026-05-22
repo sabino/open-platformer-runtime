@@ -1005,24 +1005,12 @@ public partial class GameScene : Node2D
 
     private static bool IsSolidMap16Source(string source)
     {
-        if (IsSlopeObjectSource(source))
-        {
-            return false;
-        }
-
         return source.Contains("ledge", StringComparison.Ordinal) ||
             source.Contains("ground", StringComparison.Ordinal) ||
             source.Contains("mushroom", StringComparison.Ordinal) ||
             source.Contains("pipe", StringComparison.Ordinal) ||
             source.Contains("slope", StringComparison.Ordinal) ||
             source.StartsWith("std_generic_", StringComparison.Ordinal);
-    }
-
-    private static bool IsSlopeObjectSource(string source)
-    {
-        return source.Contains("diagonal_pipe", StringComparison.Ordinal) ||
-            source.Contains("diagonal_ledge", StringComparison.Ordinal) ||
-            source.Contains("slope", StringComparison.Ordinal);
     }
 
     private static bool IsSlopeSurfaceTile(PlacedMap16Tile tile)
