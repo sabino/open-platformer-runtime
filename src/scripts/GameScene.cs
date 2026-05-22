@@ -371,13 +371,49 @@ public partial class GameScene : Node2D
                 finalTileOrder.Add(key);
             }
 
-            finalTiles[key] = new PlacedMap16Tile(x, y, map16, source);
+            var candidate = new PlacedMap16Tile(x, y, map16, source);
+            finalTiles[key] = finalTiles.TryGetValue(key, out var existing)
+                ? ChooseVisibleMap16Tile(existing, candidate)
+                : candidate;
         }
 
         foreach (var key in finalTileOrder)
         {
             _placedTiles.Add(finalTiles[key]);
         }
+    }
+
+    private static PlacedMap16Tile ChooseVisibleMap16Tile(PlacedMap16Tile current, PlacedMap16Tile incoming)
+    {
+        if (TerrainMasksPipeBody(current.Source, incoming.Source))
+        {
+            return current;
+        }
+
+        if (TerrainMasksPipeBody(incoming.Source, current.Source))
+        {
+            return incoming;
+        }
+
+        return incoming;
+    }
+
+    private static bool TerrainMasksPipeBody(string terrainSource, string pipeSource)
+    {
+        return IsTerrainMaskSource(terrainSource) && IsPipeBodySource(pipeSource);
+    }
+
+    private static bool IsTerrainMaskSource(string source)
+    {
+        return source.Contains("ledge", StringComparison.Ordinal) ||
+            source.Contains("ground", StringComparison.Ordinal) ||
+            source.StartsWith("std_generic_", StringComparison.Ordinal);
+    }
+
+    private static bool IsPipeBodySource(string source)
+    {
+        return source.Contains("pipe_shaft", StringComparison.Ordinal) ||
+            source.Contains("diagonal_pipe", StringComparison.Ordinal);
     }
 
     private void LoadPlayerGraphicsMetadata()
