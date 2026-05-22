@@ -15,7 +15,7 @@ out_dir = Path(sys.argv[1])
 manifest = json.loads((out_dir / "manifest.json").read_text())
 levels = manifest["levels"]
 assert "105" in levels, "missing Yoshi Island 1 level 105"
-assert "0CB" in levels, "missing direct pipe target level 0CB"
+assert "1CB" in levels, "missing vanilla direct pipe target level 1CB"
 
 level_105 = json.loads((out_dir / levels["105"]["file"]).read_text())
 exits = level_105["screen_exits"]
@@ -23,7 +23,9 @@ assert exits, "level 105 should contain at least one screen exit"
 pipe_exit = next((exit for exit in exits if exit["screen"] == 7), None)
 assert pipe_exit is not None, "level 105 screen 07 pipe exit missing"
 assert pipe_exit["exit_low"] == 0xCB, pipe_exit
-assert pipe_exit["vanilla_destination"] == 0x0CB, pipe_exit
+assert pipe_exit["vanilla_destination"] == 0x1CB, pipe_exit
+assert pipe_exit["vanilla_destination_low"] == 0xCB, pipe_exit
+assert pipe_exit["vanilla_source_map_high"] == 1, pipe_exit
 assert pipe_exit["vanilla_secondary"] == 0, pipe_exit
 assert pipe_exit["raw_r11"] == 0, pipe_exit
 
@@ -32,12 +34,12 @@ for png in [
     out_dir / "player" / "gfx33_player_palette0.png",
     out_dir / "tilesets" / "level_105_tileset7_8x8.png",
     out_dir / "tilesets" / "level_105_tileset7_map16_preview.png",
-    out_dir / "tilesets" / "level_0CB_tileset8_8x8.png",
-    out_dir / "tilesets" / "level_0CB_tileset8_map16_preview.png",
+    out_dir / "tilesets" / "level_1CB_tileset3_8x8.png",
+    out_dir / "tilesets" / "level_1CB_tileset3_map16_preview.png",
     out_dir / "spritesets" / "level_105_spritegfx8_8x8.png",
-    out_dir / "spritesets" / "level_0CB_spritegfx4_8x8.png",
+    out_dir / "spritesets" / "level_1CB_spritegfx8_8x8.png",
     out_dir / "levels" / "level_105_partial_layout.png",
-    out_dir / "levels" / "level_0CB_partial_layout.png",
+    out_dir / "levels" / "level_1CB_partial_layout.png",
 ]:
     data = png.read_bytes()
     assert data.startswith(b"\x89PNG\r\n\x1a\n"), png
@@ -48,7 +50,7 @@ for png in [
 
 for palette_json in [
     out_dir / "palettes" / "level_105_palette.json",
-    out_dir / "palettes" / "level_0CB_palette.json",
+    out_dir / "palettes" / "level_1CB_palette.json",
 ]:
     level_palette = json.loads(palette_json.read_text())
     assert level_palette["status"] == "preview", level_palette
@@ -118,18 +120,24 @@ assert tilemap["palette_assets"]["file"] == "palettes/level_105_palette.json"
 assert tilemap["map16_pointer_source"] == {"source": "native_initialize_map16_pointers", "tileset": 7}
 assert tilemap["gfx_source"]["source"] == "vanilla_fg_bg_gfx_list"
 
-pipe_target_tilemap = json.loads((out_dir / "levels" / "level_0CB_partial_tilemap.json").read_text())
-assert pipe_target_tilemap["placed_tile_count"] > 100, pipe_target_tilemap["placed_tile_count"]
-assert pipe_target_tilemap["unsupported_object_counts"] == {}, pipe_target_tilemap["unsupported_object_counts"]
+pipe_target_tilemap = json.loads((out_dir / "levels" / "level_1CB_partial_tilemap.json").read_text())
+assert pipe_target_tilemap["placed_tile_count"] > 500, pipe_target_tilemap["placed_tile_count"]
+assert pipe_target_tilemap["unsupported_object_counts"] == {"00": 1}, pipe_target_tilemap["unsupported_object_counts"]
 target_sources = {tile["source"] for tile in pipe_target_tilemap["placed_tiles"]}
 assert "horizontal_pipe_end" in target_sources, target_sources
-assert "rope_mushroom_top_left" in target_sources, target_sources
-assert "rope_mushroom_column_left" in target_sources, target_sources
+assert "underground_ceiling_ledge_fill" in target_sources, target_sources
+assert "underground_ceiling_edge" in target_sources, target_sources
 
-pipe_target_sprite_tileset = json.loads((out_dir / "spritesets" / "level_0CB_spritegfx4.json").read_text())
-assert pipe_target_sprite_tileset["sprite_graphics"] == 4, pipe_target_sprite_tileset
-assert [entry["gfx_id"] for entry in pipe_target_sprite_tileset["uploads"]] == ["06", "13", "01", "00"], pipe_target_sprite_tileset["uploads"]
+pipe_target_sprite_tileset = json.loads((out_dir / "spritesets" / "level_1CB_spritegfx8.json").read_text())
+assert pipe_target_sprite_tileset["sprite_graphics"] == 8, pipe_target_sprite_tileset
+assert [entry["gfx_id"] for entry in pipe_target_sprite_tileset["uploads"]] == ["20", "13", "01", "00"], pipe_target_sprite_tileset["uploads"]
 assert pipe_target_sprite_tileset["gfx_source"]["source"] == "vanilla_sprite_gfx_list"
+
+secondary_tables = json.loads((out_dir / "levels" / "secondary_tables.json").read_text())
+assert secondary_tables["secondary_level_low_05f800"][0x1CB] == 0x05
+assert secondary_tables["secondary_y_05fa00"][0x1CB] == 0xA9
+assert secondary_tables["secondary_x_05fc00"][0x1CB] == 0x08
+assert secondary_tables["secondary_entrance_type_05fe00"][0x1CB] == 0x06
 
 audio = manifest["assets"]["audio"]
 assert audio["status"] == "partial", audio
@@ -158,12 +166,12 @@ for sample in audio_manifest["decoded_samples"]:
     assert wav_data[:4] == b"RIFF", sample["file"]
     assert wav_data[8:12] == b"WAVE", sample["file"]
 
-print("smw-import check: YI1 pipe route 105 screen 07 -> 0CB secondary=0")
+print("smw-import check: YI1 pipe route 105 screen 07 -> 1CB secondary=0")
 print("smw-import check: player GFX32/GFX33 PNG atlases and categorization manifest present")
-print("smw-import check: per-level full CGRAM palettes generated for 105 and 0CB")
+print("smw-import check: per-level full CGRAM palettes generated for 105 and 1CB")
 print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview use level CGRAM rows")
-print("smw-import check: level 105 and 0CB sprite GFX VRAM atlases use level sprite palette rows")
+print("smw-import check: level 105 and 1CB sprite GFX VRAM atlases use level sprite palette rows")
 print("smw-import check: level 105 partial layout preview uses Map16 palette bits against full CGRAM")
-print("smw-import check: level 0CB rope pipe target layout expands horizontal pipes and mushroom platforms")
+print("smw-import check: level 1CB underground pipe target layout expands ceiling ledges, edges, and pipes")
 print("smw-import check: SPC banks and BRR preview WAVs present")
 PY

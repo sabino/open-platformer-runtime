@@ -437,8 +437,8 @@ def parse_level_objects(raw: bytes, header: dict[str, Any], layer_index: int = 0
                     "exit_low": exit_low,
                     "raw_r11": b1,
                     "vanilla_properties": vanilla_properties,
-                    "vanilla_destination": ((vanilla_properties & 1) << 8) | exit_low,
-                    "vanilla_secondary": (vanilla_properties >> 1) & 1,
+                    "vanilla_destination_property_bits": ((vanilla_properties & 1) << 8) | exit_low,
+                    "vanilla_secondary_property_bits": (vanilla_properties >> 1) & 1,
                     "lunar_magic_properties": b1 & 0x0F,
                     "lunar_magic_secondary": (b1 >> 1) & 1,
                 }
@@ -462,6 +462,21 @@ def parse_level_objects(raw: bytes, header: dict[str, Any], layer_index: int = 0
         )
         sequence += 1
     return {"objects": objects, "screen_exits": exits}
+
+
+def annotate_vanilla_screen_exits(screen_exits: list[dict[str, Any]], source_level_id: int) -> None:
+    # Vanilla SMW does not use the screen-exit property byte as the direct target
+    # high bit. The low byte comes from the screen exit, while the high bit comes
+    # from the current overworld map. For the extracted vanilla level IDs, the
+    # source level's 0x100 bit is the useful static proxy for that map bit.
+    source_map_high = source_level_id & 0x100
+    for screen_exit in screen_exits:
+        raw_r11 = int(screen_exit["raw_r11"])
+        exit_low = int(screen_exit["exit_low"])
+        screen_exit["vanilla_destination_low"] = exit_low
+        screen_exit["vanilla_source_map_high"] = source_map_high >> 8
+        screen_exit["vanilla_destination"] = source_map_high | exit_low
+        screen_exit["vanilla_secondary"] = raw_r11 >> 1
 
 
 def parse_sprite_data(raw: bytes) -> dict[str, Any]:
@@ -1297,6 +1312,24 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             if width > 1:
                 place(x + width - 1, y + yy, 0, 0x75, "rope_mushroom_column_right")
 
+    def render_underground_ceiling_ledge(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        width = (size & 0x0F) + 1
+        filler_rows = size >> 4
+        for yy in range(filler_rows):
+            fill_rect(x, y + yy, width, 1, 1, 0x65, "underground_ceiling_ledge_fill")
+        fill_rect(x, y + filler_rows, width, 1, 1, 0x4E, "underground_ceiling_ledge_bottom")
+
+    def render_underground_ceiling_edge(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        edge_kind = size & 0x0F
+        rows = size >> 4
+        top_tiles = [0x50, 0x50, 0x51, 0x51]
+        bottom_tiles = [0x4D, 0x50, 0x4F, 0x51]
+        if edge_kind >= len(top_tiles):
+            return
+        for yy in range(rows):
+            place(x, y + yy, 1, top_tiles[edge_kind], "underground_ceiling_edge")
+        place(x, y + rows, 1, bottom_tiles[edge_kind], "underground_ceiling_edge_bottom")
+
     for obj in objects:
         placement = obj["placement"]
         x = int(placement["x_tile"])
@@ -1347,6 +1380,10 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             render_rope_mushroom_top(obj, x, y, size)
         elif obj_id == 0x3D and tileset in ROPE_TILESETS:
             render_rope_mushroom_column(obj, x, y, size)
+        elif obj_id == 0x3D and tileset == 3:
+            render_underground_ceiling_ledge(obj, x, y, size)
+        elif obj_id == 0x3E and tileset == 3:
+            render_underground_ceiling_edge(obj, x, y, size)
         elif obj_id == 0x3F:
             render_small_bush(obj, x, y, size)
         elif obj_id == 0x00 and size == 0x41:
@@ -1713,6 +1750,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     layer1_raw = rom.get_bytes(layer1_addr, layer1_len)
     header = decode_level_header(layer1_raw)
     parsed_layer1 = parse_level_objects(layer1_raw, header, layer_index=0)
+    annotate_vanilla_screen_exits(parsed_layer1["screen_exits"], level_id)
 
     layer2_addr = rom.get_24(0x05E600 + level_id * 3)
     layer2_kind = "object_stream"
@@ -1726,6 +1764,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     parsed_layer2: dict[str, Any] = {"objects": [], "screen_exits": []}
     if layer2_kind == "object_stream":
         parsed_layer2 = parse_level_objects(layer2_raw, header, layer_index=1)
+        annotate_vanilla_screen_exits(parsed_layer2["screen_exits"], level_id)
 
     banks = (
         list(rom.get_bytes(0x0EF100, 512))
@@ -1872,6 +1911,7 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
         "secondary_level_low_05f800": list(rom.get_bytes(0x05F800, 0x200)),
         "secondary_y_05fa00": list(rom.get_bytes(0x05FA00, 0x200)),
         "secondary_x_05fc00": list(rom.get_bytes(0x05FC00, 0x200)),
+        "secondary_entrance_type_05fe00": list(rom.get_bytes(0x05FE00, 0x200)),
     }
     secondary_path = out_dir / "levels" / "secondary_tables.json"
     assets["secondary_tables"] = {
