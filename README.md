@@ -13,13 +13,13 @@ The current first slice covers:
 - A SNES-sized `256x224` logical viewport that opens as a 3x Wayland window for normal graphical runs.
 - Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; the Godot runtime no longer depends on WAV/MP3 playback for these probes.
 - A menu audio panel for internal port-1 SFX command probes and BRR sample probes, plus imported music bank visibility while the full SPC/DSP command sequencer is still pending.
-- A debug asset overlay showing the imported level GFX, sprite GFX, full-CGRAM palette-aware Map16 preview, and partial level layout preview while the level renderer is still being ported.
+- An opt-in debug asset overlay showing the imported level GFX, sprite GFX, full-CGRAM palette-aware Map16 preview, and partial level layout preview while the level renderer is still being ported.
 - Runtime placement of the generated Yoshi Island 1 Map16 tilemap, with temporary merged collision rectangles derived from imported tile placement sources.
 - Runtime rendering of generated Layer 2 RLE background previews behind the imported Layer 1 Map16 placements for level `105` and pipe target `1CB`.
 - Layer 1/2 object placement and several Map16 projection rules are cross-checked against Lunar Magic Universal's current `lmcore` parser/renderer, including native object tile coordinates, pipes, steep right slopes, left diagonal ledges, and right diagonal pipes.
 - Map16 rendering converts the raw SMW quadrant word order into render quadrant order before generating Godot atlases and level previews.
 - Runtime collision separates imported diagonal pipe/slope/ledge clusters into slope surfaces instead of merging them into full rectangular blocker tiles.
-- Runtime camera follow on both axes, clamped to generated tile bounds so Yoshi Island 1's lower routes can be inspected during drops.
+- Runtime camera scrolling uses SMW-style horizontal and vertical screen-space thresholds instead of center-follow, clamped to generated tile bounds so Yoshi Island 1's lower routes can be inspected during drops.
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
 - Partial object expansion for the Yoshi Island 1 direct pipe target `1CB`, including horizontal pipes and underground ceiling ledges/edges in the generated Map16 tilemap.
 - Manifest-driven runtime asset selection for the current level's tilemap, preview, and tileset atlases, rather than hardcoded generated filenames.
@@ -71,6 +71,8 @@ tools/capture-wayland.sh generated/smw/captures/level_105_compositor.png 105
 The visible wrappers default to Sway workspace `6`; override with `SMW_SWAY_WORKSPACE=<number>` if needed.
 
 For reproducible lower-route captures, the runtime also accepts `--smw-test-spawn=x,y` alongside `--smw-capture=...`.
+
+Pass `--smw-debug-overlays` to a Godot run when you want collision rectangles, screen lines, pipe/sprite markers, the debug HUD, and the imported asset preview panel. Normal playable runs hide those overlays.
 
 Build the C# project:
 

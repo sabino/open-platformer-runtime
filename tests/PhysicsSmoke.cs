@@ -51,6 +51,20 @@ public static class PhysicsSmoke
             return 1;
         }
 
+        state = physics.MakeState(32, 100);
+        state.OnGround = true;
+        physics.Step(ref state, new SmwPhysics.FrameInput
+        {
+            Spin = true,
+            SpinPressed = true,
+        }, []);
+
+        if (!state.SpinJump || state.YSpeed >= 0)
+        {
+            Console.Error.WriteLine("expected spin button to start a spin jump");
+            return 1;
+        }
+
         Console.WriteLine("smw-godot C# physics smoke: ok");
         return 0;
     }

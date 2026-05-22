@@ -27,3 +27,6 @@
 - Reordered rendered Map16 quadrants from the raw SMW `TL/BL/TR/BR` word layout into `TL/TR/BL/BR`, fixing twisted pipe, ledge, and cave tile graphics.
 - Bound screen-exit pipe triggers to the rightmost vertical pipe top in the exit screen, so Yoshi Island 1 enters the intended next pipe instead of the earlier pipe in the same screen.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.
+- Made collision/sprite/screen-line markers, the debug HUD, and the asset preview panel opt-in through `--smw-debug-overlays`, so normal runs show the game viewport without debug clutter.
+- Wired the spin button into the physics step so pressing `X` starts a spin jump instead of only playing the sound probe.
+- Replaced the temporary center-follow camera with SMW-style horizontal and vertical threshold scrolling using the native `0x80 +/- 12`, `0x64`, and `0x7C` screen anchors plus native-like vertical scroll caps.

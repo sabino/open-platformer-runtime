@@ -11,6 +11,12 @@ public partial class GameScene : Node2D
     private const int BigMarioPowerup = 1;
     private const float LogicalViewportWidth = 256.0f;
     private const float LogicalViewportHeight = 224.0f;
+    private const float CameraHorizontalAnchor = 0x80;
+    private const float CameraHorizontalBand = 12.0f;
+    private const float CameraVerticalUpper = 0x64;
+    private const float CameraVerticalLower = 0x7C;
+    private const float CameraMaxScrollUpPerFrame = 3.0f;
+    private const float CameraMaxScrollDownPerFrame = 5.0f;
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -49,9 +55,12 @@ public partial class GameScene : Node2D
     private string _levelLayer2BackgroundPath = "res://generated/smw/levels/level_105_layer2_background.png";
     private float _cameraX;
     private float _cameraY;
+    private bool _cameraInitialized;
     private int _lastPlayerPose = -1;
     private int _lastPlayerFacing = -1;
     private bool _pipeTransitionLatch;
+
+    public bool DebugOverlays { get; set; }
 
     public override void _Ready()
     {
@@ -76,17 +85,18 @@ public partial class GameScene : Node2D
             Down = Input.IsActionPressed("smw_down"),
             Jump = Input.IsActionPressed("smw_jump"),
             JumpPressed = Input.IsActionJustPressed("smw_jump"),
+            Spin = Input.IsActionPressed("smw_spin"),
             SpinPressed = Input.IsActionJustPressed("smw_spin"),
             Run = Input.IsActionPressed("smw_run"),
         };
 
-        if (_state.OnGround && frameInput.JumpPressed)
-        {
-            _audio?.PlayJump();
-        }
-        else if (_state.OnGround && frameInput.SpinPressed)
+        if (_state.OnGround && frameInput.SpinPressed)
         {
             _audio?.PlaySpinJump();
+        }
+        else if (_state.OnGround && frameInput.JumpPressed)
+        {
+            _audio?.PlayJump();
         }
 
         _physics.Step(ref _state, frameInput, _solids, _slopes);
@@ -471,19 +481,22 @@ public partial class GameScene : Node2D
         else
         {
             AddGeneratedLevelPreview();
-            AddSolid(new Rect2(0, 192, 3584, 64), new Color(0.20f, 0.55f, 0.25f, 0.22f), debugVisible: true);
-            AddSolid(new Rect2(240, 160, 48, 32), new Color(0.55f, 0.42f, 0.20f, 0.22f), debugVisible: true);
-            AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 0.22f), debugVisible: true);
+            AddSolid(new Rect2(0, 192, 3584, 64), new Color(0.20f, 0.55f, 0.25f, 0.22f), DebugOverlays);
+            AddSolid(new Rect2(240, 160, 48, 32), new Color(0.55f, 0.42f, 0.20f, 0.22f), DebugOverlays);
+            AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 0.22f), DebugOverlays);
         }
 
         RebuildPipeEntrances();
-        AddPipeMarkers();
-        AddObjectMarkers();
-        AddSpriteMarkers();
-
-        for (var i = 0; i < 20; i++)
+        if (DebugOverlays)
         {
-            AddScreenLine(i);
+            AddPipeMarkers();
+            AddObjectMarkers();
+            AddSpriteMarkers();
+
+            for (var i = 0; i < 20; i++)
+            {
+                AddScreenLine(i);
+            }
         }
     }
 
@@ -597,12 +610,12 @@ public partial class GameScene : Node2D
 
         foreach (var rect in BuildMergedSolidRects(solidTiles))
         {
-            AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), debugVisible: true);
+            AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), DebugOverlays);
         }
 
         foreach (var slope in BuildSlopeSurfaces(slopeTiles))
         {
-            AddSlope(slope, debugVisible: true);
+            AddSlope(slope, DebugOverlays);
         }
     }
 
@@ -1210,6 +1223,13 @@ public partial class GameScene : Node2D
     private void BuildHud()
     {
         _hudLayer?.QueueFree();
+        _hudLayer = null;
+        _hud = null;
+        if (!DebugOverlays)
+        {
+            return;
+        }
+
         var layer = new CanvasLayer
         {
             Name = "HudLayer",
@@ -1316,6 +1336,7 @@ public partial class GameScene : Node2D
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;
         _state.OnGround = false;
+        _cameraInitialized = false;
         UpdateCamera();
         if (_player != null)
         {
@@ -1385,6 +1406,7 @@ public partial class GameScene : Node2D
         }
 
         _state = MakeInitialPlayerState();
+        _cameraInitialized = false;
         UpdateCamera();
         BuildWorld();
         BuildHud();
@@ -1449,8 +1471,37 @@ public partial class GameScene : Node2D
     {
         var maxCameraX = MathF.Max(0.0f, GetLevelPixelRight() - LogicalViewportWidth);
         var maxCameraY = MathF.Max(0.0f, GetLevelPixelBottom() - LogicalViewportHeight);
-        _cameraX = Math.Clamp(_state.XFloat - 160.0f, 0.0f, maxCameraX);
-        _cameraY = Math.Clamp(_state.YFloat - 176.0f, 0.0f, maxCameraY);
+        if (!_cameraInitialized)
+        {
+            _cameraX = Math.Clamp(_state.XFloat - CameraHorizontalAnchor, 0.0f, maxCameraX);
+            _cameraY = Math.Clamp(_state.YFloat - CameraVerticalLower, 0.0f, maxCameraY);
+            _cameraInitialized = true;
+        }
+
+        var playerScreenX = _state.XFloat - _cameraX;
+        if (playerScreenX < CameraHorizontalAnchor - CameraHorizontalBand)
+        {
+            _cameraX -= CameraHorizontalAnchor - CameraHorizontalBand - playerScreenX;
+        }
+        else if (playerScreenX > CameraHorizontalAnchor + CameraHorizontalBand)
+        {
+            _cameraX += playerScreenX - (CameraHorizontalAnchor + CameraHorizontalBand);
+        }
+
+        var playerScreenY = _state.YFloat - _cameraY;
+        if (playerScreenY < CameraVerticalUpper && _state.OnGround)
+        {
+            var delta = playerScreenY - CameraVerticalUpper;
+            _cameraY += MathF.Max(-CameraMaxScrollUpPerFrame, delta);
+        }
+        else if (playerScreenY > CameraVerticalLower)
+        {
+            var delta = playerScreenY - CameraVerticalLower;
+            _cameraY += MathF.Min(CameraMaxScrollDownPerFrame, delta);
+        }
+
+        _cameraX = Math.Clamp(_cameraX, 0.0f, maxCameraX);
+        _cameraY = Math.Clamp(_cameraY, 0.0f, maxCameraY);
         Position = new Vector2(-MathF.Round(_cameraX), -MathF.Round(_cameraY));
     }
 

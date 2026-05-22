@@ -87,6 +87,7 @@ public sealed class SmwPhysics
         public bool Down;
         public bool Jump;
         public bool JumpPressed;
+        public bool Spin;
         public bool SpinPressed;
         public bool Run;
     }
@@ -221,7 +222,8 @@ public sealed class SmwPhysics
 
     private static void ApplyJumpAndGravity(ref PlayerState state, FrameInput input)
     {
-        if (state.OnGround && input.JumpPressed)
+        var jumpStarted = input.JumpPressed || input.SpinPressed;
+        if (state.OnGround && jumpStarted)
         {
             var speedIndex = Math.Clamp((Math.Abs(state.XSpeed) >> 2) & 0xFE, 0, JumpHeightTable.Length - 1);
             if (input.SpinPressed)
@@ -235,7 +237,7 @@ public sealed class SmwPhysics
             state.JumpHeldFrames = 0;
         }
 
-        if (state.YSpeed < 0 && input.Jump)
+        if (state.YSpeed < 0 && (input.Jump || input.Spin))
         {
             state.YSpeed += 3;
             state.JumpHeldFrames++;

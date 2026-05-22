@@ -11,6 +11,7 @@ public partial class Main : Node2D
     private GameScene? _game;
     private SmwAudio? _audio;
     private ColorRect? _gameBackground;
+    private bool _debugOverlays;
 
     public override void _Ready()
     {
@@ -37,6 +38,10 @@ public partial class Main : Node2D
             if (arg == "--smw-test-autostart")
             {
                 autostart = true;
+            }
+            else if (arg == "--smw-debug-overlays")
+            {
+                _debugOverlays = true;
             }
             else if (arg.StartsWith("--smw-test-level=", StringComparison.Ordinal))
             {
@@ -272,7 +277,11 @@ public partial class Main : Node2D
         EnsureGameBackground();
         _audio?.PlayMenuStart();
 
-        _game = new GameScene { Name = "GameScene" };
+        _game = new GameScene
+        {
+            Name = "GameScene",
+            DebugOverlays = _debugOverlays,
+        };
         AddChild(_game);
     }
 
