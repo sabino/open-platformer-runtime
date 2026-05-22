@@ -1,0 +1,11 @@
+.godot/
+.godot_local/
+generated/
+local-rom.cfg
+*.sfc
+*.smc
+*.sav
+*.srm
+*.log
+*.tmp
+
