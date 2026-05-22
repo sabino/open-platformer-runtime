@@ -14,6 +14,7 @@ public partial class GameScene : Node2D
     private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
     private readonly List<SpriteSpawn> _levelSprites = [];
     private readonly List<PlacedMap16Tile> _placedTiles = [];
+    private readonly List<PipeEntrance> _pipeEntrances = [];
     private readonly List<int> _headTilePointers = [];
     private readonly List<int> _bodyTilePointers = [];
     private readonly List<Sprite2D> _playerTileSprites = [];
@@ -85,6 +86,7 @@ public partial class GameScene : Node2D
 
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
     private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
+    private readonly record struct PipeEntrance(Rect2 Rect, int Screen);
 
     private void LoadAssetPack()
     {
@@ -382,14 +384,12 @@ public partial class GameScene : Node2D
             AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 0.22f), debugVisible: true);
         }
 
-        if (_screenExits.Count > 0)
-        {
-            AddPipeMarker(new Rect2(416, 112, 32, 80));
-        }
+        RebuildPipeEntrances();
+        AddPipeMarkers();
         AddObjectMarkers();
         AddSpriteMarkers();
 
-        for (var i = 0; i < 15; i++)
+        for (var i = 0; i < 20; i++)
         {
             AddScreenLine(i);
         }
@@ -602,16 +602,44 @@ public partial class GameScene : Node2D
         AddWorldChild(sprite);
     }
 
-    private void AddPipeMarker(Rect2 rect)
+    private void AddPipeMarkers()
     {
-        var node = new ColorRect
+        foreach (var entrance in _pipeEntrances)
         {
-            Name = "PipeDebug",
-            Color = new Color(0.10f, 0.75f, 0.22f, 0.85f),
-            Position = rect.Position,
-            Size = rect.Size,
-        };
-        AddWorldChild(node);
+            var node = new ColorRect
+            {
+                Name = "PipeDebug",
+                Color = new Color(0.10f, 0.75f, 0.22f, 0.65f),
+                Position = entrance.Rect.Position,
+                Size = entrance.Rect.Size,
+            };
+            AddWorldChild(node);
+        }
+    }
+
+    private void RebuildPipeEntrances()
+    {
+        _pipeEntrances.Clear();
+        foreach (var exit in _screenExits)
+        {
+            if (!exit.TryGetValue("screen", out var screenVariant))
+            {
+                continue;
+            }
+
+            var screen = screenVariant.AsInt32();
+            foreach (var tile in _placedTiles)
+            {
+                if (tile.X / 16 != screen || !tile.Source.Contains("vertical_pipe_top_left", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var topLeft = TileToWorld(tile.X, tile.Y);
+                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X, topLeft.Y - 32, 32, 48), screen));
+                break;
+            }
+        }
     }
 
     private void AddScreenLine(int index)
@@ -930,7 +958,7 @@ public partial class GameScene : Node2D
 
     private void PrintRuntimeState()
     {
-        GD.Print($"smw-runtime: level={_currentLevelId} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
@@ -974,13 +1002,22 @@ public partial class GameScene : Node2D
         }
         _pipeTransitionLatch = true;
 
-        var pipeRect = new Rect2(416, 112, 32, 80);
-        if (!_physics.PlayerRect(_state).Intersects(pipeRect))
+        var playerRect = _physics.PlayerRect(_state);
+        PipeEntrance? matchedEntrance = null;
+        foreach (var entrance in _pipeEntrances)
+        {
+            if (playerRect.Intersects(entrance.Rect))
+            {
+                matchedEntrance = entrance;
+                break;
+            }
+        }
+        if (matchedEntrance == null)
         {
             return;
         }
 
-        var screen = (int)(_state.XFloat / 256.0f);
+        var screen = matchedEntrance.Value.Screen;
         Godot.Collections.Dictionary? exitData = null;
         foreach (var entry in _screenExits)
         {

@@ -10,6 +10,7 @@ The current first slice covers:
 - Layer 1/layer 2 raw object streams, decoded placement metadata, screen exits, sprite stream, Map16, palettes, GFX32/GFX33, player PNG atlases, level tileset GFX atlases, sprite GFX VRAM atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables.
 - Raw SPC upload banks plus a few decoded BRR preview WAVs used only as importer verification artifacts while the full SPC/DSP sequencer is still pending.
 - A Godot .NET C# menu and minimal playable scene.
+- A SNES-sized `256x224` logical viewport that opens as a 3x Wayland window for normal graphical runs.
 - Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; the Godot runtime no longer depends on WAV/MP3 playback for these probes.
 - A menu audio panel for internal port-1 SFX command probes and BRR sample probes, plus imported music bank visibility while the full SPC/DSP command sequencer is still pending.
 - A debug asset overlay showing the imported level GFX, sprite GFX, palette-aware Map16 preview, and partial level layout preview while the level renderer is still being ported.
@@ -18,6 +19,7 @@ The current first slice covers:
 - Partial object expansion for the Yoshi Island 1 direct pipe target `0CB`, including horizontal pipes and rope mushroom platforms in the generated Map16 tilemap.
 - Manifest-driven runtime asset selection for the current level's tilemap, preview, and tileset atlases, rather than hardcoded generated filenames.
 - Runtime world rebuild scaffolding for loading imported level targets; headless checks currently verify both startup level `105` and direct pipe target `0CB`.
+- Runtime pipe debug triggers derived from imported screen exits and placed pipe tiles instead of a hardcoded screen position.
 - Runtime loading and debug rendering of imported sprite spawn records, including 34 Yoshi Island 1 sprite spawns and the direct target's single spawn.
 - Per-level sprite GFX extraction through the vanilla sprite upload table, producing raw `$6000-$7FFF` sprite VRAM atlases for Yoshi Island 1 and the direct pipe target.
 - A C# fixed-step Mario movement prototype using SMW velocity units, native flat-ground walk/run/P-meter caps, native ground friction, and jump/gravity constants from the native reference.

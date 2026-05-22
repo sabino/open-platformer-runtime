@@ -4,12 +4,19 @@ using System.Collections.Generic;
 
 public partial class Main : Node2D
 {
+    private static readonly Vector2I DefaultWindowSize = new(768, 672);
+
     private Control? _menu;
     private GameScene? _game;
     private SmwAudio? _audio;
 
     public override void _Ready()
     {
+        if (!DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
+        {
+            DisplayServer.WindowSetSize(DefaultWindowSize);
+        }
+
         SetupInputMap();
         _audio = new SmwAudio { Name = "SmwAudio" };
         AddChild(_audio);
@@ -100,20 +107,20 @@ public partial class Main : Node2D
 
         var panel = new VBoxContainer
         {
-            Position = new Vector2(44, 44),
-            CustomMinimumSize = new Vector2(600, 360),
+            Position = new Vector2(12, 10),
+            CustomMinimumSize = new Vector2(232, 196),
         };
         _menu.AddChild(panel);
 
         var title = new Label { Text = "Open Platformer Runtime" };
-        title.AddThemeFontSizeOverride("font_size", 28);
+        title.AddThemeFontSizeOverride("font_size", 14);
         panel.AddChild(title);
 
         var status = new Label { Text = AssetStatusText() };
-        status.AddThemeFontSizeOverride("font_size", 14);
+        status.AddThemeFontSizeOverride("font_size", 8);
         panel.AddChild(status);
 
-        var start = new Button { Text = "Start Yoshi Island 1 Slice" };
+        var start = new Button { Text = "Start YI1 Slice" };
         start.Pressed += StartGame;
         panel.AddChild(start);
 
@@ -130,23 +137,23 @@ public partial class Main : Node2D
     private void AddAudioTester(VBoxContainer panel)
     {
         var title = new Label { Text = "Internal APU Probe" };
-        title.AddThemeFontSizeOverride("font_size", 18);
+        title.AddThemeFontSizeOverride("font_size", 10);
         panel.AddChild(title);
 
         var samples = new HBoxContainer();
         panel.AddChild(samples);
-        AddCommandButton(samples, "Jump 01", () => _audio?.PlayJump());
-        AddCommandButton(samples, "Two-note 04", () => _audio?.PlaySpinJump());
-        AddSampleButton(samples, 9, "BRR 09");
+        AddCommandButton(samples, "Jump", () => _audio?.PlayJump());
+        AddCommandButton(samples, "2-note", () => _audio?.PlaySpinJump());
+        AddSampleButton(samples, 9, "BRR09");
 
         var musicTitle = new Label { Text = "Music Banks" };
-        musicTitle.AddThemeFontSizeOverride("font_size", 18);
+        musicTitle.AddThemeFontSizeOverride("font_size", 10);
         panel.AddChild(musicTitle);
 
         foreach (var line in MusicBankLines())
         {
             var label = new Label { Text = line };
-            label.AddThemeFontSizeOverride("font_size", 12);
+            label.AddThemeFontSizeOverride("font_size", 8);
             panel.AddChild(label);
         }
 

@@ -33,6 +33,10 @@ Runtime level asset note: `GameScene` loads the current level through `generated
 
 Runtime transition scaffolding note: `GameScene` can rebuild world geometry, collision rectangles, HUD previews, and player spawn from another imported level. The CLI argument `--smw-test-level=0CB` is used by `tools/check-headless.sh` to verify that the imported direct pipe target loads with 131 Map16 placements and generated collision rectangles.
 
+Runtime viewport note: the game scene now uses a `256x224` logical viewport, matching the SNES visible level area, while `Main` requests a `768x672` Wayland window for normal visible runs. Debug asset previews no longer determine the playable viewport scale.
+
+Runtime pipe note: pipe debug rectangles are rebuilt from imported screen-exit records and the corresponding generated `vertical_pipe_top_left` Map16 placements. For level `105`, this puts the active pipe trigger on the screen `07` pipe instead of the old hardcoded screen `01` marker.
+
 Runtime sprite note: `GameScene` loads generated `sprite_layer.sprites` records and renders their spawn points as debug markers with sprite IDs. The current coordinate decode uses the vanilla screen nibble plus 8-bit x byte and low y nibble, which is enough to inspect Yoshi Island 1's 34 imported sprite records while full sprite simulation and exact OAM rendering remain pending.
 
 Sprite GFX note: the importer now writes `spritesets/level_*_spritegfx*_8x8.png` and matching metadata from the same sprite upload table used by the native code. These files are raw sprite VRAM previews, not final enemy frames. Correct Koopa, Yoshi, power-up, and effect rendering still requires porting each sprite's OAM assembly, tile index, tile size, flip, priority, and palette selection rules.
