@@ -9,4 +9,5 @@
 - Moved runtime level asset selection onto manifest-provided per-level tilemap, preview, and tileset paths instead of hardcoded `105` resource names.
 - Added runtime world rebuild scaffolding and a headless `0CB` load smoke test so imported transition target layouts can be loaded by Godot.
 - Corrected flat-ground walk/run/P-meter horizontal caps and ground friction toward the native `HandlePlayerPhysics` tables, and wired the C# physics smoke test into `tools/check-dotnet.sh`.
+- Loaded generated sprite spawn records in the Godot runtime and rendered debug markers for the imported Yoshi Island 1 and `0CB` sprite layers.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.

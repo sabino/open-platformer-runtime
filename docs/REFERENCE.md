@@ -32,6 +32,8 @@ Runtime level asset note: `GameScene` loads the current level through `generated
 
 Runtime transition scaffolding note: `GameScene` can rebuild world geometry, collision rectangles, HUD previews, and player spawn from another imported level. The CLI argument `--smw-test-level=0CB` is used by `tools/check-headless.sh` to verify that the imported direct pipe target loads with 131 Map16 placements and generated collision rectangles.
 
+Runtime sprite note: `GameScene` loads generated `sprite_layer.sprites` records and renders their spawn points as debug markers with sprite IDs. The current coordinate decode uses the vanilla screen nibble plus 8-bit x byte and low y nibble, which is enough to inspect Yoshi Island 1's 34 imported sprite records while full sprite simulation and exact OAM rendering remain pending.
+
 The key transition invariant is:
 
 ```text

@@ -18,6 +18,7 @@ The current first slice covers:
 - Partial object expansion for the Yoshi Island 1 direct pipe target `0CB`, including horizontal pipes and rope mushroom platforms in the generated Map16 tilemap.
 - Manifest-driven runtime asset selection for the current level's tilemap, preview, and tileset atlases, rather than hardcoded generated filenames.
 - Runtime world rebuild scaffolding for loading imported level targets; headless checks currently verify both startup level `105` and direct pipe target `0CB`.
+- Runtime loading and debug rendering of imported sprite spawn records, including 34 Yoshi Island 1 sprite spawns and the direct target's single spawn.
 - A C# fixed-step Mario movement prototype using SMW velocity units, native flat-ground walk/run/P-meter caps, native ground friction, and jump/gravity constants from the native reference.
 - Headless/import/build validation scripts that avoid opening a Wayland window and assert audio, Map16, collision, and player sprite loading.
 

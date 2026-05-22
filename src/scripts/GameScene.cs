@@ -12,6 +12,7 @@ public partial class GameScene : Node2D
     private readonly List<Rect2> _solids = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
     private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
+    private readonly List<SpriteSpawn> _levelSprites = [];
     private readonly List<PlacedMap16Tile> _placedTiles = [];
     private readonly List<int> _headTilePointers = [];
     private readonly List<int> _bodyTilePointers = [];
@@ -82,6 +83,7 @@ public partial class GameScene : Node2D
     }
 
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
+    private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
 
     private void LoadAssetPack()
     {
@@ -93,6 +95,7 @@ public partial class GameScene : Node2D
     {
         _screenExits.Clear();
         _levelObjects.Clear();
+        _levelSprites.Clear();
         _placedTiles.Clear();
 
         if (!FileAccess.FileExists("res://generated/smw/manifest.json"))
@@ -180,8 +183,43 @@ public partial class GameScene : Node2D
             }
         }
 
+        LoadSpriteSpawns(levelDetails);
         LoadPlacedTiles(_levelTilemapPath);
         return true;
+    }
+
+    private void LoadSpriteSpawns(Godot.Collections.Dictionary levelDetails)
+    {
+        if (!levelDetails.TryGetValue("sprite_layer", out var spriteLayerVariant) ||
+            spriteLayerVariant.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var spriteLayer = spriteLayerVariant.AsGodotDictionary();
+        if (!spriteLayer.TryGetValue("sprites", out var spritesVariant) || spritesVariant.VariantType != Variant.Type.Array)
+        {
+            return;
+        }
+
+        foreach (var spriteVariant in spritesVariant.AsGodotArray())
+        {
+            if (spriteVariant.VariantType != Variant.Type.Dictionary)
+            {
+                continue;
+            }
+
+            var sprite = spriteVariant.AsGodotDictionary();
+            var screenY = sprite.TryGetValue("screen_y", out var screenYVariant) ? screenYVariant.AsInt32() : 0;
+            var xId = sprite.TryGetValue("x_id", out var xIdVariant) ? xIdVariant.AsInt32() : 0;
+            var spriteId = sprite.TryGetValue("sprite_id", out var spriteIdVariant) ? spriteIdVariant.AsInt32() : 0;
+            var extraBits = sprite.TryGetValue("extra_bits", out var extraBitsVariant) ? extraBitsVariant.AsInt32() : 0;
+            var offset = sprite.TryGetValue("offset", out var offsetVariant) ? offsetVariant.AsInt32() : 0;
+            var screen = (screenY >> 4) & 0x0F;
+            var y = (screenY & 0x0F) * 16 + (int)LevelVisualYOffset;
+            var x = screen * 256 + xId;
+            _levelSprites.Add(new SpriteSpawn(x, y, screen, spriteId, extraBits, offset));
+        }
     }
 
     private void ApplyLevelAssetPaths(Godot.Collections.Dictionary level)
@@ -338,6 +376,7 @@ public partial class GameScene : Node2D
             AddPipeMarker(new Rect2(416, 112, 32, 80));
         }
         AddObjectMarkers();
+        AddSpriteMarkers();
 
         for (var i = 0; i < 15; i++)
         {
@@ -607,6 +646,30 @@ public partial class GameScene : Node2D
         }
     }
 
+    private void AddSpriteMarkers()
+    {
+        foreach (var sprite in _levelSprites)
+        {
+            var marker = new ColorRect
+            {
+                Color = new Color(0.95f, 0.20f, 0.75f, 0.82f),
+                Position = new Vector2(sprite.X - 4, sprite.Y - 4),
+                Size = new Vector2(8, 8),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            AddWorldChild(marker);
+
+            var label = new Label
+            {
+                Text = $"{sprite.SpriteId:X2}",
+                Position = new Vector2(sprite.X + 6, sprite.Y - 10),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            label.AddThemeFontSizeOverride("font_size", 9);
+            AddWorldChild(label);
+        }
+    }
+
     private void BuildPlayer()
     {
         _player = new Node2D
@@ -851,12 +914,12 @@ public partial class GameScene : Node2D
 
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} tiles={_placedTiles.Count} solids={_solids.Count} " +
-            $"exits={_screenExits.Count} player={_playerTileSprites.Count}";
+            $"exits={_screenExits.Count} sprites={_levelSprites.Count} player={_playerTileSprites.Count}";
     }
 
     private void PrintRuntimeState()
     {
-        GD.Print($"smw-runtime: level={_currentLevelId} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
