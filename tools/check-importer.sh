@@ -126,7 +126,7 @@ assert all(entry["tile_count"] == 128 for entry in sprite_tileset["uploads"]), s
 
 tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
 assert tilemap["status"] == "partial"
-assert tilemap["placed_tile_count"] == 1622, tilemap["placed_tile_count"]
+assert tilemap["placed_tile_count"] == 1612, tilemap["placed_tile_count"]
 assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
 assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
 assert any("Map16 tile word's palette" in note for note in tilemap["notes"]), tilemap["notes"]
@@ -145,13 +145,14 @@ assert "steep_right_slope_surface" in tile_sources, tile_sources
 placed_by_coord = {(tile["x"], tile["y"], tile["source"]): tile["map16"] for tile in tilemap["placed_tiles"]}
 assert placed_by_coord[(56, 18, "right_diagonal_pipe")] == 0x01C4, placed_by_coord.get((56, 18, "right_diagonal_pipe"))
 assert placed_by_coord[(55, 19, "right_diagonal_pipe")] == 0x01C7, placed_by_coord.get((55, 19, "right_diagonal_pipe"))
-assert placed_by_coord[(50, 24, "right_diagonal_pipe")] == 0x01EB, placed_by_coord.get((50, 24, "right_diagonal_pipe"))
+assert placed_by_coord[(50, 24, "wide_scale_ledge_top")] == 0x0100, placed_by_coord.get((50, 24, "wide_scale_ledge_top"))
 assert placed_by_coord[(13, 18, "left_diagonal_ledge_edge")] == 0x01AA, placed_by_coord.get((13, 18, "left_diagonal_ledge_edge"))
 assert placed_by_coord[(11, 21, "left_diagonal_ledge_bottom")] == 0x01F7, placed_by_coord.get((11, 21, "left_diagonal_ledge_bottom"))
 assert placed_by_coord[(17, 21, "left_diagonal_ledge_edge")] == 0x00A6, placed_by_coord.get((17, 21, "left_diagonal_ledge_edge"))
 assert placed_by_coord[(11, 22, "left_diagonal_ledge_fill")] == 0x003F, placed_by_coord.get((11, 22, "left_diagonal_ledge_fill"))
 assert placed_by_coord[(12, 22, "left_diagonal_ledge_fill")] == 0x00A3, placed_by_coord.get((12, 22, "left_diagonal_ledge_fill"))
 assert placed_by_coord[(18, 22, "left_diagonal_ledge_edge")] == 0x00A6, placed_by_coord.get((18, 22, "left_diagonal_ledge_edge"))
+assert all(tile["source"] != "right_diagonal_pipe" for tile in tilemap["placed_tiles"] if (tile["x"], tile["y"]) == (50, 24))
 
 layer2_bg = json.loads((out_dir / "levels" / "level_105_layer2_background.json").read_text())
 assert layer2_bg["kind"] == "rle_background", layer2_bg
@@ -174,12 +175,15 @@ assert sprite_counts[0x4F] == 3, sprite_counts
 assert sprite_counts[0xB9] == 2, sprite_counts
 
 pipe_target_tilemap = json.loads((out_dir / "levels" / "level_1CB_partial_tilemap.json").read_text())
-assert pipe_target_tilemap["placed_tile_count"] == 591, pipe_target_tilemap["placed_tile_count"]
+assert pipe_target_tilemap["placed_tile_count"] == 587, pipe_target_tilemap["placed_tile_count"]
 assert pipe_target_tilemap["unsupported_object_counts"] == {"00": 1}, pipe_target_tilemap["unsupported_object_counts"]
 target_sources = {tile["source"] for tile in pipe_target_tilemap["placed_tiles"]}
 assert "horizontal_pipe_end" in target_sources, target_sources
 assert "underground_ceiling_ledge_fill" in target_sources, target_sources
 assert "underground_ceiling_edge" in target_sources, target_sources
+target_by_coord = {(tile["x"], tile["y"]): tile for tile in pipe_target_tilemap["placed_tiles"]}
+assert target_by_coord[(31, 22)]["source"] == "ground_edge_middle", target_by_coord[(31, 22)]
+assert target_by_coord[(31, 23)]["source"] == "ground_edge_middle", target_by_coord[(31, 23)]
 
 pipe_target_layer2_bg = json.loads((out_dir / "levels" / "level_1CB_layer2_background.json").read_text())
 assert pipe_target_layer2_bg["placed_tile_count"] == 864, pipe_target_layer2_bg["placed_tile_count"]

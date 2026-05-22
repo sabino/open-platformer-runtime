@@ -881,6 +881,16 @@ public partial class GameScene : Node2D
 
     private static bool IsSlopeUpRightTile(PlacedMap16Tile tile)
     {
+        if (tile.Source.Contains("upside_down", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (tile.Source.Contains("_left_slope_edge", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         return tile.Source switch
         {
             "left_diagonal_ledge_edge" => tile.Map16 == 0x01AA,
@@ -891,6 +901,16 @@ public partial class GameScene : Node2D
 
     private static bool IsSlopeDownRightTile(PlacedMap16Tile tile)
     {
+        if (tile.Source.Contains("upside_down", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (tile.Source.Contains("_right_slope_edge", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         return tile.Source switch
         {
             "steep_right_slope_edge" => tile.Map16 == 0x01AF,
@@ -1002,11 +1022,22 @@ public partial class GameScene : Node2D
     {
         return source.Contains("diagonal_pipe", StringComparison.Ordinal) ||
             source.Contains("diagonal_ledge", StringComparison.Ordinal) ||
-            source.Contains("steep_right_slope", StringComparison.Ordinal);
+            source.Contains("slope", StringComparison.Ordinal);
     }
 
     private static bool IsSlopeSurfaceTile(PlacedMap16Tile tile)
     {
+        if (tile.Source.Contains("upside_down", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (tile.Source.Contains("_left_slope_edge", StringComparison.Ordinal) ||
+            tile.Source.Contains("_right_slope_edge", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         return tile.Source switch
         {
             "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB,

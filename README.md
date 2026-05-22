@@ -16,7 +16,7 @@ The current first slice covers:
 - An opt-in debug overlay showing imported asset previews plus collision rectangles/outlines, slope lines, player hitbox/feet, active camera bounds, pipe/goal triggers, sprite hitboxes, sprite spawn markers, object markers, and coin/block semantic markers.
 - Runtime placement of the generated Yoshi Island 1 Map16 tilemap, with temporary merged collision rectangles derived from imported tile placement sources.
 - Runtime rendering of generated Layer 2 RLE background previews behind the imported Layer 1 Map16 placements for level `105` and pipe target `1CB`.
-- Layer 1/2 object placement and several Map16 projection rules are cross-checked against Lunar Magic Universal's current `lmcore` parser/renderer, including native object tile coordinates, pipes, steep right slopes, left diagonal ledges, and right diagonal pipes.
+- Layer 1/2 object placement and several Map16 projection rules are cross-checked against Lunar Magic Universal's current `lmcore` parser/renderer, including native object tile coordinates, pipes, standard `0x12` slopes, left diagonal ledges, and right diagonal pipes.
 - Map16 rendering converts the raw SMW quadrant word order into render quadrant order before generating Godot atlases and level previews.
 - Runtime collision separates imported diagonal pipe/slope/ledge clusters into per-Map16-tile slope surfaces instead of merging them into full rectangular blocker tiles or long averaged slope lines.
 - Runtime camera scrolling uses SMW-style horizontal and vertical screen-space thresholds instead of center-follow, clamped to generated tile bounds so Yoshi Island 1's lower routes can be inspected during drops.

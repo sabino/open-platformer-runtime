@@ -1257,22 +1257,89 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
     width_tiles = int(header["width_tiles"])
     height_tiles = max(int(header["height_tiles"]), 32)
     placed: list[dict[str, Any]] = []
+    occupied_map16: dict[tuple[int, int], int] = {}
     unsupported: dict[str, int] = {}
 
-    def place(x: int, y: int, page: int, low: int, source: str) -> None:
+    def pipe_object_should_preserve_existing_foreground(object_id: int) -> bool:
+        return object_id in (0x0F, 0x10, 0x1F, 0x20, 0x39)
+
+    def adjusted_slope_tile(base_tile: int, existing_tile: int | None) -> int:
+        if existing_tile is None:
+            return base_tile
+        existing_low = existing_tile & 0x00FF
+        if existing_low == 0x3F:
+            return base_tile + 0x0001
+        if existing_low == 0x01:
+            return base_tile + 0x0003
+        if existing_low == 0x03:
+            return base_tile + 0x0004
+        return base_tile
+
+    def adjusted_diagonal_line_tile(base_tile: int, existing_tile: int | None) -> int:
+        if existing_tile is None:
+            return base_tile
+        existing_low = existing_tile & 0x00FF
+        if existing_low == 0x25:
+            return base_tile
+        if existing_low == 0x3F:
+            return base_tile + 0x0001
+        return base_tile + 0x0002
+
+    def place(x: int, y: int, page: int, low: int, source: str, *, preserve_existing: bool = False) -> None:
         if low == 0xFF:
             return
         if 0 <= x < width_tiles and 0 <= y < height_tiles:
-            placed.append({"x": x, "y": y, "map16": page * 0x100 + low, "source": source})
+            key = (x, y)
+            if preserve_existing and key in occupied_map16:
+                return
+            map16_id = page * 0x100 + low
+            occupied_map16[key] = map16_id
+            placed.append({"x": x, "y": y, "map16": map16_id, "source": source})
 
-    def place_map16(x: int, y: int, map16_id: int, source: str) -> None:
+    def place_map16(
+        x: int,
+        y: int,
+        map16_id: int,
+        source: str,
+        *,
+        preserve_existing: bool = False,
+        slope_actual: bool = False,
+        diagonal_line: bool = False,
+    ) -> None:
         if map16_id == 0xFFFF:
             return
         if 0 <= x < width_tiles and 0 <= y < height_tiles:
+            key = (x, y)
+            if preserve_existing and key in occupied_map16:
+                return
+            if slope_actual:
+                map16_id = adjusted_slope_tile(map16_id, occupied_map16.get(key))
+            elif diagonal_line:
+                map16_id = adjusted_diagonal_line_tile(map16_id, occupied_map16.get(key))
+            occupied_map16[key] = map16_id
             placed.append({"x": x, "y": y, "map16": map16_id, "source": source})
 
-    def place_relative(origin_x: int, origin_y: int, rel_x: int, rel_y: int, map16_id: int, source: str) -> None:
-        place_map16(origin_x + rel_x, origin_y + rel_y, map16_id, source)
+    def place_relative(
+        origin_x: int,
+        origin_y: int,
+        rel_x: int,
+        rel_y: int,
+        map16_id: int,
+        source: str,
+        *,
+        preserve_existing: bool = False,
+        slope_actual: bool = False,
+        diagonal_line: bool = False,
+    ) -> None:
+        place_map16(
+            origin_x + rel_x,
+            origin_y + rel_y,
+            map16_id,
+            source,
+            preserve_existing=preserve_existing,
+            slope_actual=slope_actual,
+            diagonal_line=diagonal_line,
+        )
 
     def fill_rect(x: int, y: int, width: int, height: int, page: int, low: int, source: str) -> None:
         for yy in range(height):
@@ -1313,34 +1380,36 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
     def render_vertical_pipe(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         rows = object_height_tiles(int(obj["object_id"]), size)
         pipe_type = size & 0x0F
+        preserve_existing = pipe_object_should_preserve_existing_foreground(int(obj["object_id"]))
         if pipe_type >= len(VERTICAL_PIPE_TOP_LEFT):
             pipe_type = 0
         if pipe_type == 5:
             for yy in range(rows):
-                place(x, y + yy, 1, 0x68, "skinny_vertical_pipe_left")
-                place(x + 1, y + yy, 1, 0x69, "skinny_vertical_pipe_right")
+                place(x, y + yy, 1, 0x68, "skinny_vertical_pipe_left", preserve_existing=preserve_existing)
+                place(x + 1, y + yy, 1, 0x69, "skinny_vertical_pipe_right", preserve_existing=preserve_existing)
             return
         if pipe_type < 3:
-            place(x, y, 1, VERTICAL_PIPE_TOP_LEFT[pipe_type], "vertical_pipe_top_left")
-            place(x + 1, y, 1, VERTICAL_PIPE_TOP_RIGHT[pipe_type], "vertical_pipe_top_right")
+            place(x, y, 1, VERTICAL_PIPE_TOP_LEFT[pipe_type], "vertical_pipe_top_left", preserve_existing=preserve_existing)
+            place(x + 1, y, 1, VERTICAL_PIPE_TOP_RIGHT[pipe_type], "vertical_pipe_top_right", preserve_existing=preserve_existing)
         for yy in range(1 if pipe_type < 3 else 0, rows):
-            place(x, y + yy, 1, 0x35, "vertical_pipe_shaft_left")
-            place(x + 1, y + yy, 1, 0x36, "vertical_pipe_shaft_right")
+            place(x, y + yy, 1, 0x35, "vertical_pipe_shaft_left", preserve_existing=preserve_existing)
+            place(x + 1, y + yy, 1, 0x36, "vertical_pipe_shaft_right", preserve_existing=preserve_existing)
         if 2 <= pipe_type < 5:
-            place(x, y + rows - 1, 1, VERTICAL_PIPE_BOTTOM_LEFT[pipe_type], "vertical_pipe_bottom_left")
-            place(x + 1, y + rows - 1, 1, VERTICAL_PIPE_BOTTOM_RIGHT[pipe_type], "vertical_pipe_bottom_right")
+            place(x, y + rows - 1, 1, VERTICAL_PIPE_BOTTOM_LEFT[pipe_type], "vertical_pipe_bottom_left", preserve_existing=preserve_existing)
+            place(x + 1, y + rows - 1, 1, VERTICAL_PIPE_BOTTOM_RIGHT[pipe_type], "vertical_pipe_bottom_right", preserve_existing=preserve_existing)
 
     def render_horizontal_pipe(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         width = object_width_tiles(int(obj["object_id"]), size)
         pipe_type = (size >> 4) & 0x0F
         end_on_right = pipe_type >= 4
+        preserve_existing = pipe_object_should_preserve_existing_foreground(int(obj["object_id"]))
         for row in range(2):
             tile_kind = min(pipe_type + row, len(HORIZONTAL_PIPE_END) - 1)
             for xx in range(width):
                 if (not end_on_right and xx == 0) or (end_on_right and xx + 1 == width):
-                    place(x + xx, y + row, 1, HORIZONTAL_PIPE_END[tile_kind], "horizontal_pipe_end")
+                    place(x + xx, y + row, 1, HORIZONTAL_PIPE_END[tile_kind], "horizontal_pipe_end", preserve_existing=preserve_existing)
                 else:
-                    place(x + xx, y + row, 1, HORIZONTAL_PIPE_SHAFT[tile_kind], "horizontal_pipe_shaft")
+                    place(x + xx, y + row, 1, HORIZONTAL_PIPE_SHAFT[tile_kind], "horizontal_pipe_shaft", preserve_existing=preserve_existing)
 
     def render_midway_goal(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         rows = max(1, size >> 4)
@@ -1365,6 +1434,7 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
 
     def render_diagonal_pipe(obj: dict[str, Any], x: int, y: int) -> None:
         rows = max(1, object_height_tiles(int(obj["object_id"]), int(obj["size_or_type"])))
+        preserve_existing = pipe_object_should_preserve_existing_foreground(int(obj["object_id"]))
         for yy in range(rows):
             source_row = (
                 DIAGONAL_PIPE_ROW0 if yy == 0
@@ -1373,22 +1443,182 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
                 else DIAGONAL_PIPE_ROWN
             )
             for xx, map16_id in enumerate(source_row):
-                place_relative(x, y, xx - yy, yy, map16_id, "right_diagonal_pipe")
-        place_relative(x, y, -rows, rows, 0x01EB, "right_diagonal_pipe")
+                place_relative(x, y, xx - yy, yy, map16_id, "right_diagonal_pipe", preserve_existing=preserve_existing)
+        place_relative(x, y, -rows, rows, 0x01EB, "right_diagonal_pipe", preserve_existing=preserve_existing)
 
-    def render_steep_right_slope(obj: dict[str, Any], x: int, y: int, size: int) -> None:
-        if (size & 0x0F) != 4:
-            return
+    def render_slope(obj: dict[str, Any], x: int, y: int, size: int) -> bool:
+        slope_type = (size & 0x0F) % 10
         rows = (size >> 4) + 1
-        place_map16(x, y, 0x01AF, "steep_right_slope_edge")
-        for yy in range(1, rows):
-            for xx in range(max(0, yy - 1)):
-                place_map16(x + xx, y + yy, 0x003F, "steep_right_slope_fill")
-            place_map16(x + yy - 1, y + yy, 0x01E4, "steep_right_slope_surface")
-            place_map16(x + yy, y + yy, 0x01AF, "steep_right_slope_edge")
-        for xx in range(max(0, rows - 1)):
-            place_map16(x + xx, y + rows, 0x003F, "steep_right_slope_fill")
-        place_map16(x + rows - 1, y + rows, 0x01E4, "steep_right_slope_surface")
+        upside_down_units = max(size >> 4, 1)
+
+        def place_actual(rel_x: int, rel_y: int, map16_id: int, source: str) -> None:
+            place_relative(x, y, rel_x, rel_y, map16_id, source, slope_actual=True)
+
+        def place_plain(rel_x: int, rel_y: int, map16_id: int, source: str) -> None:
+            place_relative(x, y, rel_x, rel_y, map16_id, source)
+
+        def fill(first_x: int, end_x: int, rel_y: int, map16_id: int, source: str) -> None:
+            for rel_x in range(first_x, end_x):
+                place_plain(rel_x, rel_y, map16_id, source)
+
+        if rows <= 0:
+            return False
+
+        if slope_type == 0:
+            width = rows * 2
+            for yy in range(rows):
+                slope_x = width - (yy + 1) * 2
+                place_actual(slope_x, yy, 0x0196, "normal_left_slope_edge")
+                place_actual(slope_x + 1, yy, 0x019B, "normal_left_slope_edge")
+                if yy != 0:
+                    place_plain(slope_x + 2, yy, 0x01DE, "normal_left_slope_surface")
+                    place_plain(slope_x + 3, yy, 0x01E6, "normal_left_slope_surface")
+                    fill(slope_x + 4, width, yy, 0x003F, "normal_left_slope_fill")
+            place_plain(0, rows, 0x01DE, "normal_left_slope_surface")
+            place_plain(1, rows, 0x01E6, "normal_left_slope_surface")
+            fill(2, width, rows, 0x003F, "normal_left_slope_fill")
+            return True
+
+        if slope_type == 1:
+            for yy in range(rows):
+                slope_x = rows - 1 - yy
+                place_actual(slope_x, yy, 0x01AA, "steep_left_slope_edge")
+                if slope_x + 1 < rows:
+                    place_plain(slope_x + 1, yy, 0x01E2, "steep_left_slope_surface")
+                    fill(slope_x + 2, rows, yy, 0x003F, "steep_left_slope_fill")
+            place_plain(0, rows, 0x01E2, "steep_left_slope_surface")
+            fill(1, rows, rows, 0x003F, "steep_left_slope_fill")
+            return True
+
+        if slope_type == 2:
+            actual = [0x016E, 0x0173, 0x0178, 0x017D]
+            assist = [0x01D8, 0x01DA, 0x01E6, 0x01E6]
+            width = rows * len(actual)
+            for yy in range(rows):
+                slope_x = width - (yy + 1) * len(actual)
+                for xx, tile in enumerate(actual):
+                    place_actual(slope_x + xx, yy, tile, "gradual_left_slope_edge")
+                if yy != 0:
+                    for xx, tile in enumerate(assist):
+                        place_plain(slope_x + len(actual) + xx, yy, tile, "gradual_left_slope_surface")
+                    fill(slope_x + len(actual) + len(assist), width, yy, 0x003F, "gradual_left_slope_fill")
+            for xx, tile in enumerate(assist):
+                place_plain(xx, rows, tile, "gradual_left_slope_surface")
+            fill(len(assist), width, rows, 0x003F, "gradual_left_slope_fill")
+            return True
+
+        if slope_type == 3:
+            actual = [0x01A0, 0x01A5]
+            assist = [0x01E6, 0x01E0]
+            width = rows * 2
+            for yy in range(rows):
+                fill(0, yy * 2, yy, 0x003F, "normal_right_slope_fill")
+                if yy != 0:
+                    place_plain(yy * 2 - 2, yy, assist[0], "normal_right_slope_surface")
+                    place_plain(yy * 2 - 1, yy, assist[1], "normal_right_slope_surface")
+                place_actual(yy * 2, yy, actual[0], "normal_right_slope_edge")
+                place_actual(yy * 2 + 1, yy, actual[1], "normal_right_slope_edge")
+            fill(0, width - 2, rows, 0x003F, "normal_right_slope_fill")
+            place_plain(width - 2, rows, assist[0], "normal_right_slope_surface")
+            place_plain(width - 1, rows, assist[1], "normal_right_slope_surface")
+            return True
+
+        if slope_type == 4:
+            place_actual(0, 0, 0x01AF, "steep_right_slope_edge")
+            for yy in range(1, rows):
+                fill(0, yy - 1, yy, 0x003F, "steep_right_slope_fill")
+                place_plain(yy - 1, yy, 0x01E4, "steep_right_slope_surface")
+                place_actual(yy, yy, 0x01AF, "steep_right_slope_edge")
+            fill(0, rows - 1, rows, 0x003F, "steep_right_slope_fill")
+            place_plain(rows - 1, rows, 0x01E4, "steep_right_slope_surface")
+            return True
+
+        if slope_type == 5:
+            actual = [0x0182, 0x0187, 0x018C, 0x0191]
+            assist = [0x01E6, 0x01E6, 0x01DB, 0x01DC]
+            width = rows * len(actual)
+            for yy in range(rows):
+                fill(0, yy * len(actual), yy, 0x003F, "gradual_right_slope_fill")
+                if yy != 0:
+                    assist_x = (yy - 1) * len(actual)
+                    for xx, tile in enumerate(assist):
+                        place_plain(assist_x + xx, yy, tile, "gradual_right_slope_surface")
+                slope_x = yy * len(actual)
+                for xx, tile in enumerate(actual):
+                    place_actual(slope_x + xx, yy, tile, "gradual_right_slope_edge")
+            fill(0, width - len(assist), rows, 0x003F, "gradual_right_slope_fill")
+            for xx, tile in enumerate(assist):
+                place_plain(width - len(assist) + xx, rows, tile, "gradual_right_slope_surface")
+            return True
+
+        if slope_type == 6:
+            width = upside_down_units * 2
+            for yy in range(upside_down_units + 1):
+                row_start = 0 if yy == 0 else (yy - 1) * 2
+                if row_start >= width:
+                    break
+                if yy != 0:
+                    place_plain(row_start, yy, 0x01C6, "upside_down_normal_left_slope_surface")
+                    place_plain(row_start + 1, yy, 0x01C7, "upside_down_normal_left_slope_surface")
+                assist_x = row_start + (0 if yy == 0 else 2)
+                if assist_x + 1 < width:
+                    place_plain(assist_x, yy, 0x01EE, "upside_down_normal_left_slope_edge")
+                    place_plain(assist_x + 1, yy, 0x01F0, "upside_down_normal_left_slope_edge")
+                    fill(assist_x + 2, width, yy, 0x0165, "upside_down_normal_left_slope_fill")
+            return True
+
+        if slope_type == 7:
+            width = upside_down_units * 2
+            for yy in range(upside_down_units + 1):
+                row_width = width if yy == 0 else width - (yy - 1) * 2
+                if row_width == 0:
+                    continue
+                if yy == 0:
+                    fill(0, row_width - 2 if row_width > 2 else 0, yy, 0x0165, "upside_down_normal_right_slope_fill")
+                    if row_width >= 2:
+                        place_plain(row_width - 2, yy, 0x01F0, "upside_down_normal_right_slope_edge")
+                        place_plain(row_width - 1, yy, 0x01EF, "upside_down_normal_right_slope_edge")
+                else:
+                    fill(0, row_width - 4 if row_width > 4 else 0, yy, 0x0165, "upside_down_normal_right_slope_fill")
+                    if row_width >= 4:
+                        place_plain(row_width - 4, yy, 0x01F0, "upside_down_normal_right_slope_edge")
+                        place_plain(row_width - 3, yy, 0x01EF, "upside_down_normal_right_slope_edge")
+                    if row_width >= 2:
+                        place_plain(row_width - 2, yy, 0x01C8, "upside_down_normal_right_slope_surface")
+                        place_plain(row_width - 1, yy, 0x01C9, "upside_down_normal_right_slope_surface")
+            return True
+
+        if slope_type == 8:
+            width = upside_down_units
+            for yy in range(upside_down_units + 1):
+                row_start = 0 if yy == 0 else yy - 1
+                if row_start >= width:
+                    break
+                if yy != 0:
+                    place_plain(row_start, yy, 0x01C4, "upside_down_steep_left_slope_surface")
+                assist_x = row_start + (0 if yy == 0 else 1)
+                if assist_x < width:
+                    place_plain(assist_x, yy, 0x01EC, "upside_down_steep_left_slope_edge")
+                    fill(assist_x + 1, width, yy, 0x0165, "upside_down_steep_left_slope_fill")
+            return True
+
+        if slope_type == 9:
+            width = upside_down_units
+            for yy in range(upside_down_units + 1):
+                row_width = width if yy == 0 else width - (yy - 1)
+                if row_width == 0:
+                    continue
+                if yy == 0:
+                    fill(0, row_width - 1 if row_width > 1 else 0, yy, 0x0165, "upside_down_steep_right_slope_fill")
+                    place_plain(row_width - 1, yy, 0x01ED, "upside_down_steep_right_slope_edge")
+                else:
+                    fill(0, row_width - 2 if row_width > 2 else 0, yy, 0x0165, "upside_down_steep_right_slope_fill")
+                    if row_width >= 2:
+                        place_plain(row_width - 2, yy, 0x01ED, "upside_down_steep_right_slope_edge")
+                    place_plain(row_width - 1, yy, 0x01C5, "upside_down_steep_right_slope_surface")
+            return True
+
+        return False
 
     def render_left_diagonal_ledge(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         diagonal_rows = (size & 0x0F) + 1
@@ -1477,9 +1707,7 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         elif obj_id == 0x10:
             render_horizontal_pipe(obj, x, y, size)
         elif obj_id == 0x12:
-            if (size & 0x0F) == 4:
-                render_steep_right_slope(obj, x, y, size)
-            else:
+            if not render_slope(obj, x, y, size):
                 unsupported[f"{obj_id:02X}"] = unsupported.get(f"{obj_id:02X}", 0) + 1
         elif obj_id == 0x13:
             render_ground_edge(obj, x, y, size)
@@ -1492,10 +1720,11 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             fill_rect(x, y, width, 1, 1, ROPE_CLOUD_LINE[tile_kind], "rope_cloud_line")
         elif obj_id == 0x1F:
             rows = max(1, size >> 4)
-            place(x, y, 1, 0x53, "skinny_vertical_top")
+            preserve_existing = pipe_object_should_preserve_existing_foreground(obj_id)
+            place(x, y, 1, 0x53, "skinny_vertical_top", preserve_existing=preserve_existing)
             for yy in range(1, rows):
-                place(x, y + yy, 1, 0x54, "skinny_vertical_middle")
-            place(x, y + rows, 1, 0x55, "skinny_vertical_bottom")
+                place(x, y + yy, 1, 0x54, "skinny_vertical_middle", preserve_existing=preserve_existing)
+            place(x, y + rows, 1, 0x55, "skinny_vertical_bottom", preserve_existing=preserve_existing)
         elif obj_id == 0x21:
             fill_width = size + 1
             for xx in range(fill_width):
