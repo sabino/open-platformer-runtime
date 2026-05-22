@@ -120,6 +120,21 @@ LEVEL_VERTICAL_TABLE = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
 ]
+MAP16_POINTER_MASKS = [
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xE0, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xFE, 0x00, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xE0, 0x00, 0x00, 0x03, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+]
+TILESET_MAP16_POINTERS = [
+    0x8B70, 0xBC00, 0xC800, 0xD400, 0xE300,
+    0xE300, 0xC800, 0x8B70, 0xC800, 0xD400,
+    0xD400, 0xD400, 0x8B70, 0xE300, 0xD400,
+]
 BG_PALETTE_ADDR = 0x00B0B0
 FG_PALETTE_ADDR = 0x00B190
 OBJECT_PALETTE_ADDR = 0x00B250
@@ -999,6 +1014,39 @@ def map16_tile_words(map16_words: list[int], map16_id: int) -> list[int] | None:
     return map16_words[word_offset : word_offset + 4]
 
 
+def level_map16_words(rom: Rom, tileset: int) -> list[int]:
+    if tileset < 0 or tileset >= len(TILESET_MAP16_POINTERS):
+        raise ImportErrorWithExit(f"Unsupported Map16 tileset index: {tileset}")
+
+    pointers: list[int] = []
+    global_ptr = 0x8000
+    tileset_ptr = TILESET_MAP16_POINTERS[tileset]
+    for mask in MAP16_POINTER_MASKS:
+        bits = mask
+        for _ in range(8):
+            if (bits & 0x80) != 0:
+                pointers.append(global_ptr)
+                global_ptr += 8
+            else:
+                pointers.append(tileset_ptr)
+                tileset_ptr += 8
+            bits = (bits << 1) & 0xFF
+
+    if tileset in (0, 7):
+        override_ptr = 0x8A70
+        for index in range(452, 456):
+            pointers[index] = override_ptr
+            override_ptr += 8
+        for index in range(492, 496):
+            pointers[index] = override_ptr
+            override_ptr += 8
+
+    words: list[int] = []
+    for pointer in pointers:
+        words.extend(rom.get_words(0x0D0000 | pointer, 4))
+    return words
+
+
 def blit_map16_tile(
     rgba: bytearray,
     canvas_width: int,
@@ -1292,7 +1340,7 @@ def extract_level_layout_preview(
     tilemap = build_partial_level_tilemap(header, objects)
     level_palette_rgb = palette_assets["rgb888"]
     vram_4bpp, _uploads, gfx_source = level_fg_bg_vram(rom, level_id, header)
-    map16_words = rom.get_words(0x0D8000, (0xA100 - 0x8000) // 2)
+    map16_words = level_map16_words(rom, int(header["tileset"]))
     key = f"level_{level_key}"
     preview_path = out_dir / "levels" / f"{key}_partial_layout.png"
     tilemap_path = out_dir / "levels" / f"{key}_partial_tilemap.json"
@@ -1310,6 +1358,10 @@ def extract_level_layout_preview(
     tilemap["palette_assets"] = {
         "file": palette_assets["file"],
         "source": palette_assets["source"],
+    }
+    tilemap["map16_pointer_source"] = {
+        "source": "native_initialize_map16_pointers",
+        "tileset": int(header["tileset"]),
     }
     tilemap["gfx_source"] = gfx_source
     tilemap["file"] = rel(tilemap_path, out_dir)
@@ -1333,7 +1385,7 @@ def extract_level_tileset_assets(
         preview_palette = level_palette_rgb[:16]
 
     vram_4bpp, uploads, gfx_source = level_fg_bg_vram(rom, level_id, header)
-    map16_words = rom.get_words(0x0D8000, (0xA100 - 0x8000) // 2)
+    map16_words = level_map16_words(rom, tileset)
 
     tileset_dir = out_dir / "tilesets"
     key = f"level_{level_key}_tileset{tileset}"
@@ -1368,6 +1420,10 @@ def extract_level_tileset_assets(
             "preview_row": 2,
         },
         "gfx_source": gfx_source,
+        "map16_pointer_source": {
+            "source": "native_initialize_map16_pointers",
+            "tileset": tileset,
+        },
         "uploads": uploads,
         "vram": {
             "file": rel(vram_path, out_dir),

@@ -9,11 +9,15 @@ public partial class Main : Node2D
     private Control? _menu;
     private GameScene? _game;
     private SmwAudio? _audio;
+    private ColorRect? _gameBackground;
 
     public override void _Ready()
     {
         if (!DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
         {
+            GetWindow().Transparent = false;
+            GetViewport().TransparentBg = false;
+            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Transparent, false);
             DisplayServer.WindowSetSize(DefaultWindowSize);
         }
 
@@ -24,6 +28,8 @@ public partial class Main : Node2D
 
         var autostart = false;
         string? testLevel = null;
+        string? capturePath = null;
+        var captureFrames = 8;
         foreach (var arg in OS.GetCmdlineArgs())
         {
             if (arg == "--smw-test-autostart")
@@ -34,15 +40,29 @@ public partial class Main : Node2D
             {
                 testLevel = arg["--smw-test-level=".Length..].ToUpperInvariant();
             }
+            else if (arg.StartsWith("--smw-capture=", StringComparison.Ordinal))
+            {
+                capturePath = arg["--smw-capture=".Length..];
+                autostart = true;
+            }
+            else if (arg.StartsWith("--smw-capture-frames=", StringComparison.Ordinal) &&
+                int.TryParse(arg["--smw-capture-frames=".Length..], out var parsedFrames))
+            {
+                captureFrames = Math.Max(1, parsedFrames);
+            }
         }
 
-        if (autostart || testLevel != null)
+        if (autostart || testLevel != null || capturePath != null)
         {
             StartGame();
         }
         if (testLevel != null)
         {
             _game?.DebugEnterLevel(testLevel);
+        }
+        if (capturePath != null)
+        {
+            _game?.DebugCaptureViewport(capturePath, captureFrames, quitAfterCapture: true);
         }
     }
 
@@ -220,9 +240,29 @@ public partial class Main : Node2D
 
         _menu?.QueueFree();
         _menu = null;
+        EnsureGameBackground();
         _audio?.PlayMenuStart();
 
         _game = new GameScene { Name = "GameScene" };
         AddChild(_game);
+    }
+
+    private void EnsureGameBackground()
+    {
+        if (_gameBackground != null)
+        {
+            return;
+        }
+
+        _gameBackground = new ColorRect
+        {
+            Name = "OpaqueGameBackground",
+            Color = new Color(0.0f, 0.39f, 0.74f, 1.0f),
+            Position = new Vector2(-4096, -4096),
+            Size = new Vector2(16384, 16384),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = -4000,
+        };
+        AddChild(_gameBackground);
     }
 }

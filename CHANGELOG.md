@@ -14,4 +14,6 @@
 - Switched the Godot logical viewport to SNES `256x224`, kept visible Wayland runs at 3x scale, and moved pipe debug triggers onto imported screen-exit pipe tiles.
 - Added per-level full CGRAM palette extraction for generated level previews, with Lunar Magic custom palette and Super GFX bypass table detection guarded by the documented ROM hooks.
 - Corrected vanilla GFX preview extraction to expand SMW 3bpp graphics into 4bpp and populate the full 512-tile BG/sprite VRAM windows used by Map16 tile words.
+- Ported the native per-tileset Map16 pointer initialization for level previews, fixing Yoshi Island 1 grassland ledge art that was previously pulled from the wrong linear Map16 offset.
+- Added a Sway/Wayland compositor capture wrapper that places Godot on workspace 6, waits for the runtime level log, and captures the exact Godot PID instead of matching unrelated `smw` terminal windows.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.

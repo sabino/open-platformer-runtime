@@ -69,6 +69,7 @@ assert tileset["map16_preview_png"]["file"] == "tilesets/level_105_tileset7_map1
 assert tileset["palette_mapping"]["tile_word_palette_bits"] == "bits 10-12"
 assert tileset["palette_mapping"]["cgram_row_indexing"] is True
 assert tileset["palette_assets"]["file"] == "palettes/level_105_palette.json"
+assert tileset["map16_pointer_source"] == {"source": "native_initialize_map16_pointers", "tileset": 7}
 assert tileset["gfx_source"]["source"] == "vanilla_fg_bg_gfx_list"
 assert tileset["vram"]["tile_count"] == 512, tileset["vram"]
 assert [entry["tile_start"] for entry in tileset["uploads"]] == [384, 256, 128, 0], tileset["uploads"]
@@ -97,6 +98,7 @@ assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
 assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
 assert any("Map16 tile word's palette" in note for note in tilemap["notes"]), tilemap["notes"]
 assert tilemap["palette_assets"]["file"] == "palettes/level_105_palette.json"
+assert tilemap["map16_pointer_source"] == {"source": "native_initialize_map16_pointers", "tileset": 7}
 assert tilemap["gfx_source"]["source"] == "vanilla_fg_bg_gfx_list"
 
 pipe_target_tilemap = json.loads((out_dir / "levels" / "level_0CB_partial_tilemap.json").read_text())

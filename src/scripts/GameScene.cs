@@ -12,6 +12,7 @@ public partial class GameScene : Node2D
     private readonly List<Rect2> _solids = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
     private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
+    private readonly List<Godot.Collections.Dictionary> _layer2Objects = [];
     private readonly List<SpriteSpawn> _levelSprites = [];
     private readonly List<PlacedMap16Tile> _placedTiles = [];
     private readonly List<PipeEntrance> _pipeEntrances = [];
@@ -38,6 +39,8 @@ public partial class GameScene : Node2D
 
     public override void _Ready()
     {
+        GetViewport().TransparentBg = false;
+        RenderingServer.SetDefaultClearColor(new Color(0.0f, 0.39f, 0.74f, 1.0f));
         _audio = new SmwAudio { Name = "SmwAudio" };
         AddChild(_audio);
         LoadAssetPack();
@@ -98,6 +101,7 @@ public partial class GameScene : Node2D
     {
         _screenExits.Clear();
         _levelObjects.Clear();
+        _layer2Objects.Clear();
         _levelSprites.Clear();
         _placedTiles.Clear();
 
@@ -182,6 +186,22 @@ public partial class GameScene : Node2D
                 if (objectVariant.VariantType == Variant.Type.Dictionary)
                 {
                     _levelObjects.Add(objectVariant.AsGodotDictionary());
+                }
+            }
+        }
+
+        if (levelDetails.TryGetValue("layer2", out var layer2Variant) && layer2Variant.VariantType == Variant.Type.Dictionary)
+        {
+            var layer2 = layer2Variant.AsGodotDictionary();
+            if (layer2.TryGetValue("objects", out var layer2ObjectsVariant) &&
+                layer2ObjectsVariant.VariantType == Variant.Type.Array)
+            {
+                foreach (var objectVariant in layer2ObjectsVariant.AsGodotArray())
+                {
+                    if (objectVariant.VariantType == Variant.Type.Dictionary)
+                    {
+                        _layer2Objects.Add(objectVariant.AsGodotDictionary());
+                    }
                 }
             }
         }
@@ -371,6 +391,7 @@ public partial class GameScene : Node2D
     {
         _solids.Clear();
         StartWorldRoot();
+        AddWorldBackground();
 
         if (AddGeneratedMap16Tiles())
         {
@@ -393,6 +414,20 @@ public partial class GameScene : Node2D
         {
             AddScreenLine(i);
         }
+    }
+
+    private void AddWorldBackground()
+    {
+        var background = new ColorRect
+        {
+            Name = "LevelBackground",
+            Color = new Color(0.0f, 0.39f, 0.74f, 1.0f),
+            Position = new Vector2(0, LevelVisualYOffset),
+            Size = new Vector2(8192, 1024),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = -1000,
+        };
+        AddWorldChild(background);
     }
 
     private bool AddGeneratedMap16Tiles()
@@ -683,6 +718,27 @@ public partial class GameScene : Node2D
             };
             AddWorldChild(marker);
         }
+
+        foreach (var obj in _layer2Objects)
+        {
+            if (!obj.TryGetValue("placement", out var placementVariant) || placementVariant.VariantType != Variant.Type.Dictionary)
+            {
+                continue;
+            }
+
+            var placement = placementVariant.AsGodotDictionary();
+            var x = placement.TryGetValue("x_px", out var xVariant) ? xVariant.AsSingle() : 0.0f;
+            var y = placement.TryGetValue("y_px", out var yVariant) ? yVariant.AsSingle() : 0.0f;
+            var marker = new ColorRect
+            {
+                Name = "Layer2ObjectMarker",
+                Color = new Color(0.25f, 0.75f, 1.0f, 0.45f),
+                Position = new Vector2(x, y + LevelVisualYOffset),
+                Size = new Vector2(10, 10),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            AddWorldChild(marker);
+        }
     }
 
     private void AddSpriteMarkers()
@@ -958,12 +1014,48 @@ public partial class GameScene : Node2D
 
     private void PrintRuntimeState()
     {
-        GD.Print($"smw-runtime: level={_currentLevelId} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
     {
         EnterLevel(levelId);
+    }
+
+    public async void DebugCaptureViewport(string capturePath, int frames, bool quitAfterCapture)
+    {
+        var waitFrames = Math.Max(1, frames);
+        GD.Print($"smw-capture: scheduled path={capturePath} frames={waitFrames} level={_currentLevelId}");
+        for (var i = 0; i < waitFrames; i++)
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        }
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        CaptureViewportNow(capturePath, quitAfterCapture);
+    }
+
+    private void CaptureViewportNow(string capturePath, bool quitAfterCapture)
+    {
+        var image = GetViewport().GetTexture().GetImage();
+        image.Convert(Image.Format.Rgba8);
+        for (var y = 0; y < image.GetHeight(); y++)
+        {
+            for (var x = 0; x < image.GetWidth(); x++)
+            {
+                var color = image.GetPixel(x, y);
+                color.A = 1.0f;
+                image.SetPixel(x, y, color);
+            }
+        }
+
+        var globalPath = ProjectSettings.GlobalizePath(capturePath);
+        DirAccess.MakeDirRecursiveAbsolute(System.IO.Path.GetDirectoryName(globalPath) ?? ".");
+        var error = image.SavePng(globalPath);
+        GD.Print($"smw-capture: saved path={globalPath} error={error} level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} map16_tiles={_placedTiles.Count} sprite_spawns={_levelSprites.Count}");
+        if (quitAfterCapture)
+        {
+            GetTree().Quit(error == Error.Ok ? 0 : 1);
+        }
     }
 
     private void EnterLevel(string levelId)

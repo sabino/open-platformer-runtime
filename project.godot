@@ -11,6 +11,8 @@ config/icon="res://icon.svg"
 
 window/size/viewport_width=256
 window/size/viewport_height=224
+window/per_pixel_transparency/allowed=false
+window/per_pixel_transparency/enabled=false
 window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
 

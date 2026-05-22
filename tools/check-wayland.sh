@@ -2,6 +2,7 @@
 set -euo pipefail
 
 GODOT_BIN="${GODOT_BIN:-godot4-mono}"
+SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}"
 
 if [[ ! -x "$GODOT_BIN" ]]; then
   echo "Godot executable not found or not executable: $GODOT_BIN" >&2
@@ -15,6 +16,10 @@ fi
 
 dotnet build SmwGodotNative.csproj
 
+if command -v swaymsg >/dev/null; then
+  swaymsg "workspace $SWAY_WORKSPACE" >/dev/null || true
+fi
+
 export GDK_BACKEND=wayland
 export SDL_VIDEODRIVER=wayland
 export QT_QPA_PLATFORM=wayland
@@ -26,4 +31,3 @@ export QT_QPA_PLATFORM=wayland
   --path . \
   --quit-after 2 \
   --smw-test-autostart
-
