@@ -11,6 +11,7 @@ Current implementation details:
 - Normal jump speeds use the 16-entry `kHandlePlayerPhysics_JumpHeightTable`.
 - Gravity uses the native non-cape constants visible around `HandlePlayerPhysics_D930`: `0x06` when jump is not held and `0x03` while jump is held during rising motion.
 - Maximum normal fall speed is currently `0x40`, matching the common non-cape clamp in the same table.
+- Horizontal movement is clamped to the generated level bounds so Mario cannot leave the level to the left or right during the playable slice.
 - Runtime slope collision is a temporary geometric bridge. Only imported diagonal pipe cells, `left_diagonal_ledge_edge`, and `steep_right_slope_surface` become slope surfaces; ledge/slope fill cells stay solid so Mario does not treat the interior of a slope object as the walkable line.
 - `tools/check-dotnet.sh` runs a C# physics smoke executable that verifies the flat-ground caps, P-meter sprint threshold behavior, friction step, and imported horizontal max-speed table.
 

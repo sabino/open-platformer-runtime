@@ -99,7 +99,7 @@ public partial class GameScene : Node2D
             _audio?.PlayJump();
         }
 
-        _physics.Step(ref _state, frameInput, _solids, _slopes);
+        _physics.Step(ref _state, frameInput, _solids, _slopes, 0, (int)MathF.Round(GetLevelPixelRight()));
         UpdateCamera();
 
         if (_player != null)

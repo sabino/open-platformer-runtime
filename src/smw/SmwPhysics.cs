@@ -127,6 +127,43 @@ public sealed class SmwPhysics
         ResolveSlopes(ref state, slopes);
     }
 
+    public void Step(
+        ref PlayerState state,
+        FrameInput input,
+        IReadOnlyList<Rect2> solids,
+        IReadOnlyList<SlopeSurface> slopes,
+        int levelLeft,
+        int levelRight)
+    {
+        Step(ref state, input, solids, slopes);
+        ClampHorizontalLevelBounds(ref state, levelLeft, levelRight);
+    }
+
+    public static void ClampHorizontalLevelBounds(ref PlayerState state, int levelLeft, int levelRight)
+    {
+        var maxX = Math.Max(levelLeft, levelRight - PlayerWidth);
+        if (state.XFloat < levelLeft)
+        {
+            state.X = levelLeft;
+            state.SubX = 0;
+            if (state.XSpeed < 0)
+            {
+                state.XSpeed = 0;
+                state.SubXSpeed = 0;
+            }
+        }
+        else if (state.XFloat > maxX)
+        {
+            state.X = maxX;
+            state.SubX = 0;
+            if (state.XSpeed > 0)
+            {
+                state.XSpeed = 0;
+                state.SubXSpeed = 0;
+            }
+        }
+    }
+
     public TraceState CaptureTrace(PlayerState state)
     {
         return new TraceState(state);

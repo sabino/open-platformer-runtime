@@ -34,3 +34,5 @@
 - Preserved full 8-bit native sprite IDs in imported sprite streams, so level 105 keeps enemies such as `0xAB` Rex and `0xBD` sliding naked blue Koopa instead of aliasing them to low six-bit IDs.
 - Tightened temporary runtime slope classification so slope/ledge fill cells stay solid and only diagonal pipe, diagonal ledge edge, and steep-slope surface cells become slope surfaces.
 - Expanded the physics reference notes with Hamaluik's measured SMW motion regressions and the native SMW `HandlePlayerPhysics`/slope table targets to port next.
+- Clamped player horizontal movement to generated level bounds so Mario cannot walk off-screen to the left at the start of Yoshi Island 1.
+- Ported Lunar Magic Universal's newer diagonal pipe and left diagonal ledge projection offsets, including negative X descent and missing bottom/fill rows.

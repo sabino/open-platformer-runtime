@@ -19,7 +19,7 @@ LOG_FILE="$(mktemp)"
 trap 'rm -f "$LOG_FILE"' EXIT
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1385 collision_rects=" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1491 collision_rects=" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
 grep -q "player_sprites=8" "$LOG_FILE"
