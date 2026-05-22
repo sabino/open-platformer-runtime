@@ -18,7 +18,7 @@ The current first slice covers:
 - Runtime rendering of generated Layer 2 RLE background previews behind the imported Layer 1 Map16 placements for level `105` and pipe target `1CB`.
 - Layer 1/2 object placement and several Map16 projection rules are cross-checked against Lunar Magic Universal's current `lmcore` parser/renderer, including native object tile coordinates, pipes, steep right slopes, left diagonal ledges, and right diagonal pipes.
 - Map16 rendering converts the raw SMW quadrant word order into render quadrant order before generating Godot atlases and level previews.
-- Runtime collision separates imported diagonal pipe/slope/ledge clusters into slope surfaces instead of merging them into full rectangular blocker tiles.
+- Runtime collision separates imported diagonal pipe/slope/ledge clusters into per-Map16-tile slope surfaces instead of merging them into full rectangular blocker tiles or long averaged slope lines.
 - Runtime camera scrolling uses SMW-style horizontal and vertical screen-space thresholds instead of center-follow, clamped to generated tile bounds so Yoshi Island 1's lower routes can be inspected during drops.
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
 - Partial object expansion for the Yoshi Island 1 direct pipe target `1CB`, including horizontal pipes and underground ceiling ledges/edges in the generated Map16 tilemap.

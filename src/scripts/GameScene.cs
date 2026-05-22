@@ -845,109 +845,57 @@ public partial class GameScene : Node2D
     private static List<SmwPhysics.SlopeSurface> BuildSlopeSurfaces(IReadOnlyList<PlacedMap16Tile> slopeTiles)
     {
         var slopes = new List<SmwPhysics.SlopeSurface>();
-        var tileCoords = new HashSet<(int X, int Y)>();
         foreach (var tile in slopeTiles)
         {
-            tileCoords.Add((tile.X, tile.Y));
-        }
-
-        foreach (var component in ConnectedTileComponents(tileCoords))
-        {
-            var minX = int.MaxValue;
-            var maxX = int.MinValue;
-            foreach (var tile in component)
+            if (TryBuildSlopeTileSurface(tile, out var slope))
             {
-                minX = Math.Min(minX, tile.X);
-                maxX = Math.Max(maxX, tile.X);
+                slopes.Add(slope);
             }
-
-            if (minX == int.MaxValue)
-            {
-                continue;
-            }
-
-            var leftY = AverageYAtX(component, minX);
-            var rightY = AverageYAtX(component, maxX);
-            var descendsRight = rightY >= leftY;
-            var leftWorldY = (leftY + (descendsRight ? 0.0f : 1.0f)) * Map16TileSize + LevelVisualYOffset;
-            var rightWorldY = (rightY + (descendsRight ? 1.0f : 0.0f)) * Map16TileSize + LevelVisualYOffset;
-            slopes.Add(new SmwPhysics.SlopeSurface(
-                minX * Map16TileSize,
-                leftWorldY,
-                (maxX + 1) * Map16TileSize,
-                rightWorldY));
         }
 
         return slopes;
     }
 
-    private static float AverageYAtX(List<(int X, int Y)> component, int x)
+    private static bool TryBuildSlopeTileSurface(PlacedMap16Tile tile, out SmwPhysics.SlopeSurface slope)
     {
-        var sum = 0;
-        var count = 0;
-        foreach (var tile in component)
-        {
-            if (tile.X != x)
-            {
-                continue;
-            }
+        var x0 = tile.X * Map16TileSize;
+        var y0 = tile.Y * Map16TileSize + LevelVisualYOffset;
+        var x1 = x0 + Map16TileSize;
+        var y1 = y0 + Map16TileSize;
 
-            sum += tile.Y;
-            count++;
+        if (IsSlopeUpRightTile(tile))
+        {
+            slope = new SmwPhysics.SlopeSurface(x0, y1, x1, y0);
+            return true;
         }
 
-        return count == 0 ? 0.0f : sum / (float)count;
-    }
-
-    private static List<List<(int X, int Y)>> ConnectedTileComponents(HashSet<(int X, int Y)> tiles)
-    {
-        var pending = new HashSet<(int X, int Y)>(tiles);
-        var components = new List<List<(int X, int Y)>>();
-        while (pending.Count > 0)
+        if (IsSlopeDownRightTile(tile))
         {
-            var start = FirstTile(pending);
-            pending.Remove(start);
-            var component = new List<(int X, int Y)>();
-            var queue = new Queue<(int X, int Y)>();
-            queue.Enqueue(start);
-            while (queue.Count > 0)
-            {
-                var tile = queue.Dequeue();
-                component.Add(tile);
-                foreach (var neighbor in NeighborTiles(tile))
-                {
-                    if (pending.Remove(neighbor))
-                    {
-                        queue.Enqueue(neighbor);
-                    }
-                }
-            }
-            components.Add(component);
+            slope = new SmwPhysics.SlopeSurface(x0, y0, x1, y1);
+            return true;
         }
 
-        return components;
+        slope = default;
+        return false;
     }
 
-    private static (int X, int Y) FirstTile(HashSet<(int X, int Y)> tiles)
+    private static bool IsSlopeUpRightTile(PlacedMap16Tile tile)
     {
-        foreach (var tile in tiles)
+        return tile.Source switch
         {
-            return tile;
-        }
-
-        return (0, 0);
+            "left_diagonal_ledge_edge" => tile.Map16 == 0x01AA,
+            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB,
+            _ => false,
+        };
     }
 
-    private static IEnumerable<(int X, int Y)> NeighborTiles((int X, int Y) tile)
+    private static bool IsSlopeDownRightTile(PlacedMap16Tile tile)
     {
-        yield return (tile.X + 1, tile.Y);
-        yield return (tile.X - 1, tile.Y);
-        yield return (tile.X, tile.Y + 1);
-        yield return (tile.X, tile.Y - 1);
-        yield return (tile.X + 1, tile.Y + 1);
-        yield return (tile.X - 1, tile.Y - 1);
-        yield return (tile.X + 1, tile.Y - 1);
-        yield return (tile.X - 1, tile.Y + 1);
+        return tile.Source switch
+        {
+            "steep_right_slope_edge" => tile.Map16 == 0x01AF,
+            _ => false,
+        };
     }
 
     private static List<Rect2> BuildMergedSolidRects(HashSet<(int X, int Y)> solidTiles)

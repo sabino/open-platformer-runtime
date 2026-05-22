@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Replaced long merged runtime slope collision lines with per-Map16-tile slope segments for diagonal ledges, diagonal pipes, and steep right slopes, reducing false slope surfaces when nearby slope objects touch.
 - Added explicit runtime player power-up state and small/big hitbox heights, preserving the player's feet when the form changes and exposing `--smw-test-powerup=small|big|cape|fire`.
 - Expanded `--smw-debug-overlays` with player hitbox/feet labels, camera bounds, collision outlines, sprite actor hitboxes, goal-tape trigger bounds, pipe trigger bounds, and coin/block semantic markers.
 - Added a C# internal APU probe that streams BRR samples from imported SPC banks through `AudioStreamGenerator`, including port-1 jump and two-note command probes.
