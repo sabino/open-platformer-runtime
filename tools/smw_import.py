@@ -14,6 +14,7 @@ import json
 import os
 import struct
 import sys
+import wave
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -979,6 +980,139 @@ def write_bin(path: Path, payload: bytes) -> str:
     return sha1_bytes(payload)
 
 
+def write_wav_mono16(path: Path, samples: list[int], sample_rate: int = 32000) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        payload = bytearray()
+        for sample in samples:
+            payload.extend(struct.pack("<h", max(-32768, min(32767, sample))))
+        wav.writeframes(bytes(payload))
+    return sha1_bytes(path.read_bytes())
+
+
+def parse_spc_upload(payload: bytes) -> tuple[bytearray, list[dict[str, Any]]]:
+    ram = bytearray(0x10000)
+    blocks: list[dict[str, Any]] = []
+    offset = 0
+    while offset + 2 <= len(payload):
+        count = payload[offset] | (payload[offset + 1] << 8)
+        offset += 2
+        if count == 0:
+            return ram, blocks
+        if offset + 2 + count > len(payload):
+            raise ImportErrorWithExit("Truncated SPC upload block")
+        target = payload[offset] | (payload[offset + 1] << 8)
+        offset += 2
+        ram[target : target + count] = payload[offset : offset + count]
+        blocks.append({"target": f"0x{target:04X}", "length": count})
+        offset += count
+    raise ImportErrorWithExit("SPC upload stream missing zero terminator")
+
+
+def decode_brr_sample(data: bytes, start: int) -> tuple[list[int], int]:
+    samples: list[int] = []
+    old = 0
+    older = 0
+    offset = start
+    while offset + 9 <= len(data):
+        command = data[offset]
+        shift = command >> 4
+        filter_id = (command >> 2) & 0x03
+        for i in range(16):
+            packed = data[offset + 1 + i // 2]
+            nibble = (packed >> (0 if i & 1 else 4)) & 0x0F
+            sample = (nibble & 7) - (nibble & 8)
+            if shift <= 12:
+                sample = (sample << shift) >> 1
+            else:
+                sample = (sample >> 3) << 12
+
+            if filter_id == 1:
+                sample += old + ((-old) >> 4)
+            elif filter_id == 2:
+                sample += old * 2 + ((-old * 3) >> 5) - older + (older >> 4)
+            elif filter_id == 3:
+                sample += old * 2 + ((-old * 13) >> 6) - older + ((older * 3) >> 4)
+
+            sample = max(-0x8000, min(0x7FFF, sample))
+            sample = (sample & 0x3FFF) - (sample & 0x4000)
+            older, old = old, sample
+            samples.append(sample * 2)
+
+        offset += 9
+        if command & 1:
+            break
+    return samples, offset - start
+
+
+def extract_audio_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
+    audio_dir = out_dir / "audio"
+    banks = {
+        "spc_engine": (0x0E8000, 6321, b"\x00\x00"),
+        "spc_samples": (0x0F8000, 28538, b""),
+        "spc_level_music_bank": (0x0EAED6, 16899, b""),
+        "spc_overworld_music_bank": (0x0E98B1, 5667, b""),
+        "spc_credits_music_bank": (0x03E400, 6624, b""),
+    }
+    payload: dict[str, Any] = {
+        "status": "partial",
+        "sample_rate": 32000,
+        "notes": [
+            "Raw SPC upload banks are preserved from the original ROM.",
+            "Preview WAVs decode selected BRR samples directly from the vanilla sample directory.",
+            "Full SPC/DSP music and SFX sequencing is not ported yet.",
+        ],
+        "banks": {},
+        "decoded_samples": [],
+    }
+    sample_bank = b""
+    for name, (addr, length, suffix) in banks.items():
+        data = rom.get_bytes(addr, length) + suffix
+        path = audio_dir / f"{name}.bin"
+        payload["banks"][name] = {
+            "file": rel(path, out_dir),
+            "source_addr": f"0x{addr:06X}",
+            "length": len(data),
+            "sha1": write_bin(path, data),
+            "format": "spc_upload_stream",
+        }
+        if name == "spc_samples":
+            sample_bank = data
+
+    ram, upload_blocks = parse_spc_upload(sample_bank)
+    payload["sample_upload_blocks"] = upload_blocks
+    directory_base = 0x8000
+    for sample_id in (9, 14, 16):
+        entry = directory_base + sample_id * 4
+        start = ram[entry] | (ram[entry + 1] << 8)
+        loop = ram[entry + 2] | (ram[entry + 3] << 8)
+        decoded, brr_bytes = decode_brr_sample(bytes(ram), start)
+        sample_name = f"sample_{sample_id:02d}"
+        wav_path = audio_dir / f"{sample_name}.wav"
+        payload["decoded_samples"].append(
+            {
+                "id": sample_id,
+                "file": rel(wav_path, out_dir),
+                "source": "spc_samples directory",
+                "spc_start": f"0x{start:04X}",
+                "spc_loop": f"0x{loop:04X}",
+                "brr_bytes": brr_bytes,
+                "sample_count": len(decoded),
+                "sample_rate": 32000,
+                "format": "pcm_s16le_wav_from_brr",
+                "sha1": write_wav_mono16(wav_path, decoded),
+            }
+        )
+
+    audio_manifest_path = audio_dir / "audio_manifest.json"
+    payload["file"] = rel(audio_manifest_path, out_dir)
+    payload["sha1"] = write_json(audio_manifest_path, payload)
+    return payload
+
+
 def sha1_bytes(data: bytes) -> str:
     return hashlib.sha1(data).hexdigest().upper()
 
@@ -1207,6 +1341,7 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
         "file": rel(player_graphics_path, out_dir),
         "sha1": write_json(player_graphics_path, player_graphics_payload),
     }
+    assets["audio"] = extract_audio_assets(rom, out_dir)
 
     return assets
 

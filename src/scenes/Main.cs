@@ -5,10 +5,13 @@ public partial class Main : Node2D
 {
     private Control? _menu;
     private GameScene? _game;
+    private SmwAudio? _audio;
 
     public override void _Ready()
     {
         SetupInputMap();
+        _audio = new SmwAudio { Name = "SmwAudio" };
+        AddChild(_audio);
         ShowMenu();
 
         foreach (var arg in OS.GetCmdlineArgs())
@@ -115,6 +118,7 @@ public partial class Main : Node2D
 
         _menu?.QueueFree();
         _menu = null;
+        _audio?.PlayMenuStart();
 
         _game = new GameScene { Name = "GameScene" };
         AddChild(_game);

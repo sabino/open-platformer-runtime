@@ -51,15 +51,45 @@ assert [entry["gfx_id"] for entry in tileset["uploads"]] == ["15", "1B", "17", "
 assert tileset["atlas_png"]["file"] == "tilesets/level_105_tileset7_8x8.png"
 assert tileset["map16_preview_png"]["file"] == "tilesets/level_105_tileset7_map16_preview.png"
 assert tileset["palette_mapping"]["tile_word_palette_bits"] == "bits 10-12"
+assert tileset["palette_mapping"]["foreground_rows_used_for_bg_palettes_2_to_7"] is True
 
 tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
 assert tilemap["status"] == "partial"
 assert tilemap["placed_tile_count"] > 1000, tilemap["placed_tile_count"]
 assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
 assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
+assert any("Map16 tile word's palette" in note for note in tilemap["notes"]), tilemap["notes"]
+
+audio = manifest["assets"]["audio"]
+assert audio["status"] == "partial", audio
+assert audio["sample_rate"] == 32000, audio
+expected_banks = {
+    "spc_engine": 6323,
+    "spc_samples": 28538,
+    "spc_level_music_bank": 16899,
+    "spc_overworld_music_bank": 5667,
+    "spc_credits_music_bank": 6624,
+}
+for name, expected_size in expected_banks.items():
+    bank = audio["banks"][name]
+    bank_path = out_dir / bank["file"]
+    assert bank["length"] == expected_size, (name, bank["length"])
+    assert bank_path.read_bytes(), bank_path
+    assert bank_path.stat().st_size == expected_size, (bank_path, bank_path.stat().st_size)
+
+audio_manifest = json.loads((out_dir / "audio" / "audio_manifest.json").read_text())
+decoded_ids = [sample["id"] for sample in audio_manifest["decoded_samples"]]
+assert decoded_ids == [9, 14, 16], decoded_ids
+for sample in audio_manifest["decoded_samples"]:
+    assert sample["sample_rate"] == 32000, sample
+    assert sample["sample_count"] > 4000, sample
+    wav_data = (out_dir / sample["file"]).read_bytes()
+    assert wav_data[:4] == b"RIFF", sample["file"]
+    assert wav_data[8:12] == b"WAVE", sample["file"]
 
 print("smw-import check: YI1 pipe route 105 screen 07 -> 0CB secondary=0")
 print("smw-import check: player GFX32/GFX33 PNG atlases and categorization manifest present")
 print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview present")
 print("smw-import check: level 105 partial layout preview uses Map16 palette bits")
+print("smw-import check: SPC banks and BRR preview WAVs present")
 PY

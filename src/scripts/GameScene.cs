@@ -12,11 +12,14 @@ public partial class GameScene : Node2D
     private SmwPhysics.PlayerState _state;
     private ColorRect? _player;
     private Label? _hud;
+    private SmwAudio? _audio;
     private float _cameraX;
 
     public override void _Ready()
     {
         _state = _physics.MakeState(64, 64);
+        _audio = new SmwAudio { Name = "SmwAudio" };
+        AddChild(_audio);
         LoadAssetPack();
         BuildWorld();
         BuildPlayer();
@@ -35,6 +38,15 @@ public partial class GameScene : Node2D
             SpinPressed = Input.IsActionJustPressed("smw_spin"),
             Run = Input.IsActionPressed("smw_run"),
         };
+
+        if (_state.OnGround && frameInput.JumpPressed)
+        {
+            _audio?.PlayJump();
+        }
+        else if (_state.OnGround && frameInput.SpinPressed)
+        {
+            _audio?.PlaySpinJump();
+        }
 
         _physics.Step(ref _state, frameInput, _solids);
         _cameraX = MathF.Max(0.0f, _state.XFloat - 160.0f);

@@ -8,7 +8,9 @@ The current first slice covers:
 
 - ROM validation and deterministic extraction for level `105` by default.
 - Layer 1/layer 2 raw object streams, decoded placement metadata, screen exits, sprite stream, Map16, palettes, GFX32/GFX33, player PNG atlases, level tileset GFX atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables.
+- Raw SPC upload banks plus a few decoded BRR preview WAVs for immediate Godot audio playback while the full SPC/DSP sequencer is still pending.
 - A Godot .NET C# menu and minimal playable scene.
+- ROM-derived menu/jump/spin audio preview playback through Godot `AudioStreamPlayer` nodes.
 - A debug asset overlay showing the imported level GFX, palette-aware Map16 preview, partial level layout preview, and player atlas while the level renderer is still being ported.
 - A C# fixed-step Mario movement prototype using SMW velocity units and jump/gravity constants from the native reference.
 - Headless/import/build validation scripts that avoid opening a Wayland window.
