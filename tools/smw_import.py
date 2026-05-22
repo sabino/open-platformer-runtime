@@ -22,6 +22,35 @@ from typing import Any
 
 SMW_SHA1_US = "6B47BB75D16514B6A476AA0C73A683A2A4C18765"
 SCHEMA_VERSION = 1
+GFX_FILE_COUNT = 50
+FG_AND_BG_GFX_LIST = [
+    0x14, 0x17, 0x19, 0x15,
+    0x14, 0x17, 0x1B, 0x18,
+    0x14, 0x17, 0x1B, 0x16,
+    0x14, 0x17, 0x0C, 0x1A,
+    0x14, 0x17, 0x1B, 0x08,
+    0x14, 0x17, 0x0C, 0x07,
+    0x14, 0x17, 0x0C, 0x16,
+    0x14, 0x17, 0x1B, 0x15,
+    0x14, 0x17, 0x19, 0x16,
+    0x14, 0x17, 0x0D, 0x1A,
+    0x14, 0x17, 0x1B, 0x08,
+    0x14, 0x17, 0x1B, 0x18,
+    0x14, 0x17, 0x19, 0x1F,
+    0x14, 0x17, 0x0D, 0x07,
+    0x14, 0x17, 0x19, 0x1A,
+    0x14, 0x17, 0x14, 0x14,
+    0x0E, 0x0F, 0x17, 0x17,
+    0x1C, 0x1D, 0x08, 0x1E,
+    0x1C, 0x1D, 0x08, 0x1E,
+    0x1C, 0x1D, 0x08, 0x1E,
+    0x1C, 0x1D, 0x08, 0x1E,
+    0x1C, 0x1D, 0x08, 0x1E,
+    0x1C, 0x1D, 0x08, 0x1E,
+    0x1C, 0x1D, 0x08, 0x1E,
+    0x14, 0x17, 0x19, 0x2C,
+    0x19, 0x17, 0x1B, 0x18,
+]
 LEVEL_VERTICAL_TABLE = [
     0x00, 0x00, 0x80, 0x01, 0x81, 0x02, 0x82, 0x03,
     0x83, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
@@ -439,6 +468,194 @@ def write_4bpp_atlas_png(path: Path, gfx_data: bytes, palette_rgb: list[list[int
     }
 
 
+def graphics_file_address(rom: Rom, gfx_id: int) -> int:
+    if gfx_id < 0 or gfx_id >= GFX_FILE_COUNT:
+        raise ImportErrorWithExit(f"GFX id out of range: {gfx_id}")
+    lo = rom.get_byte(0x00B992 + gfx_id)
+    hi = rom.get_byte(0x00B9C4 + gfx_id)
+    bank = rom.get_byte(0x00B9F6 + gfx_id)
+    return (bank << 16) | (hi << 8) | lo
+
+
+def decompress_graphics_file(rom: Rom, gfx_id: int) -> tuple[bytes, int, int]:
+    addr = graphics_file_address(rom, gfx_id)
+    data, compressed_len = smw_decomp(rom, addr)
+    if len(data) % 32 != 0:
+        raise ImportErrorWithExit(f"GFX{gfx_id:02X} decompressed to non-4bpp length {len(data)}")
+    return data, addr, compressed_len
+
+
+def level_fg_bg_gfx_ids(tileset: int) -> list[int]:
+    if tileset < 0 or (tileset + 1) * 4 > len(FG_AND_BG_GFX_LIST):
+        raise ImportErrorWithExit(f"Unsupported foreground/background tileset index: {tileset}")
+    source = FG_AND_BG_GFX_LIST[tileset * 4 : tileset * 4 + 4]
+    arr = [0, 0, 0, 0]
+    for i, gfx_id in enumerate(source):
+        arr[3 - i] = gfx_id
+    return arr
+
+
+def level_fg_bg_vram(rom: Rom, tileset: int) -> tuple[bytes, list[dict[str, Any]]]:
+    vram = bytearray(0x2000)
+    uploads: list[dict[str, Any]] = []
+    gfx_ids = level_fg_bg_gfx_ids(tileset)
+    for slot, gfx_id in enumerate(gfx_ids):
+        data, addr, compressed_len = decompress_graphics_file(rom, gfx_id)
+        dst = [0x1800, 0x1000, 0x0800, 0x0000][slot]
+        copy_len = min(0x800, len(data))
+        vram[dst : dst + copy_len] = data[:copy_len]
+        uploads.append(
+            {
+                "slot": slot,
+                "gfx_id": f"{gfx_id:02X}",
+                "source_addr": f"0x{addr:06X}",
+                "compressed_length": compressed_len,
+                "decompressed_length": len(data),
+                "vram_offset": f"0x{dst:04X}",
+                "tile_start": dst // 32,
+                "tile_count": copy_len // 32,
+            }
+        )
+    return bytes(vram), uploads
+
+
+def palette_from_tile_word(word: int, fg_palettes_rgb: list[list[int]]) -> list[list[int]]:
+    palette_id = (word >> 10) & 0x07
+    palette_index = palette_id - 2 if palette_id >= 2 else palette_id
+    start = max(0, min(palette_index, 5)) * 16
+    palette = fg_palettes_rgb[start : start + 16]
+    if len(palette) < 16:
+        palette = fg_palettes_rgb[:16]
+    return palette
+
+
+def blit_8x8_tile(
+    rgba: bytearray,
+    canvas_width: int,
+    x0: int,
+    y0: int,
+    tile_pixels: list[list[int]],
+    palette_rgb: list[list[int]],
+    x_flip: bool = False,
+    y_flip: bool = False,
+) -> None:
+    for y in range(8):
+        src_y = 7 - y if y_flip else y
+        for x in range(8):
+            src_x = 7 - x if x_flip else x
+            color_index = tile_pixels[src_y][src_x]
+            if color_index == 0:
+                continue
+            out = ((y0 + y) * canvas_width + x0 + x) * 4
+            rgb = palette_rgb[color_index]
+            rgba[out : out + 4] = bytes([rgb[0], rgb[1], rgb[2], 255])
+
+
+def write_vram_tile_atlas_png(path: Path, vram_4bpp: bytes, palette_rgb: list[list[int]], columns: int = 16) -> dict[str, Any]:
+    return write_4bpp_atlas_png(path, vram_4bpp, palette_rgb, columns=columns)
+
+
+def write_map16_preview_png(
+    path: Path,
+    map16_words: list[int],
+    vram_4bpp: bytes,
+    fg_palettes_rgb: list[list[int]],
+    first_tile: int = 0,
+    tile_count: int = 512,
+    columns: int = 16,
+) -> dict[str, Any]:
+    vram_tile_count = len(vram_4bpp) // 32
+    rows = (tile_count + columns - 1) // columns
+    width = columns * 16
+    height = rows * 16
+    rgba = bytearray([0, 0, 0, 0] * width * height)
+
+    for local_index in range(tile_count):
+        map16_id = first_tile + local_index
+        word_offset = map16_id * 4
+        if word_offset + 4 > len(map16_words):
+            break
+        tile_x = (local_index % columns) * 16
+        tile_y = (local_index // columns) * 16
+        for sub in range(4):
+            word = map16_words[word_offset + sub]
+            tile_id = word & 0x03FF
+            if tile_id >= vram_tile_count:
+                continue
+            tile_bytes = vram_4bpp[tile_id * 32 : (tile_id + 1) * 32]
+            tile_pixels = decode_4bpp_tile(tile_bytes)
+            sub_x = tile_x + (8 if sub & 1 else 0)
+            sub_y = tile_y + (8 if sub & 2 else 0)
+            blit_8x8_tile(
+                rgba,
+                width,
+                sub_x,
+                sub_y,
+                tile_pixels,
+                palette_from_tile_word(word, fg_palettes_rgb),
+                x_flip=(word & 0x4000) != 0,
+                y_flip=(word & 0x8000) != 0,
+            )
+
+    return {
+        "file": str(path),
+        "sha1": write_rgba_png(path, width, height, bytes(rgba)),
+        "width": width,
+        "height": height,
+        "first_map16_tile": first_tile,
+        "map16_tile_count": tile_count,
+        "columns": columns,
+        "format": "png_preview_from_map16_tile_words_and_level_vram",
+    }
+
+
+def extract_level_tileset_assets(rom: Rom, out_dir: Path, level_key: str, header: dict[str, Any]) -> dict[str, Any]:
+    tileset = int(header["tileset"])
+    fg_palette_index = int(header["fg_palette"])
+    fg_palettes_rgb = snes_words_to_rgb(rom.get_words(0x00B190, 96))
+    player_safe_palette = fg_palettes_rgb[fg_palette_index * 16 : fg_palette_index * 16 + 16]
+    if len(player_safe_palette) < 16:
+        player_safe_palette = fg_palettes_rgb[:16]
+
+    vram_4bpp, uploads = level_fg_bg_vram(rom, tileset)
+    map16_words = rom.get_words(0x0D8000, (0xA100 - 0x8000) // 2)
+
+    tileset_dir = out_dir / "tilesets"
+    key = f"level_{level_key}_tileset{tileset}"
+    vram_path = tileset_dir / f"{key}_vram.bin"
+    atlas_path = tileset_dir / f"{key}_8x8.png"
+    map16_path = tileset_dir / f"{key}_map16_preview.png"
+    metadata_path = tileset_dir / f"{key}.json"
+
+    atlas = write_vram_tile_atlas_png(atlas_path, vram_4bpp, player_safe_palette)
+    atlas["file"] = rel(atlas_path, out_dir)
+    map16_preview = write_map16_preview_png(map16_path, map16_words, vram_4bpp, fg_palettes_rgb)
+    map16_preview["file"] = rel(map16_path, out_dir)
+
+    metadata = {
+        "status": "preview",
+        "notes": [
+            "Uses the vanilla foreground/background GFX upload list for this level tileset.",
+            "Map16 preview renders raw Map16 tile words; object expansion into the level tilemap is still pending.",
+        ],
+        "level_id": level_key,
+        "tileset": tileset,
+        "fg_palette": fg_palette_index,
+        "uploads": uploads,
+        "vram": {
+            "file": rel(vram_path, out_dir),
+            "sha1": write_bin(vram_path, vram_4bpp),
+            "format": "snes_4bpp_tiles_in_level_vram_order",
+            "tile_count": len(vram_4bpp) // 32,
+        },
+        "atlas_png": atlas,
+        "map16_preview_png": map16_preview,
+    }
+    metadata["file"] = rel(metadata_path, out_dir)
+    metadata["sha1"] = write_json(metadata_path, metadata)
+    return metadata
+
+
 def write_json(path: Path, payload: Any) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2, sort_keys=True)
@@ -498,6 +715,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     parsed_sprites = parse_sprite_data(sprite_raw)
 
     level_key = f"{level_id:03X}"
+    tileset_assets = extract_level_tileset_assets(rom, out_dir, level_key, header)
     level_path = out_dir / "levels" / f"level_{level_key}.json"
     payload = {
         "level_id": level_key,
@@ -532,6 +750,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
             "sprites": parsed_sprites["sprites"],
         },
         "screen_exits": parsed_layer1["screen_exits"],
+        "tileset_assets": tileset_assets,
     }
     level_sha = write_json(level_path, payload)
     return {
@@ -543,6 +762,11 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
         "object_count": len(parsed_layer1["objects"]),
         "sprite_count": len(parsed_sprites["sprites"]),
         "screen_exits": parsed_layer1["screen_exits"],
+        "tileset_assets": {
+            "file": tileset_assets["file"],
+            "atlas_png": tileset_assets["atlas_png"]["file"],
+            "map16_preview_png": tileset_assets["map16_preview_png"]["file"],
+        },
     }
 
 

@@ -145,7 +145,6 @@ public partial class GameScene : Node2D
         AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 1.0f));
         AddPipeMarker(new Rect2(416, 112, 32, 80));
         AddObjectMarkers();
-        AddGeneratedPlayerAtlasPreview();
 
         for (var i = 0; i < 15; i++)
         {
@@ -220,32 +219,6 @@ public partial class GameScene : Node2D
         }
     }
 
-    private void AddGeneratedPlayerAtlasPreview()
-    {
-        const string atlasPath = "res://generated/smw/player/gfx32_player_palette0.png";
-        if (!FileAccess.FileExists(atlasPath))
-        {
-            return;
-        }
-
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(atlasPath));
-        if (image == null || image.IsEmpty())
-        {
-            return;
-        }
-        var texture = ImageTexture.CreateFromImage(image);
-
-        var sprite = new Sprite2D
-        {
-            Name = "GeneratedPlayerAtlasPreview",
-            Texture = texture,
-            Position = new Vector2(180, 36),
-            Scale = new Vector2(1, 1),
-            Modulate = new Color(1, 1, 1, 0.92f),
-        };
-        AddChild(sprite);
-    }
-
     private void BuildPlayer()
     {
         _player = new ColorRect
@@ -263,7 +236,64 @@ public partial class GameScene : Node2D
         _hud = new Label { Position = new Vector2(12, 10) };
         _hud.AddThemeFontSizeOverride("font_size", 13);
         layer.AddChild(_hud);
+        AddAssetPreviewOverlay(layer);
         UpdateHud();
+    }
+
+    private void AddAssetPreviewOverlay(CanvasLayer layer)
+    {
+        var panel = new ColorRect
+        {
+            Color = new Color(0.02f, 0.03f, 0.04f, 0.78f),
+            Position = new Vector2(484, 12),
+            Size = new Vector2(264, 380),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        layer.AddChild(panel);
+
+        AddPreviewLabel(layer, "Level GFX", new Vector2(496, 20));
+        AddPreviewImage(layer, "res://generated/smw/tilesets/level_105_tileset7_8x8.png", new Vector2(496, 44), Vector2.One);
+
+        AddPreviewLabel(layer, "Map16", new Vector2(636, 20));
+        AddPreviewImage(layer, "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png", new Vector2(636, 44), new Vector2(0.42f, 0.42f));
+
+        AddPreviewLabel(layer, "Player GFX32", new Vector2(496, 188));
+        AddPreviewImage(layer, "res://generated/smw/player/gfx32_player_palette0.png", new Vector2(496, 212), new Vector2(0.42f, 0.42f));
+    }
+
+    private static void AddPreviewLabel(Node parent, string text, Vector2 position)
+    {
+        var label = new Label
+        {
+            Text = text,
+            Position = position,
+        };
+        label.AddThemeFontSizeOverride("font_size", 11);
+        parent.AddChild(label);
+    }
+
+    private static void AddPreviewImage(Node parent, string resourcePath, Vector2 position, Vector2 scale)
+    {
+        if (!FileAccess.FileExists(resourcePath))
+        {
+            return;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(resourcePath));
+        if (image == null || image.IsEmpty())
+        {
+            return;
+        }
+
+        var sprite = new Sprite2D
+        {
+            Texture = ImageTexture.CreateFromImage(image),
+            Position = position,
+            Scale = scale,
+            Centered = false,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+        };
+        parent.AddChild(sprite);
     }
 
     private void UpdateHud()

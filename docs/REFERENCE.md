@@ -12,6 +12,7 @@ Importer references translated into `tools/smw_import.py`:
 
 - LoROM address conversion and decompression from `assets/util.py`
 - Level object length parsing, Map16, palette, graphics, level pointer, and sprite pointer addresses from `assets/compile_resources.py`
+- Foreground/background GFX upload order from `kUploadGraphicsFiles_FGAndBGGFXList` in `src/smw_00.cpp`; level `105` uses tileset `7`, which uploads GFX `15`, `1B`, `17`, and `14` into level VRAM order.
 - Screen-exit property semantics from `src/smw_0d.cpp` and level-load destination construction from `src/smw_05.cpp`
 - Player graphics source data from `GFX32`/`GFX33`, player palettes, and `PlayerGFXRt` tile pointer tables. Current PNG atlases are usable, but state/frame categorization remains pending until the OAM assembly tables are ported directly.
 
