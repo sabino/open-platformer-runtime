@@ -7,6 +7,7 @@ public partial class GameScene : Node2D
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
+    private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
 
     private SmwPhysics.PlayerState _state;
     private ColorRect? _player;
@@ -36,12 +37,12 @@ public partial class GameScene : Node2D
         };
 
         _physics.Step(ref _state, frameInput, _solids);
-        _cameraX = MathF.Max(0.0f, _state.X / 16.0f - 160.0f);
+        _cameraX = MathF.Max(0.0f, _state.XFloat - 160.0f);
         Position = new Vector2(-MathF.Round(_cameraX), 0);
 
         if (_player != null)
         {
-            _player.Position = new Vector2(_state.X / 16.0f, _state.Y / 16.0f);
+            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
         }
 
         UpdateHud();
@@ -92,6 +93,49 @@ public partial class GameScene : Node2D
                 _screenExits.Add(exitVariant.AsGodotDictionary());
             }
         }
+
+        if (!level.TryGetValue("file", out var fileVariant))
+        {
+            return;
+        }
+
+        var levelPath = $"res://generated/smw/{fileVariant.AsString()}";
+        if (!FileAccess.FileExists(levelPath))
+        {
+            return;
+        }
+
+        using var levelFile = FileAccess.Open(levelPath, FileAccess.ModeFlags.Read);
+        if (levelFile == null)
+        {
+            return;
+        }
+
+        var levelParsed = Json.ParseString(levelFile.GetAsText());
+        if (levelParsed.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var levelDetails = levelParsed.AsGodotDictionary();
+        if (!levelDetails.TryGetValue("layer1", out var layer1Variant) || layer1Variant.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var layer1 = layer1Variant.AsGodotDictionary();
+        if (!layer1.TryGetValue("objects", out var objectsVariant) || objectsVariant.VariantType != Variant.Type.Array)
+        {
+            return;
+        }
+
+        foreach (var objectVariant in objectsVariant.AsGodotArray())
+        {
+            if (objectVariant.VariantType == Variant.Type.Dictionary)
+            {
+                _levelObjects.Add(objectVariant.AsGodotDictionary());
+            }
+        }
     }
 
     private void BuildWorld()
@@ -100,6 +144,8 @@ public partial class GameScene : Node2D
         AddSolid(new Rect2(240, 160, 48, 32), new Color(0.55f, 0.42f, 0.20f, 1.0f));
         AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 1.0f));
         AddPipeMarker(new Rect2(416, 112, 32, 80));
+        AddObjectMarkers();
+        AddGeneratedPlayerAtlasPreview();
 
         for (var i = 0; i < 15; i++)
         {
@@ -150,6 +196,56 @@ public partial class GameScene : Node2D
         AddChild(label);
     }
 
+    private void AddObjectMarkers()
+    {
+        foreach (var obj in _levelObjects)
+        {
+            if (!obj.TryGetValue("placement", out var placementVariant) || placementVariant.VariantType != Variant.Type.Dictionary)
+            {
+                continue;
+            }
+
+            var placement = placementVariant.AsGodotDictionary();
+            var x = placement.TryGetValue("x_px", out var xVariant) ? xVariant.AsSingle() : 0.0f;
+            var y = placement.TryGetValue("y_px", out var yVariant) ? yVariant.AsSingle() : 0.0f;
+            var id = obj.TryGetValue("object_id", out var idVariant) ? idVariant.AsInt32() : 0;
+            var marker = new ColorRect
+            {
+                Color = id == 0 ? new Color(0.95f, 0.85f, 0.15f, 0.85f) : new Color(0.10f, 0.58f, 0.95f, 0.55f),
+                Position = new Vector2(x, y),
+                Size = new Vector2(8, 8),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            AddChild(marker);
+        }
+    }
+
+    private void AddGeneratedPlayerAtlasPreview()
+    {
+        const string atlasPath = "res://generated/smw/player/gfx32_player_palette0.png";
+        if (!FileAccess.FileExists(atlasPath))
+        {
+            return;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(atlasPath));
+        if (image == null || image.IsEmpty())
+        {
+            return;
+        }
+        var texture = ImageTexture.CreateFromImage(image);
+
+        var sprite = new Sprite2D
+        {
+            Name = "GeneratedPlayerAtlasPreview",
+            Texture = texture,
+            Position = new Vector2(180, 36),
+            Scale = new Vector2(1, 1),
+            Modulate = new Color(1, 1, 1, 0.92f),
+        };
+        AddChild(sprite);
+    }
+
     private void BuildPlayer()
     {
         _player = new ColorRect
@@ -177,7 +273,7 @@ public partial class GameScene : Node2D
             return;
         }
 
-        _hud.Text = $"x={_state.X / 16.0f:000000.00} y={_state.Y / 16.0f:000000.00} " +
+        _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} exits={_screenExits.Count}";
     }
 
@@ -194,7 +290,7 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var screen = (int)((_state.X / 16.0f) / 256.0f);
+        var screen = (int)(_state.XFloat / 256.0f);
         Godot.Collections.Dictionary? exitData = null;
         foreach (var entry in _screenExits)
         {

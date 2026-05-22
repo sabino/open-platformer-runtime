@@ -19,7 +19,7 @@ public static class PhysicsSmoke
             }, solids);
         }
 
-        if (state.X <= 32 * SmwPhysics.FixedPoint)
+        if (state.X <= 32)
         {
             Console.Error.WriteLine("expected player to move right");
             return 1;

@@ -27,6 +27,21 @@ assert pipe_exit["vanilla_destination"] == 0x0CB, pipe_exit
 assert pipe_exit["vanilla_secondary"] == 0, pipe_exit
 assert pipe_exit["raw_r11"] == 0, pipe_exit
 
-print("smw-import check: YI1 pipe route 105 screen 07 -> 0CB secondary=0")
-PY
+for png in [
+    out_dir / "player" / "gfx32_player_palette0.png",
+    out_dir / "player" / "gfx33_player_palette0.png",
+]:
+    data = png.read_bytes()
+    assert data.startswith(b"\x89PNG\r\n\x1a\n"), png
+    assert data[12:16] == b"IHDR", png
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    assert width > 0 and height > 0, (png, width, height)
 
+player_graphics = json.loads((out_dir / "player" / "player_graphics.json").read_text())
+assert player_graphics["status"] == "partial"
+assert player_graphics["categories"]["states_pending_direct_oam_port"], player_graphics
+
+print("smw-import check: YI1 pipe route 105 screen 07 -> 0CB secondary=0")
+print("smw-import check: player GFX32/GFX33 PNG atlases and categorization manifest present")
+PY

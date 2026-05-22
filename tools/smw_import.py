@@ -8,11 +8,13 @@ Godot milestone. It does not import from the moving native C++ repo at runtime.
 from __future__ import annotations
 
 import argparse
+import binascii
 import hashlib
 import json
 import os
 import struct
 import sys
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +22,12 @@ from typing import Any
 
 SMW_SHA1_US = "6B47BB75D16514B6A476AA0C73A683A2A4C18765"
 SCHEMA_VERSION = 1
+LEVEL_VERTICAL_TABLE = [
+    0x00, 0x00, 0x80, 0x01, 0x81, 0x02, 0x82, 0x03,
+    0x83, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
+]
 
 
 class ImportErrorWithExit(Exception):
@@ -184,11 +192,78 @@ def sprite_data_len(rom: Rom, addr: int) -> int:
     return addr + 1 - start
 
 
-def parse_level_objects(raw: bytes) -> dict[str, Any]:
+def decode_level_header(raw: bytes) -> dict[str, Any]:
+    if len(raw) < 5:
+        raise ImportErrorWithExit("Level stream is too short for header")
+    screens = (raw[0] & 0x1F) + 1
+    mode = raw[1] & 0x1F
+    layout_flags = LEVEL_VERTICAL_TABLE[mode]
+    vertical = (layout_flags & 1) != 0
+    return {
+        "raw": list(raw[:5]),
+        "screens": screens,
+        "bg_palette": raw[0] >> 5,
+        "level_mode": mode,
+        "background_color": raw[1] >> 5,
+        "sprite_graphics": raw[2] & 0x0F,
+        "music_index": (raw[2] >> 4) & 0x07,
+        "layer3_priority": (raw[2] >> 7) & 0x01,
+        "fg_palette": raw[3] & 0x07,
+        "sprite_palette": (raw[3] >> 3) & 0x07,
+        "timer_index": raw[3] >> 6,
+        "tileset": raw[4] & 0x0F,
+        "layer1_scroll": (raw[4] >> 4) & 0x03,
+        "item_memory": raw[4] >> 6,
+        "layout_flags": layout_flags,
+        "vertical": vertical,
+        "width_tiles": 16 if vertical else screens * 16,
+        "height_tiles": screens * 16 if vertical else 27,
+    }
+
+
+def decode_object_placement(
+    b0: int,
+    b1: int,
+    b2: int,
+    obj_id: int,
+    screen_cursor: int,
+    layout_flags: int,
+    layer_index: int,
+) -> dict[str, Any]:
+    adjusted_b0 = b0
+    adjusted_b1 = b1
+    layer_flags = layout_flags if layer_index == 0 else layout_flags >> 1
+    if (layer_flags & 1) != 0 and ((obj_id << 8) | b2) >= 2:
+        low_nibble = b0 & 0x0F
+        adjusted_b0 = (b1 & 0x0F) | (b0 & 0xF0)
+        adjusted_b1 = low_nibble | (b1 & 0xF0)
+
+    sub_x = adjusted_b0 & 0x0F
+    sub_y = adjusted_b1 & 0x0F
+    high_subscreen = (adjusted_b0 & 0x10) != 0
+    y_tile = sub_y + (16 if high_subscreen else 0)
+    return {
+        "layer": layer_index + 1,
+        "screen_cursor": screen_cursor,
+        "screen_increment": (b0 & 0x80) != 0,
+        "sub_x": sub_x,
+        "sub_y": sub_y,
+        "high_subscreen": high_subscreen,
+        "map16_offset": (0x100 if high_subscreen else 0) + sub_y * 16 + sub_x,
+        "x_tile": screen_cursor * 16 + sub_x,
+        "y_tile": y_tile,
+        "x_px": (screen_cursor * 16 + sub_x) * 16,
+        "y_px": y_tile * 16,
+        "adjusted_raw": [adjusted_b0, adjusted_b1, b2],
+    }
+
+
+def parse_level_objects(raw: bytes, header: dict[str, Any], layer_index: int = 0) -> dict[str, Any]:
     objects: list[dict[str, Any]] = []
     exits: list[dict[str, Any]] = []
     index = 5
     sequence = 0
+    screen_cursor = 0
     while index < len(raw):
         offset = index
         b0 = raw[index]
@@ -201,6 +276,17 @@ def parse_level_objects(raw: bytes) -> dict[str, Any]:
         b2 = raw[index + 1]
         index += 2
         obj_id = (b1 >> 4) | ((b0 & 0x60) >> 1)
+        if b0 & 0x80:
+            screen_cursor += 1
+        placement = decode_object_placement(
+            b0,
+            b1,
+            b2,
+            obj_id,
+            screen_cursor,
+            int(header["layout_flags"]),
+            layer_index,
+        )
         extra: list[int] = []
         if obj_id == 0 and b2 == 0:
             extra.append(raw[index])
@@ -210,6 +296,7 @@ def parse_level_objects(raw: bytes) -> dict[str, Any]:
             exits.append(
                 {
                     "screen": b0 & 0x1F,
+                    "screen_cursor": screen_cursor,
                     "exit_low": exit_low,
                     "raw_r11": b1,
                     "vanilla_properties": vanilla_properties,
@@ -229,11 +316,11 @@ def parse_level_objects(raw: bytes) -> dict[str, Any]:
             {
                 "sequence": sequence,
                 "offset": offset,
-                "screen": b0 & 0x1F,
                 "raw": [b0, b1, b2],
                 "object_id": obj_id,
                 "size_or_type": b2,
                 "extra": extra,
+                "placement": placement,
             }
         )
         sequence += 1
@@ -270,6 +357,88 @@ def snes_words_to_rgb(words: list[int]) -> list[list[int]]:
     return colors
 
 
+def decode_4bpp_tile(tile: bytes) -> list[list[int]]:
+    if len(tile) != 32:
+        raise ImportErrorWithExit(f"SNES 4bpp tile must be 32 bytes, got {len(tile)}")
+    pixels: list[list[int]] = []
+    for y in range(8):
+        p0 = tile[y * 2]
+        p1 = tile[y * 2 + 1]
+        p2 = tile[16 + y * 2]
+        p3 = tile[16 + y * 2 + 1]
+        row: list[int] = []
+        for x in range(8):
+            bit = 7 - x
+            row.append(
+                ((p0 >> bit) & 1)
+                | (((p1 >> bit) & 1) << 1)
+                | (((p2 >> bit) & 1) << 2)
+                | (((p3 >> bit) & 1) << 3)
+            )
+        pixels.append(row)
+    return pixels
+
+
+def png_chunk(kind: bytes, payload: bytes) -> bytes:
+    crc = binascii.crc32(kind)
+    crc = binascii.crc32(payload, crc) & 0xFFFFFFFF
+    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", crc)
+
+
+def write_rgba_png(path: Path, width: int, height: int, rgba: bytes) -> str:
+    if len(rgba) != width * height * 4:
+        raise ImportErrorWithExit("RGBA buffer size does not match PNG dimensions")
+    rows = []
+    stride = width * 4
+    for y in range(height):
+        rows.append(b"\x00" + rgba[y * stride : (y + 1) * stride])
+    payload = b"".join(
+        [
+            b"\x89PNG\r\n\x1a\n",
+            png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)),
+            png_chunk(b"IDAT", zlib.compress(b"".join(rows), level=9)),
+            png_chunk(b"IEND", b""),
+        ]
+    )
+    return write_bin(path, payload)
+
+
+def write_4bpp_atlas_png(path: Path, gfx_data: bytes, palette_rgb: list[list[int]], columns: int = 16) -> dict[str, Any]:
+    if len(gfx_data) % 32 != 0:
+        raise ImportErrorWithExit(f"4bpp graphics length must be divisible by 32: {len(gfx_data)}")
+    tile_count = len(gfx_data) // 32
+    rows = (tile_count + columns - 1) // columns
+    width = columns * 8
+    height = rows * 8
+    rgba = bytearray([0, 0, 0, 0] * width * height)
+    palette = palette_rgb[:16]
+    if len(palette) < 16:
+        raise ImportErrorWithExit("A 4bpp atlas requires at least 16 palette colors")
+
+    for tile_index in range(tile_count):
+        tile = gfx_data[tile_index * 32 : (tile_index + 1) * 32]
+        tile_pixels = decode_4bpp_tile(tile)
+        tile_x = (tile_index % columns) * 8
+        tile_y = (tile_index // columns) * 8
+        for y, row in enumerate(tile_pixels):
+            for x, color_index in enumerate(row):
+                out = ((tile_y + y) * width + tile_x + x) * 4
+                rgb = palette[color_index]
+                rgba[out : out + 4] = bytes([rgb[0], rgb[1], rgb[2], 0 if color_index == 0 else 255])
+
+    return {
+        "file": str(path),
+        "sha1": write_rgba_png(path, width, height, bytes(rgba)),
+        "width": width,
+        "height": height,
+        "tile_count": tile_count,
+        "columns": columns,
+        "tile_width": 8,
+        "tile_height": 8,
+        "format": "rgba_png_from_snes_4bpp",
+    }
+
+
 def write_json(path: Path, payload: Any) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2, sort_keys=True)
@@ -302,7 +471,8 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     layer1_addr = rom.get_24(0x05E000 + level_id * 3)
     layer1_len = calc_level_len(rom, layer1_addr)
     layer1_raw = rom.get_bytes(layer1_addr, layer1_len)
-    parsed_layer1 = parse_level_objects(layer1_raw)
+    header = decode_level_header(layer1_raw)
+    parsed_layer1 = parse_level_objects(layer1_raw, header, layer_index=0)
 
     layer2_addr = rom.get_24(0x05E600 + level_id * 3)
     layer2_kind = "object_stream"
@@ -313,6 +483,9 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     else:
         layer2_len = calc_level_len(rom, layer2_addr)
         layer2_raw = rom.get_bytes(layer2_addr, layer2_len)
+    parsed_layer2: dict[str, Any] = {"objects": [], "screen_exits": []}
+    if layer2_kind == "object_stream":
+        parsed_layer2 = parse_level_objects(layer2_raw, header, layer_index=1)
 
     banks = (
         list(rom.get_bytes(0x0EF100, 512))
@@ -328,10 +501,19 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     level_path = out_dir / "levels" / f"level_{level_key}.json"
     payload = {
         "level_id": level_key,
+        "header": header,
+        "layout": {
+            "vertical": header["vertical"],
+            "screens": header["screens"],
+            "width_tiles": header["width_tiles"],
+            "height_tiles": header["height_tiles"],
+            "tile_size_px": 16,
+            "width_px": header["width_tiles"] * 16,
+            "height_px": header["height_tiles"] * 16,
+        },
         "layer1": {
             "source_addr": f"0x{layer1_addr:06X}",
             "length": layer1_len,
-            "header": list(layer1_raw[:5]),
             "raw": list(layer1_raw),
             "objects": parsed_layer1["objects"],
         },
@@ -340,6 +522,7 @@ def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
             "length": layer2_len,
             "kind": layer2_kind,
             "raw": list(layer2_raw),
+            "objects": parsed_layer2["objects"],
         },
         "sprite_layer": {
             "source_addr": f"0x{sprite_addr:06X}",
@@ -419,6 +602,9 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
         gfx_addr = 0x080000 | rom.get_word(pointer_addr)
         gfx_data, compressed_len = smw_decomp(rom, gfx_addr)
         gfx_path = out_dir / "gfx" / f"{name}.bin"
+        atlas_path = out_dir / "player" / f"{name}_player_palette0.png"
+        atlas = write_4bpp_atlas_png(atlas_path, gfx_data, palettes_payload["player"]["rgb888"][:16])
+        atlas["file"] = rel(atlas_path, out_dir)
         assets[name] = {
             "file": rel(gfx_path, out_dir),
             "source_addr": f"0x{gfx_addr:06X}",
@@ -426,7 +612,59 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
             "decompressed_length": len(gfx_data),
             "format": "snes_4bpp_planar",
             "sha1": write_bin(gfx_path, gfx_data),
+            "atlas_png": atlas,
         }
+
+    player_graphics_path = out_dir / "player" / "player_graphics.json"
+    player_graphics_payload = {
+        "status": "partial",
+        "source_gfx": {
+            "gfx32": assets["gfx32"]["atlas_png"]["file"],
+            "gfx33": assets["gfx33"]["atlas_png"]["file"],
+        },
+        "palette": {
+            "source": "palettes/global_palettes.json",
+            "set": "player",
+            "variant": 0,
+            "colors": palettes_payload["player"]["rgb888"][:16],
+        },
+        "tile_pointer_tables": {
+            "head": list(rom.get_bytes(0x00E00C, 192)),
+            "body": list(rom.get_bytes(0x00E0CC, 192)),
+            "walking_pose_count": list(rom.get_bytes(0x00DC78, 4)),
+        },
+        "categories": {
+            "player": {
+                "small": [],
+                "big": [],
+                "cape": [],
+                "fire": [],
+                "yoshi": [],
+            },
+            "states_pending_direct_oam_port": [
+                "idle",
+                "walk",
+                "run",
+                "jump",
+                "spin_jump",
+                "fall",
+                "duck",
+                "climb",
+                "swim",
+                "cape_flight",
+                "powerup_transition",
+                "damage_transition",
+            ],
+        },
+        "notes": [
+            "PNG atlases are usable in Godot now.",
+            "Frame/state categorization is intentionally empty until PlayerGFXRt OAM tables are ported 1:1.",
+        ],
+    }
+    assets["player_graphics"] = {
+        "file": rel(player_graphics_path, out_dir),
+        "sha1": write_json(player_graphics_path, player_graphics_payload),
+    }
 
     return assets
 

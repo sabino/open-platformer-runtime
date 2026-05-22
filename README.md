@@ -7,7 +7,7 @@ The long-term bar is a 100% physics and gameplay semantics match with the origin
 The current first slice covers:
 
 - ROM validation and deterministic extraction for level `105` by default.
-- Layer 1/layer 2 raw object streams, screen exits, sprite stream, Map16, palettes, GFX32/GFX33, and secondary-exit tables.
+- Layer 1/layer 2 raw object streams, decoded placement metadata, screen exits, sprite stream, Map16, palettes, GFX32/GFX33, player PNG atlases, and secondary-exit tables.
 - A Godot .NET C# menu and minimal playable scene.
 - A C# fixed-step Mario movement prototype using SMW velocity units and jump/gravity constants from the native reference.
 - Headless/import/build validation scripts that avoid opening a Wayland window.

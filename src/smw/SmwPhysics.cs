@@ -4,19 +4,24 @@ using System.Collections.Generic;
 
 public sealed class SmwPhysics
 {
-    public const int FixedPoint = 16;
     public const int PlayerWidth = 14;
     public const int PlayerHeight = 28;
 
     private const int WalkMax = 0x24;
     private const int RunMax = 0x30;
-    private const int TurnAccel = 6;
-    private const int WalkAccel = 2;
-    private const int RunAccel = 3;
-    private const int GroundFriction = 4;
-    private const int AirAccel = 1;
-    private const int AirFriction = 1;
+    private const int WalkAccel = 0x0180;
+    private const int RunAccel = 0x0180;
+    private const int TurnAccel = 0x0600;
+    private const int GroundFriction = 0x0100;
+    private const int AirAccel = 0x0100;
+    private const int AirFriction = 0x0080;
     private const int MaxFall = 0x40;
+
+    public static readonly sbyte[] HorizontalMaxSpeedTable =
+    [
+        unchecked((sbyte)0xec), 0x14, unchecked((sbyte)0xdc), 0x24,
+        unchecked((sbyte)0xdc), 0x24, unchecked((sbyte)0xd0), 0x30,
+    ];
 
     private static readonly int[] JumpHeightTable =
     [
@@ -30,6 +35,10 @@ public sealed class SmwPhysics
     {
         public int X;
         public int Y;
+        public int SubX;
+        public int SubY;
+        public int SubXSpeed;
+        public int SubYSpeed;
         public int XSpeed;
         public int YSpeed;
         public bool OnGround;
@@ -37,6 +46,35 @@ public sealed class SmwPhysics
         public int JumpHeldFrames;
         public int PMeter;
         public bool SpinJump;
+
+        public float XFloat => X + SubX / 256.0f;
+        public float YFloat => Y + SubY / 256.0f;
+    }
+
+    public readonly struct TraceState
+    {
+        public TraceState(PlayerState state)
+        {
+            X = state.X;
+            Y = state.Y;
+            SubX = state.SubX;
+            SubY = state.SubY;
+            XSpeed = state.XSpeed;
+            YSpeed = state.YSpeed;
+            SubXSpeed = state.SubXSpeed;
+            SubYSpeed = state.SubYSpeed;
+            OnGround = state.OnGround;
+        }
+
+        public readonly int X;
+        public readonly int Y;
+        public readonly int SubX;
+        public readonly int SubY;
+        public readonly int XSpeed;
+        public readonly int YSpeed;
+        public readonly int SubXSpeed;
+        public readonly int SubYSpeed;
+        public readonly bool OnGround;
     }
 
     public struct FrameInput
@@ -54,8 +92,8 @@ public sealed class SmwPhysics
     {
         return new PlayerState
         {
-            X = xPx * FixedPoint,
-            Y = yPx * FixedPoint,
+            X = xPx,
+            Y = yPx,
             Facing = 1,
         };
     }
@@ -65,18 +103,23 @@ public sealed class SmwPhysics
         ApplyHorizontal(ref state, input);
         ApplyJumpAndGravity(ref state, input);
 
-        state.X += state.XSpeed;
+        IntegrateX(ref state);
         ResolveAxis(ref state, solids, horizontal: true);
 
-        state.Y += state.YSpeed;
+        IntegrateY(ref state);
         state.OnGround = false;
         ResolveAxis(ref state, solids, horizontal: false);
+    }
+
+    public TraceState CaptureTrace(PlayerState state)
+    {
+        return new TraceState(state);
     }
 
     public Rect2 PlayerRect(PlayerState state)
     {
         return new Rect2(
-            new Vector2(state.X / 16.0f, state.Y / 16.0f),
+            new Vector2(state.XFloat, state.YFloat),
             new Vector2(PlayerWidth, PlayerHeight));
     }
 
@@ -105,12 +148,35 @@ public sealed class SmwPhysics
             {
                 accel = TurnAccel;
             }
-            state.XSpeed = MoveToward(state.XSpeed, dir * target, accel);
+            AddXAccel(ref state, dir * accel);
+            state.XSpeed = ClampSigned8(state.XSpeed);
+            if ((dir > 0 && state.XSpeed > target) || (dir < 0 && state.XSpeed < -target))
+            {
+                state.XSpeed = dir * target;
+                state.SubXSpeed = 0;
+            }
         }
         else
         {
             var friction = state.OnGround ? GroundFriction : AirFriction;
-            state.XSpeed = MoveToward(state.XSpeed, 0, friction);
+            if (state.XSpeed > 0)
+            {
+                AddXAccel(ref state, -friction);
+                if (state.XSpeed < 0)
+                {
+                    state.XSpeed = 0;
+                    state.SubXSpeed = 0;
+                }
+            }
+            else if (state.XSpeed < 0)
+            {
+                AddXAccel(ref state, friction);
+                if (state.XSpeed > 0)
+                {
+                    state.XSpeed = 0;
+                    state.SubXSpeed = 0;
+                }
+            }
         }
 
         var absSpeed = Math.Abs(state.XSpeed);
@@ -170,25 +236,29 @@ public sealed class SmwPhysics
             {
                 if (state.XSpeed > 0)
                 {
-                    state.X = (int)MathF.Round((solid.Position.X - PlayerWidth) * FixedPoint);
+                    state.X = (int)MathF.Round(solid.Position.X - PlayerWidth);
                 }
                 else if (state.XSpeed < 0)
                 {
-                    state.X = (int)MathF.Round((solid.Position.X + solid.Size.X) * FixedPoint);
+                    state.X = (int)MathF.Round(solid.Position.X + solid.Size.X);
                 }
+                state.SubX = 0;
+                state.SubXSpeed = 0;
                 state.XSpeed = 0;
             }
             else
             {
                 if (state.YSpeed > 0)
                 {
-                    state.Y = (int)MathF.Round((solid.Position.Y - PlayerHeight) * FixedPoint);
+                    state.Y = (int)MathF.Round(solid.Position.Y - PlayerHeight);
                     state.OnGround = true;
                 }
                 else if (state.YSpeed < 0)
                 {
-                    state.Y = (int)MathF.Round((solid.Position.Y + solid.Size.Y) * FixedPoint);
+                    state.Y = (int)MathF.Round(solid.Position.Y + solid.Size.Y);
                 }
+                state.SubY = 0;
+                state.SubYSpeed = 0;
                 state.YSpeed = 0;
             }
 
@@ -196,16 +266,45 @@ public sealed class SmwPhysics
         }
     }
 
-    private static int MoveToward(int value, int target, int delta)
+    private static void AddXAccel(ref PlayerState state, int accel)
     {
-        if (value < target)
-        {
-            return Math.Min(value + delta, target);
-        }
-        if (value > target)
-        {
-            return Math.Max(value - delta, target);
-        }
-        return value;
+        var combined = ((state.XSpeed & 0xFF) << 8) | (state.SubXSpeed & 0xFF);
+        combined = (combined + accel) & 0xFFFF;
+        state.SubXSpeed = combined & 0xFF;
+        state.XSpeed = ToS8((combined >> 8) & 0xFF);
+    }
+
+    private static void IntegrateX(ref PlayerState state)
+    {
+        var lowDelta = (state.XSpeed * 16) & 0xFF;
+        var sum = state.SubX + lowDelta;
+        var carry = sum >> 8;
+        state.SubX = sum & 0xFF;
+        state.X += ArithmeticShiftRight8(state.XSpeed, 4) + carry;
+    }
+
+    private static void IntegrateY(ref PlayerState state)
+    {
+        var lowDelta = (state.YSpeed * 16) & 0xFF;
+        var sum = state.SubY + lowDelta;
+        var carry = sum >> 8;
+        state.SubY = sum & 0xFF;
+        state.Y += ArithmeticShiftRight8(state.YSpeed, 4) + carry;
+    }
+
+    private static int ArithmeticShiftRight8(int value, int shift)
+    {
+        return ToS8(value & 0xFF) >> shift;
+    }
+
+    private static int ToS8(int value)
+    {
+        value &= 0xFF;
+        return value >= 0x80 ? value - 0x100 : value;
+    }
+
+    private static int ClampSigned8(int value)
+    {
+        return Math.Clamp(value, -128, 127);
     }
 }
