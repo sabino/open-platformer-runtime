@@ -24,4 +24,6 @@
 - Corrected sprite spawn metadata and runtime markers to use the native `yyyyEESY / XXXXssss / id` screen, X, and Y bit layout.
 - Corrected imported Level 1/2 object placement to match Lunar Magic Universal's `x=b1 low nibble` and `y=b0 low 5 bits` decode, and aligned more pipe/slope/diagonal ledge Map16 projection rules with its `lmcore` renderer.
 - Added runtime slope-surface collision for imported diagonal pipe, diagonal ledge, and steep-slope tile clusters so those objects no longer become rectangular walls.
+- Reordered rendered Map16 quadrants from the raw SMW `TL/BL/TR/BR` word layout into `TL/TR/BL/BR`, fixing twisted pipe, ledge, and cave tile graphics.
+- Bound screen-exit pipe triggers to the rightmost vertical pipe top in the exit screen, so Yoshi Island 1 enters the intended next pipe instead of the earlier pipe in the same screen.
 - Strengthened headless runtime smoke checks for audio, tilemap, collision, and player sprite loading.

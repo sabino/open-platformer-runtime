@@ -6,12 +6,14 @@ OUT_DIR="${2:-generated/smw}"
 
 tools/import-smw.sh "$ROM_PATH" "$OUT_DIR"
 
-python3 - "$OUT_DIR" <<'PY'
+python3 - "$OUT_DIR" "$ROM_PATH" <<'PY'
+import importlib.util
 import json
 import sys
 from pathlib import Path
 
 out_dir = Path(sys.argv[1])
+rom_path = Path(sys.argv[2])
 manifest = json.loads((out_dir / "manifest.json").read_text())
 levels = manifest["levels"]
 assert "105" in levels, "missing Yoshi Island 1 level 105"
@@ -96,6 +98,15 @@ assert tileset["vram"]["tile_count"] == 512, tileset["vram"]
 assert [entry["tile_start"] for entry in tileset["uploads"]] == [384, 256, 128, 0], tileset["uploads"]
 assert all(entry["tile_count"] == 128 for entry in tileset["uploads"]), tileset["uploads"]
 assert tileset["map16_preview_png"]["map16_tile_count"] == 512, tileset["map16_preview_png"]
+
+spec = importlib.util.spec_from_file_location("smw_import", Path("tools/smw_import.py"))
+smw_import = importlib.util.module_from_spec(spec)
+sys.modules["smw_import"] = smw_import
+spec.loader.exec_module(smw_import)
+rom = smw_import.Rom.load(rom_path)
+level_1cb_map16 = smw_import.level_map16_words(rom, 3)
+pipe_words = smw_import.map16_tile_words(level_1cb_map16, 0x133)
+assert [word & 0x03FF for word in pipe_words] == [0, 1, 16, 17], pipe_words
 
 sprite_tileset = json.loads((out_dir / "spritesets" / "level_105_spritegfx8.json").read_text())
 assert sprite_tileset["status"] == "preview"
@@ -198,6 +209,7 @@ print("smw-import check: YI1 pipe route 105 screen 07 -> 1CB secondary=0")
 print("smw-import check: player GFX32/GFX33 PNG atlases and categorization manifest present")
 print("smw-import check: per-level full CGRAM palettes generated for 105 and 1CB")
 print("smw-import check: level 105 tileset 7 GFX atlas and Map16 preview use level CGRAM rows")
+print("smw-import check: per-level Map16 quadrants reorder raw TL/BL/TR/BR words into render TL/TR/BL/BR order")
 print("smw-import check: level 105 and 1CB sprite GFX VRAM atlases use level sprite palette rows")
 print("smw-import check: level 105 partial layout preview uses Map16 palette bits against full CGRAM")
 print("smw-import check: level 105 object placement follows Lunar Magic x=b1/y=b0 tile decode")

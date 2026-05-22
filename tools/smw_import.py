@@ -1092,13 +1092,12 @@ def write_map16_preview_png(
 
     for local_index in range(tile_count):
         map16_id = first_tile + local_index
-        word_offset = map16_id * 4
-        if word_offset + 4 > len(map16_words):
+        words = map16_tile_words(map16_words, map16_id)
+        if words is None:
             break
         tile_x = (local_index % columns) * 16
         tile_y = (local_index // columns) * 16
-        for sub in range(4):
-            word = map16_words[word_offset + sub]
+        for sub, word in enumerate(words):
             tile_id = word & 0x03FF
             if tile_id >= vram_tile_count:
                 continue
@@ -1133,7 +1132,8 @@ def map16_tile_words(map16_words: list[int], map16_id: int) -> list[int] | None:
     word_offset = map16_id * 4
     if word_offset < 0 or word_offset + 4 > len(map16_words):
         return None
-    return map16_words[word_offset : word_offset + 4]
+    raw = map16_words[word_offset : word_offset + 4]
+    return [raw[0], raw[2], raw[1], raw[3]]
 
 
 def level_map16_words(rom: Rom, tileset: int) -> list[int]:

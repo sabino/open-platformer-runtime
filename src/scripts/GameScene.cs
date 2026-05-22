@@ -878,6 +878,7 @@ public partial class GameScene : Node2D
             }
 
             var screen = screenVariant.AsInt32();
+            PlacedMap16Tile? entranceTile = null;
             foreach (var tile in _placedTiles)
             {
                 if (tile.X / 16 != screen || !tile.Source.Contains("vertical_pipe_top_left", StringComparison.Ordinal))
@@ -885,9 +886,16 @@ public partial class GameScene : Node2D
                     continue;
                 }
 
-                var topLeft = TileToWorld(tile.X, tile.Y);
+                if (entranceTile == null || tile.X > entranceTile.Value.X)
+                {
+                    entranceTile = tile;
+                }
+            }
+
+            if (entranceTile != null)
+            {
+                var topLeft = TileToWorld(entranceTile.Value.X, entranceTile.Value.Y);
                 _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X, topLeft.Y - 32, 32, 48), screen));
-                break;
             }
         }
     }
