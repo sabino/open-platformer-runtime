@@ -41,6 +41,7 @@ public partial class GameScene : Node2D
     private const int GoalTapeCycleFrames = 124;
     private const float GoalTapeDownSpeed = 1.0f;
     private const float GoalTapeUpSpeed = -1.0f;
+    private const int CourseClearWalkoutMaxFrames = 420;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
     private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
@@ -167,6 +168,7 @@ public partial class GameScene : Node2D
     private int _playerHurtCooldown;
     private string _lastActorEvent = "none";
     private bool _courseClear;
+    private int _courseClearWalkoutFrames;
     private int _entranceMotionFrames;
     private int _entranceMotionAction;
     private Vector2 _entranceMotionPixelsPerFrame;
@@ -246,7 +248,7 @@ public partial class GameScene : Node2D
 
         var isDebugStep = _debugStepFrames > 0;
         var frameInput = _courseClear
-            ? new SmwPhysics.FrameInput()
+            ? ReadCourseClearInput()
             : ReadFrameInput();
         _lastFrameInput = frameInput;
         var previousStateForActors = _state;
@@ -305,7 +307,7 @@ public partial class GameScene : Node2D
         CheckGoalTape();
         UpdateHud();
         UpdateDebugGizmos();
-        if (!entranceLocked)
+        if (!entranceLocked && !_courseClear)
         {
             CheckPipeDebug(frameInput);
         }
@@ -500,6 +502,20 @@ public partial class GameScene : Node2D
             Spin = Input.IsActionPressed("smw_spin"),
             SpinPressed = Input.IsActionJustPressed("smw_spin"),
             Run = Input.IsActionPressed("smw_run"),
+        };
+    }
+
+    private SmwPhysics.FrameInput ReadCourseClearInput()
+    {
+        if (_courseClearWalkoutFrames >= CourseClearWalkoutMaxFrames)
+        {
+            return new SmwPhysics.FrameInput();
+        }
+
+        _courseClearWalkoutFrames++;
+        return new SmwPhysics.FrameInput
+        {
+            Right = true,
         };
     }
 
@@ -3817,11 +3833,12 @@ public partial class GameScene : Node2D
     private void TriggerCourseClear()
     {
         _courseClear = true;
+        _courseClearWalkoutFrames = 0;
         _state.XSpeed = 0;
         _state.SubXSpeed = 0;
         _audio?.PlayMusicPreview("Credits");
         ShowCourseClearLabel();
-        GD.Print($"smw-runtime: course_clear level={_currentLevelId}");
+        GD.Print($"smw-runtime: course_clear level={_currentLevelId} walkout=right");
     }
 
     private void BuildPlayer()
@@ -4758,6 +4775,12 @@ public partial class GameScene : Node2D
 
     public void DebugSetPlayerPosition(Vector2 position)
     {
+        _courseClear = false;
+        _courseClearWalkoutFrames = 0;
+        if (_courseClearLabel != null)
+        {
+            _courseClearLabel.Visible = false;
+        }
         _entranceMotionFrames = 0;
         _entranceMotionAction = 0;
         _entranceMotionPixelsPerFrame = Vector2.Zero;
@@ -5457,6 +5480,7 @@ public partial class GameScene : Node2D
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
+            $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
             $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
 
         if (_debugTraceOam)
@@ -6091,6 +6115,7 @@ public partial class GameScene : Node2D
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
+            $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
@@ -6576,6 +6601,7 @@ public partial class GameScene : Node2D
         }
 
         _courseClear = false;
+        _courseClearWalkoutFrames = 0;
         _playerHurtCooldown = 0;
         _lastActorEvent = "none";
         _blockBreakCount = 0;
@@ -6622,6 +6648,7 @@ public partial class GameScene : Node2D
         }
 
         _courseClear = false;
+        _courseClearWalkoutFrames = 0;
         _playerHurtCooldown = 0;
         _lastActorEvent = actorEvent;
         _blockBreakCount = 0;

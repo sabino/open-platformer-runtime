@@ -34,9 +34,10 @@ PIPE_SLOPE_SUPPORT_COMMAND_FILE="$(mktemp)"
 PIPE_UNDERSIDE_JUMP_COMMAND_FILE="$(mktemp)"
 DEATH_COMMAND_FILE="$(mktemp)"
 TRACE_COMMAND_FILE="$(mktemp)"
+COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -158,6 +159,11 @@ velocity 0 0
 ground on
 trace 3 right run jump tag=jump_probe
 EOF
+cat >"$COURSE_CLEAR_COMMAND_FILE" <<'EOF'
+pause
+spawn 4828 282 big
+trace 12 none tag=goal_walkout
+EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1477 collision_rects=25 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
@@ -204,6 +210,15 @@ grep -q "smw-runtime: coin_pickup level=1CB dragon=0 coins=1 dragon_coins=0" "$L
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=4828,282 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: course_clear level=105" "$LOG_FILE"
+grep -q "walkout=right" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 5 --smw-test-autostart --smw-debug-command-file="$COURSE_CLEAR_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$COURSE_CLEAR_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-runtime: course_clear level=105 walkout=right" "$LOG_FILE"
+grep -q "smw-debug-trace: tag=goal_walkout i=12/12" "$LOG_FILE"
+grep "smw-debug-state: tag=goal_walkout_done" "$LOG_FILE" | grep -q "clear=1"
+grep "smw-debug-state: tag=goal_walkout_done" "$LOG_FILE" | grep -q "walkout=11"
+grep "smw-debug-state: tag=goal_walkout_done" "$LOG_FILE" | grep -q "x=4834.00"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=small 2>&1 | tee "$LOG_FILE"
 grep -q "smw-test-powerup: powerup=0 height=16 render_y=-17 player_palette=0" "$LOG_FILE"

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a course-clear control-lock slice: after touching the imported goal tape, Mario now enters a rightward autowalk state with RCON/trace `clear` and `walkout` diagnostics instead of freezing in place at the tape.
 - Moved the imported goal tape from a static placeholder into a runtime visual driven by the native `0x10/0xF0` Y-speed cadence, widened the gate trigger from generated Map16 post bounds, and added an RCON `goal` probe for first-level course-clear debugging.
 - Changed the internal APU mixer to push fixed 512-frame `AudioStreamGenerator` chunks instead of hundreds of per-frame C# `PushFrame` calls, and exposed the chunk size in RCON audio status for performance checks.
 - Switched floor-slope contact height from straight-line interpolation to the native SMW `ShapeOfSlope` lookup table, and tightened headless slope-pipe regressions to assert native slope IDs at the Yoshi Island 1 diagonal pipe probes.
