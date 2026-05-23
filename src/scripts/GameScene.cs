@@ -38,6 +38,9 @@ public partial class GameScene : Node2D
     private const float JumpingPiranhaTravelPixels = 32.0f;
     private const int WingedQuestionBlockCycleFrames = 64;
     private const int GoalTapeSpriteId = 0x7B;
+    private const int GoalTapeCycleFrames = 124;
+    private const float GoalTapeDownSpeed = 1.0f;
+    private const float GoalTapeUpSpeed = -1.0f;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
     private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
@@ -113,6 +116,7 @@ public partial class GameScene : Node2D
     private readonly List<RuntimeSpriteActor> _spriteActors = [];
     private readonly List<ScriptedInputSegment> _inputScript = [];
     private readonly List<Rect2> _goalTapeTriggers = [];
+    private readonly List<GoalTapeRuntime> _goalTapes = [];
     private readonly List<CoinPickup> _coinPickups = [];
     private readonly Dictionary<(int X, int Y), PlacedMap16Tile> _map16TilesByCoord = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeFloorCells = [];
@@ -296,6 +300,7 @@ public partial class GameScene : Node2D
             }
             UpdatePlayerGraphic(force: true);
         }
+        UpdateGoalTapes();
         CheckCoinPickups();
         CheckGoalTape();
         UpdateHud();
@@ -369,6 +374,20 @@ public partial class GameScene : Node2D
         public required SpriteActorBehavior Behavior { get; set; }
         public int State { get; set; }
         public Rect2 Rect => new(X + Behavior.Hitbox.Position.X, Y + Behavior.Hitbox.Position.Y, Behavior.Hitbox.Size.X, Behavior.Hitbox.Size.Y);
+    }
+
+    private sealed class GoalTapeRuntime
+    {
+        public required Node2D Node { get; init; }
+        public required Rect2 GateRect { get; init; }
+        public float X { get; init; }
+        public float Y { get; set; }
+        public float MinY { get; init; }
+        public float MaxY { get; init; }
+        public int Timer { get; set; } = GoalTapeCycleFrames;
+        public int Direction { get; set; } = 1;
+        public float YSpeed => Direction > 0 ? GoalTapeDownSpeed : GoalTapeUpSpeed;
+        public Rect2 TapeRect => new(X - 8.0f, Y + 8.0f, 24.0f, 8.0f);
     }
 
     private sealed class CoinPickup
@@ -1052,6 +1071,7 @@ public partial class GameScene : Node2D
         _slopes.Clear();
         _spriteActors.Clear();
         _goalTapeTriggers.Clear();
+        _goalTapes.Clear();
         _coinPickups.Clear();
         _map16TilesByCoord.Clear();
         _diagonalPipeFloorCells.Clear();
@@ -1109,40 +1129,67 @@ public partial class GameScene : Node2D
                 continue;
             }
 
-            var top = spawn.Y - 72;
-            var rect = new Rect2(spawn.X - 8, top, 24, 88);
+            var gateBounds = GoalGateBoundsForSpawn(spawn);
+            var rect = new Rect2(spawn.X - 8, gateBounds.Top, 24, gateBounds.Bottom - gateBounds.Top);
             _goalTapeTriggers.Add(rect);
 
-            var postLeft = new ColorRect
+            var tapeNode = new Node2D
             {
-                Color = new Color(0.96f, 0.96f, 0.86f, 1.0f),
-                Position = new Vector2(spawn.X - 16, top),
-                Size = new Vector2(4, 88),
-                MouseFilter = Control.MouseFilterEnum.Ignore,
+                Name = "GoalTape",
+                Position = new Vector2(spawn.X, InitialGoalTapeY(spawn, gateBounds.Top, gateBounds.Bottom)),
                 ZIndex = 5,
             };
-            AddWorldChild(postLeft);
-
-            var postRight = new ColorRect
+            var visuals = AddSpriteActorVisuals(tapeNode, GoalTapeSpriteId, state: 0);
+            if (visuals.Count == 0)
             {
-                Color = new Color(0.96f, 0.96f, 0.86f, 1.0f),
-                Position = new Vector2(spawn.X + 16, top),
-                Size = new Vector2(4, 88),
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-                ZIndex = 5,
-            };
-            AddWorldChild(postRight);
-
-            var tape = new ColorRect
+                AddDebugRect(tapeNode, new Rect2(-8, 8, 24, 8), new Color(1.0f, 0.86f, 0.18f, 1.0f), 5);
+            }
+            AddWorldChild(tapeNode);
+            _goalTapes.Add(new GoalTapeRuntime
             {
-                Color = new Color(1.0f, 0.86f, 0.18f, 1.0f),
-                Position = new Vector2(spawn.X - 8, spawn.Y - 38),
-                Size = new Vector2(28, 6),
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-                ZIndex = 7,
-            };
-            AddWorldChild(tape);
+                Node = tapeNode,
+                GateRect = rect,
+                X = spawn.X,
+                Y = tapeNode.Position.Y,
+                MinY = gateBounds.Top + 8.0f,
+                MaxY = gateBounds.Bottom - 24.0f,
+            });
         }
+    }
+
+    private (float Top, float Bottom) GoalGateBoundsForSpawn(SpriteSpawn spawn)
+    {
+        var top = float.MaxValue;
+        var bottom = float.MinValue;
+        foreach (var tile in _placedTiles)
+        {
+            if (!tile.Source.StartsWith("goal_", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var tileX = tile.X * Map16TileSize;
+            if (MathF.Abs((tileX + Map16TileSize * 0.5f) - spawn.X) > 40.0f)
+            {
+                continue;
+            }
+
+            var tileTop = tile.Y * Map16TileSize + LevelVisualYOffset;
+            top = MathF.Min(top, tileTop);
+            bottom = MathF.Max(bottom, tileTop + Map16TileSize);
+        }
+
+        if (top < bottom)
+        {
+            return (top, bottom);
+        }
+
+        return (spawn.Y - 128.0f, spawn.Y + 32.0f);
+    }
+
+    private static float InitialGoalTapeY(SpriteSpawn spawn, float gateTop, float gateBottom)
+    {
+        return Math.Clamp(spawn.Y - 76.0f, gateTop + 8.0f, gateBottom - 24.0f);
     }
 
     private void AddRuntimeSpriteActors()
@@ -3414,6 +3461,27 @@ public partial class GameScene : Node2D
         actor.Y = Mathf.Lerp(actor.HomeY, hiddenY, Math.Clamp(fallT, 0.0f, 1.0f));
     }
 
+    private void UpdateGoalTapes()
+    {
+        if (_goalTapes.Count == 0 || _courseClear)
+        {
+            return;
+        }
+
+        foreach (var tape in _goalTapes)
+        {
+            tape.Y = Math.Clamp(tape.Y + tape.YSpeed, tape.MinY, tape.MaxY);
+            tape.Timer--;
+            if (tape.Timer <= 0 || tape.Y <= tape.MinY || tape.Y >= tape.MaxY)
+            {
+                tape.Timer = GoalTapeCycleFrames;
+                tape.Direction *= -1;
+            }
+
+            tape.Node.Position = new Vector2(tape.X, tape.Y);
+        }
+    }
+
     private bool ResolvePlayerSolidBlockActorCollision(RuntimeSpriteActor actor, Rect2 previousPlayerRect)
     {
         var actorRect = actor.Rect;
@@ -5258,6 +5326,10 @@ public partial class GameScene : Node2D
             case "pipes":
             case "entrances":
                 return PrintDebugPipeEntrances();
+            case "goal":
+            case "goal_tape":
+            case "goal_tapes":
+                return PrintDebugGoalTapes();
             case "player_oam":
             case "oam":
             case "pose":
@@ -5795,6 +5867,18 @@ public partial class GameScene : Node2D
                     $"source={entrance.SourceX},{entrance.SourceY}:{entrance.Source}";
             });
         var line = $"smw-debug-pipe-entrances: count={_pipeEntrances.Count} {string.Join(" ", entries)}";
+        GD.Print(line);
+        return line;
+    }
+
+    private string PrintDebugGoalTapes()
+    {
+        var entries = _goalTapes
+            .Select((tape, index) =>
+                $"#{index}:x={tape.X:0.00}:y={tape.Y:0.00}:speed={tape.YSpeed:0.00}:timer={tape.Timer}:" +
+                $"gate={tape.GateRect.Position.X:0.00},{tape.GateRect.Position.Y:0.00},{tape.GateRect.Size.X:0.00},{tape.GateRect.Size.Y:0.00}:" +
+                $"tape={tape.TapeRect.Position.X:0.00},{tape.TapeRect.Position.Y:0.00},{tape.TapeRect.Size.X:0.00},{tape.TapeRect.Size.Y:0.00}");
+        var line = $"smw-debug-goal-tapes: count={_goalTapes.Count} {string.Join(" ", entries)}";
         GD.Print(line);
         return line;
     }
