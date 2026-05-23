@@ -27,6 +27,10 @@ public partial class GameScene : Node2D
     private const float CameraMaxScrollDownPerFrame = 5.0f;
     private const int SpriteActorWidth = 16;
     private const int SpriteActorHeight = 16;
+    private const float SpriteActorWakeMargin = 48.0f;
+    private const float SpriteActorSleepMargin = 160.0f;
+    private const float SpriteActorVerticalWakeMargin = 80.0f;
+    private const float SpriteActorVerticalSleepMargin = 128.0f;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
     private const int NativePlayerHurtAnimationFrames = 0x2F;
@@ -506,6 +510,8 @@ public partial class GameScene : Node2D
         public int InteractionCooldownFrames { get; set; }
         public bool Used { get; set; }
         public bool Alive { get; set; } = true;
+        public bool Active { get; set; }
+        public bool AlwaysActive { get; init; }
         public bool OnGround { get; set; }
         public int WakeScreen { get; init; }
         public required List<Node> Visuals { get; init; }
@@ -3681,6 +3687,14 @@ public partial class GameScene : Node2D
 
             actor.PreviousX = actor.X;
             actor.PreviousY = actor.Y;
+            actor.Active = IsSpriteActorAwake(actor);
+            ApplySpriteActorVisualVisibility(actor);
+            if (!actor.Active)
+            {
+                actor.Node.Position = new Vector2(actor.X, actor.Y);
+                continue;
+            }
+
             if (actor.InteractionCooldownFrames > 0)
             {
                 actor.InteractionCooldownFrames--;
@@ -3933,6 +3947,7 @@ public partial class GameScene : Node2D
     private static bool CanPlayerFireballHitActor(RuntimeSpriteActor actor)
     {
         return actor.Alive &&
+            actor.Active &&
             actor.Behavior.CanInteract &&
             !IsPowerupItemSprite(actor.SpriteId) &&
             !IsSolidBlockSprite(actor.SpriteId) &&
@@ -3950,12 +3965,6 @@ public partial class GameScene : Node2D
 
     private void UpdateSpriteActorMotion(RuntimeSpriteActor actor)
     {
-        var actorRect = actor.Rect;
-        if (MathF.Abs(actorRect.GetCenter().X - (_cameraX + LogicalViewportWidth * 0.5f)) > LogicalViewportWidth + 80.0f)
-        {
-            return;
-        }
-
         if (IsJumpingPiranhaSprite(actor.SpriteId))
         {
             UpdateJumpingPiranhaMotion(actor);
@@ -4063,12 +4072,29 @@ public partial class GameScene : Node2D
         }
     }
 
+    private bool IsSpriteActorAwake(RuntimeSpriteActor actor)
+    {
+        if (actor.AlwaysActive)
+        {
+            return true;
+        }
+
+        var xMargin = actor.Active ? SpriteActorSleepMargin : SpriteActorWakeMargin;
+        var yMargin = actor.Active ? SpriteActorVerticalSleepMargin : SpriteActorVerticalWakeMargin;
+        var activeWindow = new Rect2(
+            _cameraX - xMargin,
+            _cameraY - yMargin,
+            LogicalViewportWidth + xMargin * 2.0f,
+            LogicalViewportHeight + yMargin * 2.0f);
+        return activeWindow.Intersects(actor.Rect);
+    }
+
     private void ApplySpriteActorVisualVisibility(RuntimeSpriteActor actor)
     {
-        if (!_debugActorVisualsEnabled)
-        {
-            actor.Node.Visible = false;
-        }
+        actor.Node.Visible =
+            _debugActorVisualsEnabled &&
+            actor.Active &&
+            (!IsJumpingPiranhaSprite(actor.SpriteId) || actor.State != 0);
     }
 
     private static void UpdateWingedQuestionBlockMotion(RuntimeSpriteActor actor)
@@ -4409,6 +4435,8 @@ public partial class GameScene : Node2D
             XSpeed = initialXSpeed ?? (spriteId is 0x74 or 0x78 ? PowerupItemWalkSpeed : 0.0f),
             YSpeed = initialYSpeed,
             WakeScreen = wakeScreen,
+            Active = true,
+            AlwaysActive = true,
             MotionFrame = 0,
             InteractionCooldownFrames = Math.Max(0, interactionCooldownFrames),
             Visuals = visuals,
@@ -4449,6 +4477,7 @@ public partial class GameScene : Node2D
     {
         var actorRect = actor.Rect;
         if (!actor.Alive ||
+            !actor.Active ||
             !actor.Behavior.CanInteract ||
             (IsPowerupItemSprite(actor.SpriteId) && actor.State == PowerupItemEmergingState) ||
             (IsPowerupItemSprite(actor.SpriteId) && actor.InteractionCooldownFrames > 0) ||
@@ -6097,6 +6126,11 @@ public partial class GameScene : Node2D
     public void DebugSetActorsEnabled(bool enabled)
     {
         _debugActorsEnabled = enabled;
+        foreach (var actor in _spriteActors)
+        {
+            actor.Active = enabled && IsSpriteActorAwake(actor);
+            ApplySpriteActorVisualVisibility(actor);
+        }
         GD.Print($"smw-debug: actors={(_debugActorsEnabled ? 1 : 0)}");
     }
 
@@ -6105,7 +6139,7 @@ public partial class GameScene : Node2D
         _debugActorVisualsEnabled = enabled;
         foreach (var actor in _spriteActors)
         {
-            actor.Node.Visible = enabled && (!IsJumpingPiranhaSprite(actor.SpriteId) || actor.State != 0);
+            ApplySpriteActorVisualVisibility(actor);
         }
 
         GD.Print($"smw-debug: actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)}");
@@ -7555,6 +7589,7 @@ public partial class GameScene : Node2D
     private string BuildDebugState(string tag)
     {
         var nearestActor = DescribeNearestActor();
+        var activeActorCount = CountActiveSpriteActors();
         return
             $"smw-debug-state: tag={tag} frame={_debugFrameCounter} level={_currentLevelId} " +
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
@@ -7564,8 +7599,18 @@ public partial class GameScene : Node2D
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"actors={_spriteActors.Count} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} autoplay={AutoplayModeName(_autoplayMode)} auto_frame={_autoplayFrame} " +
+            $"actors={_spriteActors.Count} actors_active={activeActorCount} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} autoplay={AutoplayModeName(_autoplayMode)} auto_frame={_autoplayFrame} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
+    }
+
+    private int CountActiveSpriteActors()
+    {
+        return _spriteActors.Count(actor => actor.Alive && IsSpriteActorDebugActive(actor));
+    }
+
+    private bool IsSpriteActorDebugActive(RuntimeSpriteActor actor)
+    {
+        return _debugActorsEnabled && (actor.Active || IsSpriteActorAwake(actor));
     }
 
     private string DescribeNearestActor()
@@ -7610,7 +7655,7 @@ public partial class GameScene : Node2D
             .OrderBy(item => item.DistanceSq)
             .Take(8)
             .Select(item =>
-                $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}:visuals={item.Actor.Visuals.Count}:visible={(item.Actor.Node.Visible ? 1 : 0)}");
+                $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}:visuals={item.Actor.Visuals.Count}:visible={(item.Actor.Node.Visible ? 1 : 0)}:active={(IsSpriteActorDebugActive(item.Actor) ? 1 : 0)}");
         var description = string.Join(" | ", actors);
         return string.IsNullOrEmpty(description) ? "none" : description;
     }
@@ -7641,7 +7686,7 @@ public partial class GameScene : Node2D
             ? "none"
             : string.Join(",", tiles.Select(DescribeSpriteOamTile));
         return
-            $"{actor.SpriteId:X2}:state={actor.State}:used={(actor.Used ? 1 : 0)}:pos={actor.X:0.00},{actor.Y:0.00}:" +
+            $"{actor.SpriteId:X2}:state={actor.State}:active={(IsSpriteActorDebugActive(actor) ? 1 : 0)}:used={(actor.Used ? 1 : 0)}:pos={actor.X:0.00},{actor.Y:0.00}:" +
             $"visuals={actor.Visuals.Count}:visible={(actor.Node.Visible ? 1 : 0)}:tiles={tileDescriptions}";
     }
 
