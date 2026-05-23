@@ -134,13 +134,13 @@ public partial class Main : Node2D
         {
             _game?.DebugEnterLevel(testLevel);
         }
-        if (testSpawn != null)
-        {
-            _game?.DebugSetPlayerPosition(testSpawn.Value);
-        }
         if (testPowerup != null)
         {
             _game?.DebugSetPlayerPowerup(testPowerup.Value);
+        }
+        if (testSpawn != null)
+        {
+            _game?.DebugSetPlayerPosition(testSpawn.Value);
         }
         if (testScreenExit != null)
         {

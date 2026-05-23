@@ -205,6 +205,10 @@ grep -q "smw-test-powerup: powerup=0 height=16 render_y=-17 player_palette=0" "$
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=fire 2>&1 | tee "$LOG_FILE"
 grep -q "smw-test-powerup: powerup=3 height=32 render_y=-1 player_palette=2" "$LOG_FILE"
 
+"$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=880,304 --smw-test-powerup=small 2>&1 | tee "$LOG_FILE"
+grep -q "smw-test-powerup: powerup=0 height=16 render_y=-17 player_palette=0" "$LOG_FILE"
+grep -q "smw-test-spawn: x=880.00 y=304.00" "$LOG_FILE"
+
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-audio-sample=09 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: sample_preview sample=09 available=1 samples=3" "$LOG_FILE"
 
