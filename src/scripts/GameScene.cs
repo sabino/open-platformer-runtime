@@ -1457,7 +1457,10 @@ public partial class GameScene : Node2D
                 }
                 break;
             case 0xC7:
-                AddBubbleVisual(node, visuals);
+                if (DebugOverlays)
+                {
+                    AddBubbleVisual(node, visuals);
+                }
                 break;
         }
     }
