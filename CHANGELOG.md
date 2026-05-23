@@ -5,6 +5,7 @@
 - Added visible Mario collision sensor gizmos and an RCON `sensors` command that reports head/side/foot Map16 probes, pipe-cell roles, and current floor-slope contact for frame-by-frame collision debugging.
 - Limited right-diagonal-pipe horizontal intrusion recovery to body cells only, leaving floor cells to the slope-floor solver instead of treating them as pipe-volume blockers.
 - Removed per-fill audio mix-buffer reallocations and exposed mixer frame/call/time counters through audio/performance RCON status for visible-run slowdown triage.
+- Applied the native one-pixel OAM Y bias to Mario's rendered pose bridge so big, small, and ducking sprites line up with the hitbox bottom instead of drawing one pixel into the floor.
 - Ported the native spin-jump pose/facing cycle from `DATA_00CE99/00CEA1` for Mario's runtime OAM bridge and added trace output/regression coverage for pose/facing changes during spin jumps.
 - Replaced the remaining flat horizontal speed-cap hard clamp with native-style `00D742/00D76B` table drag, so held walk/run motion oscillates around the SMW caps through friction/deceleration tables instead of pinning subspeed to zero.
 - Added a live RCON headless regression that settles Mario on the actual level-105 diagonal-pipe slope at `x=921,y=208`, traces a jump, and asserts he leaves the slope with the native jump speed.
