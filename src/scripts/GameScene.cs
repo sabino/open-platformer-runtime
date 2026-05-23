@@ -3328,6 +3328,7 @@ public partial class GameScene : Node2D
         _playerHitboxGizmo = null;
         _playerFootGizmo = null;
         _playerDebugLabel = null;
+        _playerTileSprites.Clear();
         _player = new Node2D
         {
             Name = "MarioPlayer",
