@@ -61,7 +61,16 @@ public partial class GameScene : Node2D
     private const int NativeStarPowerTimerInitial = 0xFF;
     private const int CoinLifeThreshold = 100;
     private const int DragonCoinLifeThreshold = 5;
+    private const int MaxPlayerFireballs = 2;
+    private const int FireballShootPoseFrames = 10;
+    private const int FireballInitialYSpeed = 48;
+    private const int FireballGravity = 4;
+    private const int FireballMaxYSpeed = 48;
+    private const int FireballBounceLimit = 2;
+    private const float FireballXSpeed = 3.0f;
+    private const float FireballLevelCollisionProbe = 4.0f;
     private static readonly int[] StompScoreByNativeGivePointsIndex = [100, 200, 400, 800, 1000, 2000, 4000, 8000];
+    private static readonly int[] FireballBounceYSpeedBySlopeType = [0, -72, -64, -56, -48, -40, -32, -24, -16];
     private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
@@ -134,6 +143,7 @@ public partial class GameScene : Node2D
     private readonly List<int> _playerTileXFlip = [];
     private readonly List<Sprite2D> _playerTileSprites = [];
     private readonly List<RuntimeSpriteActor> _spriteActors = [];
+    private readonly List<PlayerFireball> _playerFireballs = [];
     private readonly List<ScriptedInputSegment> _inputScript = [];
     private readonly List<Rect2> _goalTapeTriggers = [];
     private readonly List<GoalTapeRuntime> _goalTapes = [];
@@ -202,6 +212,8 @@ public partial class GameScene : Node2D
     private int _score;
     private int _stompChainCounter;
     private int _starPowerTimer;
+    private int _fireballShootPoseTimer;
+    private int _spinJumpFireballTimer;
     private int _lives = StartingLives;
     private int _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
     private int _blockBreakCount;
@@ -226,6 +238,7 @@ public partial class GameScene : Node2D
     private bool _debugHeldInputActive;
     private bool _debugHeldJumpPressed;
     private bool _debugHeldSpinPressed;
+    private bool _debugHeldRunPressed;
     private int _debugTraceFrames;
     private int _debugTraceTotalFrames;
     private int _debugTraceFrame;
@@ -340,6 +353,7 @@ public partial class GameScene : Node2D
             _player.Position = PlayerRenderPosition();
         }
 
+        TrySpawnPlayerFireball(frameInput);
         UpdatePlayerGraphic();
         if (UpdateSpriteActors(_physics.PlayerRect(previousStateForActors)))
         {
@@ -349,6 +363,7 @@ public partial class GameScene : Node2D
             }
             UpdatePlayerGraphic(force: true);
         }
+        UpdatePlayerFireballs();
         UpdateGoalTapes();
         CheckCoinPickups();
         CheckGoalTape();
@@ -475,6 +490,20 @@ public partial class GameScene : Node2D
         public Rect2 Rect => new(X + Behavior.Hitbox.Position.X, Y + Behavior.Hitbox.Position.Y, Behavior.Hitbox.Size.X, Behavior.Hitbox.Size.Y);
     }
 
+    private sealed class PlayerFireball
+    {
+        public required Node2D Node { get; init; }
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float XSpeed { get; init; }
+        public int YSpeed { get; set; }
+        public int SubY { get; set; }
+        public int MotionFrame { get; set; }
+        public int BounceCount { get; set; }
+        public bool Alive { get; set; } = true;
+        public Rect2 Rect => new(X, Y, 8.0f, 8.0f);
+    }
+
     private sealed class GoalTapeRuntime
     {
         public required Node2D Node { get; init; }
@@ -581,6 +610,7 @@ public partial class GameScene : Node2D
             {
                 input.JumpPressed = false;
                 input.SpinPressed = false;
+                input.RunPressed = false;
             }
 
             _debugCommandInputFrame++;
@@ -599,8 +629,10 @@ public partial class GameScene : Node2D
             var input = _debugHeldInput;
             input.JumpPressed = _debugHeldJumpPressed;
             input.SpinPressed = _debugHeldSpinPressed;
+            input.RunPressed = _debugHeldRunPressed;
             _debugHeldJumpPressed = false;
             _debugHeldSpinPressed = false;
+            _debugHeldRunPressed = false;
             return input;
         }
 
@@ -619,6 +651,7 @@ public partial class GameScene : Node2D
             Spin = Input.IsActionPressed("smw_spin"),
             SpinPressed = Input.IsActionJustPressed("smw_spin"),
             Run = Input.IsActionPressed("smw_run"),
+            RunPressed = Input.IsActionJustPressed("smw_run"),
         };
     }
 
@@ -657,6 +690,7 @@ public partial class GameScene : Node2D
         {
             input.JumpPressed = false;
             input.SpinPressed = false;
+            input.RunPressed = false;
         }
 
         _inputScriptFrame++;
@@ -1203,6 +1237,7 @@ public partial class GameScene : Node2D
         _solidVerticalEnabled.Clear();
         _slopes.Clear();
         _spriteActors.Clear();
+        _playerFireballs.Clear();
         _goalTapeTriggers.Clear();
         _goalTapes.Clear();
         _coinPickups.Clear();
@@ -3588,6 +3623,249 @@ public partial class GameScene : Node2D
         return playerAdjusted;
     }
 
+    private void TrySpawnPlayerFireball(SmwPhysics.FrameInput frameInput)
+    {
+        if (_state.Powerup != SmwPhysics.FirePowerup || _state.Ducking || _courseClear)
+        {
+            return;
+        }
+
+        var shouldSpawn = frameInput.RunPressed;
+        if (!shouldSpawn && _state.SpinJump)
+        {
+            _spinJumpFireballTimer = (_spinJumpFireballTimer + 1) & 0xFF;
+            shouldSpawn = (_spinJumpFireballTimer & 0x0F) == 0;
+            if (shouldSpawn)
+            {
+                _state.Facing = (_spinJumpFireballTimer & 0x10) != 0 ? 1 : 0;
+            }
+        }
+
+        if (!shouldSpawn || _playerFireballs.Count(fireball => fireball.Alive) >= MaxPlayerFireballs)
+        {
+            return;
+        }
+
+        var facingRight = _state.Facing != 0;
+        var xOffset = facingRight ? 16.0f : -8.0f;
+        var yOffset = _state.Powerup == SmwPhysics.SmallPowerup ? 8.0f : 12.0f;
+        var fireball = CreatePlayerFireball(
+            _state.XFloat + xOffset,
+            _state.YFloat + yOffset,
+            facingRight ? FireballXSpeed : -FireballXSpeed);
+        _playerFireballs.Add(fireball);
+        _worldRoot?.AddChild(fireball.Node);
+        _fireballShootPoseTimer = FireballShootPoseFrames;
+        _audio?.PlayFireball();
+        _lastActorEvent = "fireball:spawn";
+        GD.Print(
+            $"smw-runtime: fireball_spawn level={_currentLevelId} x={fireball.X:0.00} y={fireball.Y:0.00} " +
+            $"xs={fireball.XSpeed:0.00} ys={fireball.YSpeed} count={_playerFireballs.Count(active => active.Alive)}");
+    }
+
+    private PlayerFireball CreatePlayerFireball(float x, float y, float xSpeed)
+    {
+        var node = new Node2D
+        {
+            Name = $"PlayerFireball_{_debugFrameCounter:X4}",
+            Position = new Vector2(x, y),
+            ZIndex = 8,
+        };
+        if (!AddSpriteOamTile(node, new SpriteOamTile(0, 0, 0x2C, 0x35, 0, false), out _))
+        {
+            node.AddChild(new ColorRect
+            {
+                Name = "FireballFallback",
+                Color = new Color(1.0f, 0.42f, 0.08f, 1.0f),
+                Position = Vector2.Zero,
+                Size = new Vector2(8.0f, 8.0f),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+        }
+        if (DebugOverlays)
+        {
+            AddRectOutline(node, new Rect2(0, 0, 8, 8), new Color(1.0f, 0.45f, 0.05f, 0.88f), 1.0f, 80);
+        }
+
+        return new PlayerFireball
+        {
+            Node = node,
+            X = x,
+            Y = y,
+            XSpeed = xSpeed,
+            YSpeed = FireballInitialYSpeed,
+        };
+    }
+
+    private void UpdatePlayerFireballs()
+    {
+        if (_playerFireballs.Count == 0)
+        {
+            return;
+        }
+
+        for (var i = _playerFireballs.Count - 1; i >= 0; i--)
+        {
+            var fireball = _playerFireballs[i];
+            if (!fireball.Alive)
+            {
+                fireball.Node.QueueFree();
+                _playerFireballs.RemoveAt(i);
+                continue;
+            }
+
+            UpdatePlayerFireball(fireball);
+            if (TryResolveFireballActorCollision(fireball))
+            {
+                fireball.Alive = false;
+            }
+
+            if (!fireball.Alive || IsPlayerFireballOffscreen(fireball))
+            {
+                fireball.Node.QueueFree();
+                _playerFireballs.RemoveAt(i);
+                continue;
+            }
+
+            fireball.Node.Position = new Vector2(fireball.X, fireball.Y);
+        }
+    }
+
+    private void UpdatePlayerFireball(PlayerFireball fireball)
+    {
+        var previousBottom = fireball.Y + 8.0f;
+        fireball.MotionFrame++;
+        fireball.X += fireball.XSpeed;
+        fireball.YSpeed = Math.Min(FireballMaxYSpeed, fireball.YSpeed + FireballGravity);
+        fireball.SubY += fireball.YSpeed;
+        while (fireball.SubY >= 16)
+        {
+            fireball.Y += 1.0f;
+            fireball.SubY -= 16;
+        }
+        while (fireball.SubY <= -16)
+        {
+            fireball.Y -= 1.0f;
+            fireball.SubY += 16;
+        }
+
+        if (TryBounceFireballOnSlope(fireball, previousBottom))
+        {
+            return;
+        }
+
+        var rect = fireball.Rect;
+        foreach (var solid in _solids)
+        {
+            if (!rect.Intersects(solid))
+            {
+                continue;
+            }
+
+            if (previousBottom <= solid.Position.Y + FireballLevelCollisionProbe)
+            {
+                BouncePlayerFireball(fireball, solid.Position.Y, slopeType: 1);
+            }
+            else
+            {
+                fireball.Alive = false;
+                _lastActorEvent = "fireball:block";
+                GD.Print(
+                    $"smw-runtime: fireball_block level={_currentLevelId} x={fireball.X:0.00} y={fireball.Y:0.00}");
+            }
+            return;
+        }
+    }
+
+    private bool TryBounceFireballOnSlope(PlayerFireball fireball, float previousBottom)
+    {
+        if (fireball.YSpeed < 0)
+        {
+            return false;
+        }
+
+        var centerX = fireball.X + 4.0f;
+        foreach (var slope in _slopes)
+        {
+            if (slope.Ceiling)
+            {
+                continue;
+            }
+            var minX = MathF.Min(slope.X0, slope.X1) - 1.0f;
+            var maxX = MathF.Max(slope.X0, slope.X1) + 1.0f;
+            if (centerX < minX || centerX > maxX || MathF.Abs(slope.X1 - slope.X0) < 0.001f)
+            {
+                continue;
+            }
+
+            var t = (centerX - slope.X0) / (slope.X1 - slope.X0);
+            var slopeY = Mathf.Lerp(slope.Y0, slope.Y1, t);
+            var bottom = fireball.Y + 8.0f;
+            if (previousBottom <= slopeY + FireballLevelCollisionProbe && bottom >= slopeY - FireballLevelCollisionProbe)
+            {
+                BouncePlayerFireball(fireball, slopeY, SmwPhysics.NativeSlopeTypeForKind(slope.NativeSlopeKind));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void BouncePlayerFireball(PlayerFireball fireball, float floorY, int slopeType)
+    {
+        fireball.BounceCount++;
+        fireball.Y = floorY - 8.0f;
+        fireball.SubY = 0;
+        var tableIndex = Math.Clamp(slopeType + 4, 0, FireballBounceYSpeedBySlopeType.Length - 1);
+        fireball.YSpeed = FireballBounceYSpeedBySlopeType[tableIndex];
+        if (fireball.BounceCount >= FireballBounceLimit)
+        {
+            fireball.Alive = false;
+            _lastActorEvent = "fireball:puff";
+        }
+    }
+
+    private bool TryResolveFireballActorCollision(PlayerFireball fireball)
+    {
+        var fireballRect = fireball.Rect;
+        foreach (var actor in _spriteActors)
+        {
+            if (!CanPlayerFireballHitActor(actor) || !fireballRect.Intersects(actor.Rect))
+            {
+                continue;
+            }
+
+            actor.Alive = false;
+            AddScore(StompScoreByNativeGivePointsIndex[1]);
+            _audio?.PlayStomp(0);
+            _lastActorEvent = $"fireball:{actor.SpriteId:X2}:dead";
+            GD.Print(
+                $"smw-runtime: fireball_hit level={_currentLevelId} sprite={actor.SpriteId:X2} " +
+                $"state={actor.State} x={fireball.X:0.00} y={fireball.Y:0.00} score={_score}");
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool CanPlayerFireballHitActor(RuntimeSpriteActor actor)
+    {
+        return actor.Alive &&
+            actor.Behavior.CanInteract &&
+            !IsPowerupItemSprite(actor.SpriteId) &&
+            !IsSolidBlockSprite(actor.SpriteId) &&
+            actor.SpriteId != 0xC7 &&
+            (!IsJumpingPiranhaSprite(actor.SpriteId) || actor.State != 0);
+    }
+
+    private bool IsPlayerFireballOffscreen(PlayerFireball fireball)
+    {
+        return fireball.X < _cameraX - 24.0f ||
+            fireball.X > _cameraX + LogicalViewportWidth + 24.0f ||
+            fireball.Y < _cameraY - 32.0f ||
+            fireball.Y > _cameraY + LogicalViewportHeight + 32.0f;
+    }
+
     private void UpdateSpriteActorMotion(RuntimeSpriteActor actor)
     {
         var actorRect = actor.Rect;
@@ -4678,6 +4956,11 @@ public partial class GameScene : Node2D
         {
             _playerAnimTimer--;
         }
+        if (_fireballShootPoseTimer > 0)
+        {
+            _fireballShootPoseTimer--;
+            return _state.Powerup > SmwPhysics.SmallPowerup ? 67 : 66;
+        }
 
         if (!_state.OnGround)
         {
@@ -5491,7 +5774,7 @@ public partial class GameScene : Node2D
     private void PrintRuntimeState()
     {
         var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
-        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} pipe_cells={_diagonalPipeFloorCells.Count}/{_diagonalPipeBodyCells.Count}/{_diagonalPipeCeilingCells.Count} coin_pickups={_coinPickups.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} pipe_cells={_diagonalPipeFloorCells.Count}/{_diagonalPipeBodyCells.Count}/{_diagonalPipeCeilingCells.Count} coin_pickups={_coinPickups.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} fireballs={_playerFireballs.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
@@ -5652,6 +5935,7 @@ public partial class GameScene : Node2D
         _state.InAirState = 0;
         _state.RunningTakeoff = false;
         _state.SpinJump = false;
+        _spinJumpFireballTimer = 0;
     }
 
     public void DebugSetPlayerSpinJump(bool spinJump)
@@ -6316,6 +6600,7 @@ public partial class GameScene : Node2D
 
         _debugHeldJumpPressed = input.Jump && !_debugHeldInput.Jump;
         _debugHeldSpinPressed = input.Spin && !_debugHeldInput.Spin;
+        _debugHeldRunPressed = input.Run && !_debugHeldInput.Run;
         _debugHeldInput = input;
         _debugHeldInputActive = true;
         GD.Print($"smw-debug: hold input={DescribeFrameInput(_debugHeldInput)}");
@@ -6327,6 +6612,7 @@ public partial class GameScene : Node2D
         _debugHeldInputActive = false;
         _debugHeldJumpPressed = false;
         _debugHeldSpinPressed = false;
+        _debugHeldRunPressed = false;
         GD.Print("smw-debug: hold input=-------");
     }
 
@@ -6507,7 +6793,7 @@ public partial class GameScene : Node2D
             $"draw_calls={Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0} " +
             $"render_objects={Performance.GetMonitor(Performance.Monitor.RenderTotalObjectsInFrame):0} " +
             $"physics_tps={Engine.PhysicsTicksPerSecond} paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
-            $"nodes={CountNodes(GetTree().Root)} actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} " +
+            $"nodes={CountNodes(GetTree().Root)} actors={_spriteActors.Count} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} " +
             $"tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} player_sprites={_playerTileSprites.Count} " +
             $"audio_enabled={(AudioEnabled ? 1 : 0)} audio_process={(_audio?.ProcessMode.ToString() ?? "none")} audio_{audioStatus}";
         GD.Print(perf);
@@ -7096,7 +7382,7 @@ public partial class GameScene : Node2D
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
+            $"actors={_spriteActors.Count} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
     }
 
@@ -7497,6 +7783,7 @@ public partial class GameScene : Node2D
             case "x":
             case "y":
                 input.Run = true;
+                input.RunPressed = true;
                 break;
             default:
                 throw new FormatException($"{path}:{lineNumber}: unknown input token '{token}'");

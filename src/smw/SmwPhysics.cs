@@ -286,6 +286,7 @@ public sealed class SmwPhysics
         public bool Spin;
         public bool SpinPressed;
         public bool Run;
+        public bool RunPressed;
     }
 
     public readonly record struct SlopeSurface(
@@ -512,6 +513,13 @@ public sealed class SmwPhysics
         return kind >= 0 && kind < NativeSlopePlayerSnapDistanceTable.Length
             ? NativeSlopePlayerSnapDistanceTable[kind]
             : 16.0f;
+    }
+
+    public static int NativeSlopeTypeForKind(int kind)
+    {
+        return kind >= 0 && kind < NativeSlopeTypeTable.Length
+            ? NativeSlopeTypeTable[kind]
+            : 0;
     }
 
     public static bool TryResolveFloorSlope(

@@ -161,6 +161,18 @@ public partial class SmwAudio : Node
             ]);
     }
 
+    public void PlayFireball()
+    {
+        PlayNativeSfxProbe(
+            "fireball",
+            port: 3,
+            command: 0x06,
+            [
+                new SfxProbeNote(7, 0x8E, 0x08, 0.28f, 0, -0.10f),
+                new SfxProbeNote(7, 0x84, 0x06, 0.24f, 4, 0.12f),
+            ]);
+    }
+
     public void PlayPlayerHurt()
     {
         PlayNativeSfxProbe(
@@ -218,6 +230,10 @@ public partial class SmwAudio : Node
             case "reward":
             case "powerup":
                 PlayBlockReward();
+                return true;
+            case "fireball":
+            case "fire":
+                PlayFireball();
                 return true;
             case "hurt":
                 PlayPlayerHurt();
