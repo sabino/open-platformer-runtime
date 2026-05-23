@@ -16,7 +16,13 @@ export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
 
 dotnet build SmwGodotNative.csproj
 LOG_FILE="$(mktemp)"
-trap 'rm -f "$LOG_FILE"' EXIT
+INPUT_SCRIPT="$(mktemp)"
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT"' EXIT
+cat >"$INPUT_SCRIPT" <<'EOF'
+# frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
+1 right run
+1 right run jump
+EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474 collision_rects=25 slope_surfaces=42 coin_pickups=4" "$LOG_FILE"
@@ -55,6 +61,10 @@ grep -q "smw-runtime: course_clear level=105" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=small 2>&1 | tee "$LOG_FILE"
 grep -q "smw-test-powerup: powerup=0 height=16 render_y=-16" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-input-script="$INPUT_SCRIPT" 2>&1 | tee "$LOG_FILE"
+grep -q "smw-input-script: loaded path=$INPUT_SCRIPT segments=2 frames=2" "$LOG_FILE"
+grep -q "smw-input-script: done name=$INPUT_SCRIPT frames=2" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --audio-driver Dummy --path . --quit-after 1 --smw-audio-preview=Level 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: music_preview=Level events=12 loop_frames=96" "$LOG_FILE"

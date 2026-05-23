@@ -2,6 +2,8 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using IoFile = System.IO.File;
+using IoPath = System.IO.Path;
 
 public partial class GameScene : Node2D
 {
@@ -64,6 +66,7 @@ public partial class GameScene : Node2D
     private readonly List<int> _playerTileXFlip = [];
     private readonly List<Sprite2D> _playerTileSprites = [];
     private readonly List<RuntimeSpriteActor> _spriteActors = [];
+    private readonly List<ScriptedInputSegment> _inputScript = [];
     private readonly List<Rect2> _goalTapeTriggers = [];
     private readonly List<CoinPickup> _coinPickups = [];
     private readonly Dictionary<(int X, int Y), Sprite2D> _map16TileSprites = [];
@@ -105,6 +108,11 @@ public partial class GameScene : Node2D
     private Vector2 _entranceMotionPixelsPerFrame;
     private int _coinCount;
     private int _dragonCoinCount;
+    private int _inputScriptIndex;
+    private int _inputScriptFrame;
+    private int _inputScriptElapsedFrames;
+    private string _inputScriptName = "";
+    private bool _inputScriptDoneLogged;
 
     public bool DebugOverlays { get; set; }
 
@@ -126,17 +134,7 @@ public partial class GameScene : Node2D
     {
         var frameInput = _courseClear
             ? new SmwPhysics.FrameInput()
-            : new SmwPhysics.FrameInput
-        {
-            Left = Input.IsActionPressed("smw_left"),
-            Right = Input.IsActionPressed("smw_right"),
-            Down = Input.IsActionPressed("smw_down"),
-            Jump = Input.IsActionPressed("smw_jump"),
-            JumpPressed = Input.IsActionJustPressed("smw_jump"),
-            Spin = Input.IsActionPressed("smw_spin"),
-            SpinPressed = Input.IsActionJustPressed("smw_spin"),
-            Run = Input.IsActionPressed("smw_run"),
-        };
+            : ReadFrameInput();
 
         var entranceLocked = _entranceMotionFrames > 0;
         if (!entranceLocked && _state.OnGround && frameInput.SpinPressed)
@@ -171,13 +169,14 @@ public partial class GameScene : Node2D
         UpdateDebugGizmos();
         if (!entranceLocked)
         {
-            CheckPipeDebug();
+            CheckPipeDebug(frameInput);
         }
     }
 
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
     private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
     private readonly record struct PipeEntrance(Rect2 Rect, int Screen, bool Horizontal, string Kind);
+    private readonly record struct ScriptedInputSegment(int Frames, SmwPhysics.FrameInput Input);
     private readonly record struct LevelEntrance(
         string LevelId,
         Vector2 Position,
@@ -205,6 +204,60 @@ public partial class GameScene : Node2D
         public required List<Sprite2D> Sprites { get; init; }
         public bool DragonCoin { get; init; }
         public bool Collected { get; set; }
+    }
+
+    private SmwPhysics.FrameInput ReadFrameInput()
+    {
+        if (_inputScript.Count > 0)
+        {
+            return ReadScriptedFrameInput();
+        }
+
+        return new SmwPhysics.FrameInput
+        {
+            Left = Input.IsActionPressed("smw_left"),
+            Right = Input.IsActionPressed("smw_right"),
+            Down = Input.IsActionPressed("smw_down"),
+            Jump = Input.IsActionPressed("smw_jump"),
+            JumpPressed = Input.IsActionJustPressed("smw_jump"),
+            Spin = Input.IsActionPressed("smw_spin"),
+            SpinPressed = Input.IsActionJustPressed("smw_spin"),
+            Run = Input.IsActionPressed("smw_run"),
+        };
+    }
+
+    private SmwPhysics.FrameInput ReadScriptedFrameInput()
+    {
+        if (_inputScriptIndex >= _inputScript.Count)
+        {
+            if (!_inputScriptDoneLogged)
+            {
+                _inputScriptDoneLogged = true;
+                GD.Print(
+                    $"smw-input-script: done name={_inputScriptName} frames={_inputScriptElapsedFrames} " +
+                    $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} coins={_coinCount} dragon_coins={_dragonCoinCount}");
+            }
+
+            return new SmwPhysics.FrameInput();
+        }
+
+        var segment = _inputScript[_inputScriptIndex];
+        var input = segment.Input;
+        if (_inputScriptFrame > 0)
+        {
+            input.JumpPressed = false;
+            input.SpinPressed = false;
+        }
+
+        _inputScriptFrame++;
+        _inputScriptElapsedFrames++;
+        if (_inputScriptFrame >= segment.Frames)
+        {
+            _inputScriptIndex++;
+            _inputScriptFrame = 0;
+        }
+
+        return input;
     }
 
     private void LoadAssetPack()
@@ -2839,6 +2892,136 @@ public partial class GameScene : Node2D
         GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} render_y={PlayerRenderYOffsetForPowerup(_state.Powerup)}");
     }
 
+    public void DebugLoadInputScript(string path)
+    {
+        _inputScript.Clear();
+        _inputScriptIndex = 0;
+        _inputScriptFrame = 0;
+        _inputScriptElapsedFrames = 0;
+        _inputScriptName = path;
+        _inputScriptDoneLogged = false;
+
+        try
+        {
+            var lines = ReadInputScriptLines(path);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                if (TryParseInputScriptLine(path, i + 1, lines[i], out var segment))
+                {
+                    _inputScript.Add(segment);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _inputScript.Clear();
+            GD.PrintErr($"smw-input-script: {ex.Message}");
+            return;
+        }
+
+        var totalFrames = _inputScript.Sum(segment => segment.Frames);
+        GD.Print($"smw-input-script: loaded path={path} segments={_inputScript.Count} frames={totalFrames}");
+    }
+
+    private static string[] ReadInputScriptLines(string path)
+    {
+        if (path.StartsWith("res://", StringComparison.Ordinal) ||
+            path.StartsWith("user://", StringComparison.Ordinal))
+        {
+            using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
+            if (file == null)
+            {
+                throw new System.IO.IOException($"unable to open {path}");
+            }
+
+            return file.GetAsText().Replace("\r\n", "\n").Split('\n');
+        }
+
+        var globalPath = IoPath.IsPathRooted(path) ? path : IoPath.GetFullPath(path);
+        return IoFile.ReadAllLines(globalPath);
+    }
+
+    private static bool TryParseInputScriptLine(
+        string path,
+        int lineNumber,
+        string rawLine,
+        out ScriptedInputSegment segment)
+    {
+        segment = default;
+        var commentIndex = rawLine.IndexOf('#');
+        var line = commentIndex >= 0 ? rawLine[..commentIndex] : rawLine;
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return false;
+        }
+
+        var parts = line.Split(
+            [' ', '\t', ',', ':', ';'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return false;
+        }
+
+        if (!int.TryParse(parts[0], out var frames) || frames <= 0)
+        {
+            throw new FormatException($"{path}:{lineNumber}: expected a positive frame count");
+        }
+
+        var input = new SmwPhysics.FrameInput();
+        for (var i = 1; i < parts.Length; i++)
+        {
+            ApplyScriptedInputToken(path, lineNumber, parts[i], ref input);
+        }
+
+        segment = new ScriptedInputSegment(frames, input);
+        return true;
+    }
+
+    private static void ApplyScriptedInputToken(
+        string path,
+        int lineNumber,
+        string token,
+        ref SmwPhysics.FrameInput input)
+    {
+        switch (token.Trim().ToLowerInvariant())
+        {
+            case "none":
+            case "-":
+                break;
+            case "left":
+            case "l":
+                input.Left = true;
+                break;
+            case "right":
+            case "r":
+                input.Right = true;
+                break;
+            case "down":
+            case "d":
+                input.Down = true;
+                break;
+            case "jump":
+            case "b":
+                input.Jump = true;
+                input.JumpPressed = true;
+                break;
+            case "spin":
+            case "a":
+                input.Spin = true;
+                input.SpinPressed = true;
+                break;
+            case "run":
+            case "dash":
+            case "x":
+            case "y":
+                input.Run = true;
+                break;
+            default:
+                throw new FormatException($"{path}:{lineNumber}: unknown input token '{token}'");
+        }
+    }
+
     public async void DebugCaptureViewport(string capturePath, int frames, bool quitAfterCapture)
     {
         var waitFrames = Math.Max(1, frames);
@@ -2917,10 +3100,10 @@ public partial class GameScene : Node2D
         PrintRuntimeState();
     }
 
-    private void CheckPipeDebug()
+    private void CheckPipeDebug(SmwPhysics.FrameInput frameInput)
     {
-        var downPressed = Input.IsActionPressed("smw_down");
-        var sidePressed = Input.IsActionPressed("smw_left") || Input.IsActionPressed("smw_right");
+        var downPressed = frameInput.Down;
+        var sidePressed = frameInput.Left || frameInput.Right;
         if (!downPressed && !sidePressed)
         {
             _pipeTransitionLatch = false;

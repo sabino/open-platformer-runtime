@@ -32,6 +32,7 @@ public partial class Main : Node2D
         string? testLevel = null;
         string? capturePath = null;
         string? audioPreview = null;
+        string? inputScriptPath = null;
         Vector2? testSpawn = null;
         int? testPowerup = null;
         int? testScreenExit = null;
@@ -58,6 +59,11 @@ public partial class Main : Node2D
             else if (arg.StartsWith("--smw-audio-preview=", StringComparison.Ordinal))
             {
                 audioPreview = arg["--smw-audio-preview=".Length..];
+            }
+            else if (arg.StartsWith("--smw-input-script=", StringComparison.Ordinal))
+            {
+                inputScriptPath = arg["--smw-input-script=".Length..];
+                autostart = true;
             }
             else if (arg.StartsWith("--smw-test-spawn=", StringComparison.Ordinal))
             {
@@ -100,6 +106,10 @@ public partial class Main : Node2D
         if (testScreenExit != null)
         {
             _game?.DebugEnterScreenExit(testScreenExit.Value);
+        }
+        if (inputScriptPath != null)
+        {
+            _game?.DebugLoadInputScript(inputScriptPath);
         }
         if (capturePath != null)
         {

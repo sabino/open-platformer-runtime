@@ -74,6 +74,8 @@ The visible wrappers default to Sway workspace `6`; override with `SMW_SWAY_WORK
 
 For reproducible lower-route captures, the runtime also accepts `--smw-test-spawn=x,y` alongside `--smw-capture=...`. Use `--smw-test-powerup=small|big|cape|fire` to force the debug player form for hitbox checks.
 
+For deterministic autoplay checks, pass `--smw-input-script=/path/to/script`. Each non-comment line starts with a frame count followed by held inputs separated by spaces, commas, colons, or semicolons, for example `8 right run` or `4 right run jump`. Supported tokens are `left`, `right`, `down`, `jump`, `spin`, and `run`; `jump` and `spin` emit a pressed edge on the first frame of that line.
+
 Pass `--smw-debug-overlays` to a Godot run when you want collision rectangles/outlines, slope lines, player hitbox/feet, camera bounds, pipe/goal triggers, sprite hitboxes, screen lines, object/sprite/coin/block markers, the debug HUD, the foot-tile Map16 probe, and the imported asset preview panel. Normal playable runs hide those overlays.
 
 Build the C# project:
