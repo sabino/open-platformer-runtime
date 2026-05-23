@@ -15,6 +15,8 @@ public partial class GameScene : Node2D
     private const int Map16TileSize = 16;
     private const int Map16AtlasColumns = 16;
     private const int PlayerOamSpriteSlots = 8;
+    private const int SnesSpriteTileSize = 8;
+    private const int SnesSpriteAtlasColumns = 16;
     private const float LogicalViewportWidth = 256.0f;
     private const float LogicalViewportHeight = 224.0f;
     private const float CameraHorizontalAnchor = 0x80;
@@ -30,6 +32,8 @@ public partial class GameScene : Node2D
     private const int PlayerHurtCooldownFrames = 90;
     private const int GoalTapeSpriteId = 0x7B;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
+    private const bool RuntimeSpriteActorPlayerInteractionEnabled = false;
+    private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
     [
         0x00, 0x30, 0x60, 0x80, 0xA0, 0xB0, 0xC0, 0xE0,
@@ -113,6 +117,8 @@ public partial class GameScene : Node2D
     private Node2D? _worldRoot;
     private SmwAudio? _audio;
     private ImageTexture? _playerTexture;
+    private ImageTexture? _spriteTexture;
+    private ImageTexture? _map16Texture;
     private Godot.Collections.Dictionary? _entranceTables;
     private string _currentLevelId = "105";
     private string _levelGfxAtlasPath = "res://generated/smw/tilesets/level_105_tileset7_8x8.png";
@@ -250,6 +256,7 @@ public partial class GameScene : Node2D
 
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
     private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
+    private readonly record struct SpriteOamTile(int Dx, int Dy, int Tile, int Prop, int Bank, bool Large);
     private readonly record struct PipeEntrance(Rect2 Rect, int Screen, bool Horizontal, string Kind);
     private readonly record struct ScriptedInputSegment(int Frames, SmwPhysics.FrameInput Input);
     private readonly record struct LevelEntrance(
@@ -438,6 +445,7 @@ public partial class GameScene : Node2D
         }
 
         var levelDetails = levelParsed.AsGodotDictionary();
+        ApplyLevelAssetPaths(levelDetails);
         if (!levelDetails.TryGetValue("layer1", out var layer1Variant) || layer1Variant.VariantType != Variant.Type.Dictionary)
         {
             return false;
@@ -521,13 +529,15 @@ public partial class GameScene : Node2D
         if (level.TryGetValue("tileset_assets", out var tilesetVariant) && tilesetVariant.VariantType == Variant.Type.Dictionary)
         {
             var tileset = tilesetVariant.AsGodotDictionary();
-            if (tileset.TryGetValue("atlas_png", out var atlasVariant))
+            if (tileset.TryGetValue("atlas_png", out var atlasVariant) &&
+                TryReadAssetFile(atlasVariant, out var atlasFile))
             {
-                _levelGfxAtlasPath = $"res://generated/smw/{atlasVariant.AsString()}";
+                _levelGfxAtlasPath = $"res://generated/smw/{atlasFile}";
             }
-            if (tileset.TryGetValue("map16_preview_png", out var map16Variant))
+            if (tileset.TryGetValue("map16_preview_png", out var map16Variant) &&
+                TryReadAssetFile(map16Variant, out var map16File))
             {
-                _levelMap16AtlasPath = $"res://generated/smw/{map16Variant.AsString()}";
+                _levelMap16AtlasPath = $"res://generated/smw/{map16File}";
             }
         }
 
@@ -535,22 +545,27 @@ public partial class GameScene : Node2D
             spriteTilesetVariant.VariantType == Variant.Type.Dictionary)
         {
             var spriteTileset = spriteTilesetVariant.AsGodotDictionary();
-            if (spriteTileset.TryGetValue("atlas_png", out var atlasVariant))
+            if (spriteTileset.TryGetValue("atlas_png", out var atlasVariant) &&
+                TryReadAssetFile(atlasVariant, out var atlasFile))
             {
-                _levelSpriteAtlasPath = $"res://generated/smw/{atlasVariant.AsString()}";
+                _levelSpriteAtlasPath = $"res://generated/smw/{atlasFile}";
             }
+
+            ApplySpriteUploadTileStarts(spriteTileset);
         }
 
         if (level.TryGetValue("layout_preview", out var layoutVariant) && layoutVariant.VariantType == Variant.Type.Dictionary)
         {
             var layout = layoutVariant.AsGodotDictionary();
-            if (layout.TryGetValue("file", out var tilemapVariant))
+            if (layout.TryGetValue("file", out var tilemapVariant) &&
+                TryReadAssetFile(tilemapVariant, out var tilemapFile))
             {
-                _levelTilemapPath = $"res://generated/smw/{tilemapVariant.AsString()}";
+                _levelTilemapPath = $"res://generated/smw/{tilemapFile}";
             }
-            if (layout.TryGetValue("preview_png", out var previewVariant))
+            if (layout.TryGetValue("preview_png", out var previewVariant) &&
+                TryReadAssetFile(previewVariant, out var previewFile))
             {
-                _levelLayoutPreviewPath = $"res://generated/smw/{previewVariant.AsString()}";
+                _levelLayoutPreviewPath = $"res://generated/smw/{previewFile}";
             }
         }
 
@@ -558,10 +573,67 @@ public partial class GameScene : Node2D
             layer2Variant.VariantType == Variant.Type.Dictionary)
         {
             var layer2 = layer2Variant.AsGodotDictionary();
-            if (layer2.TryGetValue("preview_png", out var previewVariant))
+            if (layer2.TryGetValue("preview_png", out var previewVariant) &&
+                TryReadAssetFile(previewVariant, out var previewFile))
             {
-                _levelLayer2BackgroundPath = $"res://generated/smw/{previewVariant.AsString()}";
+                _levelLayer2BackgroundPath = $"res://generated/smw/{previewFile}";
             }
+        }
+    }
+
+    private static bool TryReadAssetFile(Variant value, out string file)
+    {
+        if (value.VariantType == Variant.Type.String)
+        {
+            file = value.AsString();
+            return !string.IsNullOrWhiteSpace(file);
+        }
+
+        if (value.VariantType == Variant.Type.Dictionary)
+        {
+            var dictionary = value.AsGodotDictionary();
+            if (dictionary.TryGetValue("file", out var fileVariant) &&
+                fileVariant.VariantType == Variant.Type.String)
+            {
+                file = fileVariant.AsString();
+                return !string.IsNullOrWhiteSpace(file);
+            }
+        }
+
+        file = "";
+        return false;
+    }
+
+    private static void ApplySpriteUploadTileStarts(Godot.Collections.Dictionary spriteTileset)
+    {
+        if (!spriteTileset.TryGetValue("uploads", out var uploadsVariant) ||
+            uploadsVariant.VariantType != Variant.Type.Array)
+        {
+            return;
+        }
+
+        foreach (var uploadVariant in uploadsVariant.AsGodotArray())
+        {
+            if (uploadVariant.VariantType != Variant.Type.Dictionary)
+            {
+                continue;
+            }
+
+            var upload = uploadVariant.AsGodotDictionary();
+            if (!upload.TryGetValue("slot", out var slotVariant) ||
+                !upload.TryGetValue("tile_start", out var tileStartVariant))
+            {
+                continue;
+            }
+
+            var slot = slotVariant.AsInt32();
+            var lmuBank = 3 - slot;
+            if (lmuBank < 0 || lmuBank >= SpriteAtlasTileStartByLmuBank.Length)
+            {
+                continue;
+            }
+
+            SpriteAtlasTileStartByLmuBank[lmuBank] = tileStartVariant.AsInt32();
         }
     }
 
@@ -773,6 +845,8 @@ public partial class GameScene : Node2D
         _diagonalPipeCeilingCells.Clear();
         _cameraGizmo?.QueueFree();
         _cameraGizmo = null;
+        _spriteTexture = null;
+        _map16Texture = null;
         StartWorldRoot();
         AddWorldBackground();
         AddLayer2BackgroundPreview();
@@ -791,6 +865,7 @@ public partial class GameScene : Node2D
 
         AddCoinPickups();
         RebuildPipeEntrances();
+        LoadSpriteTexture();
         AddRuntimeSpriteActors();
         AddGoalTapeTriggers();
         if (DebugOverlays)
@@ -869,12 +944,28 @@ public partial class GameScene : Node2D
         }
     }
 
-    private static bool IsRuntimeEnemySprite(int spriteId)
+    private void LoadSpriteTexture()
     {
-        return spriteId is 0x4F or 0x83 or 0x8E or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7;
+        if (!FileAccess.FileExists(_levelSpriteAtlasPath))
+        {
+            return;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelSpriteAtlasPath));
+        if (image == null || image.IsEmpty())
+        {
+            return;
+        }
+
+        _spriteTexture = ImageTexture.CreateFromImage(image);
     }
 
-    private static RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn, bool debugOverlays)
+    private static bool IsRuntimeEnemySprite(int spriteId)
+    {
+        return spriteId is 0x4F or 0x83 or 0x8E or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7 or 0xDB;
+    }
+
+    private RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn, bool debugOverlays)
     {
         var color = SpriteActorColor(spawn.SpriteId);
         var node = new Node2D
@@ -883,12 +974,15 @@ public partial class GameScene : Node2D
             Position = new Vector2(spawn.X, spawn.Y - SpriteActorHeight),
             ZIndex = 6,
         };
+        var hasVisual = AddSpriteActorVisuals(node, spawn.SpriteId);
         var body = new ColorRect
         {
-            Color = color,
+            Name = hasVisual ? "ActorCollisionDebug" : "ActorPlaceholderDebug",
+            Color = debugOverlays ? new Color(color.R, color.G, color.B, 0.20f) : color,
             Position = Vector2.Zero,
             Size = new Vector2(SpriteActorWidth, SpriteActorHeight),
             MouseFilter = Control.MouseFilterEnum.Ignore,
+            Visible = false,
         };
         node.AddChild(body);
         if (debugOverlays)
@@ -912,11 +1006,207 @@ public partial class GameScene : Node2D
         };
     }
 
+    private bool AddSpriteActorVisuals(Node2D node, int spriteId)
+    {
+        var drewAny = false;
+        foreach (var tile in SpriteOamTilesFor(spriteId))
+        {
+            drewAny = AddSpriteOamTile(node, tile) || drewAny;
+        }
+
+        return drewAny || AddSpriteCommandVisual(node, spriteId);
+    }
+
+    private bool AddSpriteOamTile(Node2D node, SpriteOamTile tile)
+    {
+        if (_spriteTexture == null ||
+            tile.Bank < 0 ||
+            tile.Bank >= SpriteAtlasTileStartByLmuBank.Length)
+        {
+            return false;
+        }
+
+        var size = tile.Large ? 16 : 8;
+        var tileIndex = SpriteAtlasTileStartByLmuBank[tile.Bank] + (tile.Tile & 0x7F);
+        var region = new Rect2(
+            (tileIndex % SnesSpriteAtlasColumns) * SnesSpriteTileSize,
+            (tileIndex / SnesSpriteAtlasColumns) * SnesSpriteTileSize,
+            size,
+            size);
+        if (region.Position.X + size > _spriteTexture.GetWidth() ||
+            region.Position.Y + size > _spriteTexture.GetHeight())
+        {
+            return false;
+        }
+
+        var sprite = new Sprite2D
+        {
+            Texture = _spriteTexture,
+            RegionEnabled = true,
+            RegionRect = region,
+            Position = new Vector2(tile.Dx, tile.Dy),
+            Centered = false,
+            FlipH = (tile.Prop & 0x40) != 0,
+            FlipV = (tile.Prop & 0x80) != 0,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            ZIndex = 2,
+        };
+        node.AddChild(sprite);
+        return true;
+    }
+
+    private bool AddSpriteCommandVisual(Node2D node, int spriteId)
+    {
+        return spriteId switch
+        {
+            0x83 => AddMap16SpriteVisual(node, 0x0124, Vector2.Zero) | AddWingVisuals(node),
+            0xB9 => AddMap16SpriteVisual(node, 0x0125, Vector2.Zero) || AddFallbackBlockVisual(node, "!", new Color(0.92f, 0.60f, 0.18f, 1.0f)),
+            0xC7 => AddBubbleVisual(node),
+            0xDB => AddShellVisual(node, new Color(0.88f, 0.12f, 0.12f, 1.0f)),
+            _ => false,
+        };
+    }
+
+    private bool AddMap16SpriteVisual(Node2D node, int map16Tile, Vector2 position)
+    {
+        if (_map16Texture == null)
+        {
+            return false;
+        }
+
+        var region = new Rect2(
+            (map16Tile % Map16AtlasColumns) * Map16TileSize,
+            (map16Tile / Map16AtlasColumns) * Map16TileSize,
+            Map16TileSize,
+            Map16TileSize);
+        if (region.Position.Y + Map16TileSize > _map16Texture.GetHeight())
+        {
+            return false;
+        }
+
+        var sprite = new Sprite2D
+        {
+            Texture = _map16Texture,
+            RegionEnabled = true,
+            RegionRect = region,
+            Position = position,
+            Centered = false,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            ZIndex = 2,
+        };
+        node.AddChild(sprite);
+        return true;
+    }
+
+    private static bool AddWingVisuals(Node2D node)
+    {
+        AddDebugRect(node, new Rect2(-8, 2, 8, 12), new Color(0.92f, 0.96f, 1.0f, 0.82f), 1);
+        AddDebugRect(node, new Rect2(16, 2, 8, 12), new Color(0.92f, 0.96f, 1.0f, 0.82f), 1);
+        return true;
+    }
+
+    private static bool AddFallbackBlockVisual(Node2D node, string labelText, Color color)
+    {
+        AddDebugRect(node, new Rect2(0, 0, 16, 16), color, 2);
+        var label = new Label
+        {
+            Text = labelText,
+            Position = new Vector2(3, -2),
+            ZIndex = 3,
+        };
+        label.AddThemeFontSizeOverride("font_size", 12);
+        label.AddThemeColorOverride("font_color", Colors.White);
+        label.AddThemeColorOverride("font_shadow_color", Colors.Black);
+        label.AddThemeConstantOverride("shadow_offset_x", 1);
+        label.AddThemeConstantOverride("shadow_offset_y", 1);
+        node.AddChild(label);
+        return true;
+    }
+
+    private static bool AddBubbleVisual(Node2D node)
+    {
+        AddDebugRect(node, new Rect2(1, 2, 14, 11), new Color(0.70f, 0.90f, 1.0f, 0.38f), 2);
+        AddDebugRect(node, new Rect2(5, 9, 6, 8), new Color(0.70f, 0.90f, 1.0f, 0.38f), 2);
+        return true;
+    }
+
+    private static bool AddShellVisual(Node2D node, Color color)
+    {
+        AddDebugRect(node, new Rect2(1, 5, 15, 10), color, 2);
+        AddDebugRect(node, new Rect2(4, 7, 8, 5), new Color(1.0f, 1.0f, 1.0f, 0.55f), 3);
+        return true;
+    }
+
+    private static void AddDebugRect(Node parent, Rect2 rect, Color color, int zIndex)
+    {
+        var body = new ColorRect
+        {
+            Color = color,
+            Position = rect.Position,
+            Size = rect.Size,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = zIndex,
+        };
+        parent.AddChild(body);
+    }
+
+    private static IReadOnlyList<SpriteOamTile> SpriteOamTilesFor(int spriteId)
+    {
+        return spriteId switch
+        {
+            0x9F => BanzaiBillOamTiles,
+            0xAB => RexOamTiles,
+            0xBD => SlidingKoopaOamTiles,
+            0x4F or 0x50 => JumpingPiranhaOamTiles,
+            _ => [],
+        };
+    }
+
+    private static readonly SpriteOamTile[] BanzaiBillOamTiles =
+    [
+        new(0x00, 0x00, 0x80, 0x33, 3, true),
+        new(0x10, 0x00, 0x82, 0x33, 3, true),
+        new(0x20, 0x00, 0x84, 0x33, 3, true),
+        new(0x30, 0x00, 0x86, 0x33, 3, true),
+        new(0x00, 0x10, 0xA0, 0x33, 3, true),
+        new(0x10, 0x10, 0x88, 0x33, 3, true),
+        new(0x20, 0x10, 0xCE, 0x33, 3, true),
+        new(0x30, 0x10, 0xEE, 0x33, 3, true),
+        new(0x00, 0x20, 0xC0, 0x33, 3, true),
+        new(0x10, 0x20, 0xC2, 0x33, 3, true),
+        new(0x20, 0x20, 0xCE, 0x33, 3, true),
+        new(0x30, 0x20, 0xEE, 0x33, 3, true),
+        new(0x00, 0x30, 0x8E, 0x33, 3, true),
+        new(0x10, 0x30, 0xAE, 0x33, 3, true),
+        new(0x20, 0x30, 0x84, 0xB3, 3, true),
+        new(0x30, 0x30, 0x86, 0xB3, 3, true),
+    ];
+
+    private static readonly SpriteOamTile[] RexOamTiles =
+    [
+        new(-4, -15, 0x8A, 0x07, 3, true),
+        new(0, 0, 0xAA, 0x07, 3, true),
+    ];
+
+    private static readonly SpriteOamTile[] SlidingKoopaOamTiles =
+    [
+        new(0, 0, 0x86, 0x06, 1, true),
+    ];
+
+    private static readonly SpriteOamTile[] JumpingPiranhaOamTiles =
+    [
+        new(8, -16, 0x83, 0x0A, 1, true),
+        new(8, 0, 0x83, 0x0A, 1, false),
+        new(16, 0, 0x83, 0x4A, 1, false),
+        new(8, 8, 0xC4, 0x0A, 1, false),
+        new(16, 8, 0xC4, 0x4A, 1, false),
+    ];
+
     private static float InitialSpriteActorSpeed(int spriteId)
     {
         return spriteId switch
         {
-            0x4F or 0x8E or 0x9F or 0xB9 or 0xBD or 0xC7 => -0.58f,
+            0x4F or 0x8E or 0x9F or 0xB9 or 0xBD or 0xC7 or 0xDB => -0.58f,
             0xAB => -0.42f,
             _ => 0.0f,
         };
@@ -934,6 +1224,7 @@ public partial class GameScene : Node2D
             0xB9 => new Color(0.88f, 0.30f, 0.80f, 1.0f),
             0xBD => new Color(0.16f, 0.50f, 0.96f, 1.0f),
             0xC7 => new Color(0.90f, 0.90f, 0.90f, 1.0f),
+            0xDB => new Color(0.88f, 0.12f, 0.12f, 1.0f),
             _ => new Color(0.92f, 0.20f, 0.70f, 1.0f),
         };
     }
@@ -991,6 +1282,7 @@ public partial class GameScene : Node2D
         }
 
         var texture = ImageTexture.CreateFromImage(image);
+        _map16Texture = texture;
         var container = new Node2D
         {
             Name = "GeneratedMap16Tiles",
@@ -2305,6 +2597,11 @@ public partial class GameScene : Node2D
 
     private void ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect)
     {
+        if (!RuntimeSpriteActorPlayerInteractionEnabled)
+        {
+            return;
+        }
+
         if (!actor.Alive || !playerRect.Intersects(actor.Rect))
         {
             return;

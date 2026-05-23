@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Wired the first imported runtime sprite actors to real per-level sprite VRAM atlas pieces using Lunar Magic Universal's OAM tile recipes for Rex, Banzai Bill, sliding Koopa, and jumping Piranha, with visual-only command fallbacks for block/bubble/shell sprites.
+- Made imported runtime sprite actor hitboxes debug outlines only for now: their colored placeholder bodies are hidden and no longer damage, bounce, or push Mario until native sprite behavior is ported.
 - Added a loopback-only TCP debug RCON server (`--smw-debug-rcon=PORT`) with live pause/resume, frame-step, injected input, spawn, powerup, level, capture, state, and quit commands.
 - Added `tools/run-debug-wayland.sh`, `tools/smw-rcon.sh`, and `tools/smw-control.sh` so visible Wayland runs can be driven and inspected from the terminal without stealing focus.
 - Added headless coverage for the debug command file and RCON paths, including a one-frame reproduction of the diagonal-pipe recovery case.
