@@ -261,9 +261,9 @@ public static class PhysicsSmoke
         {
             physics.Step(ref state, new SmwPhysics.FrameInput { Right = true, Run = true }, []);
         }
-        if (state.XSpeed != 0x24)
+        if (state.XSpeed < 0x23 || state.XSpeed > 0x24)
         {
-            Console.Error.WriteLine($"expected flat run speed cap 0x24 before P-meter, got 0x{state.XSpeed:X2}");
+            Console.Error.WriteLine($"expected flat run speed near native 0x24 cap before P-meter, got 0x{state.XSpeed:X2}");
             return false;
         }
 
@@ -323,6 +323,26 @@ public static class PhysicsSmoke
         if (state.XSpeed != 0x13 || state.SubXSpeed != 0xE0)
         {
             Console.Error.WriteLine($"expected ground friction 0x0020, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x14;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, []);
+        if (state.XSpeed != 0x13 || state.SubXSpeed != 0xE0)
+        {
+            Console.Error.WriteLine($"expected held walk cap to use native table drag, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x24;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true, Run = true }, []);
+        if (state.XSpeed != 0x23 || state.SubXSpeed != 0xE0)
+        {
+            Console.Error.WriteLine($"expected held run cap to use native table drag, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
             return false;
         }
 

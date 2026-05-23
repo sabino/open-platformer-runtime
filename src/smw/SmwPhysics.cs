@@ -16,7 +16,6 @@ public sealed class SmwPhysics
 
     public const int NativeFlatWalkTurnAcceleration = 0x0280;
     public const int NativeFlatRunTurnAcceleration = 0x0500;
-    private const int AirAccel = 0x0100;
     private const int PMeterMax = 0x70;
     private const int PMeterSprintThreshold = 0x23;
     private const int CapeFloatFrameCount = 0x10;
@@ -479,25 +478,8 @@ public sealed class SmwPhysics
             state.Facing = dir > 0 ? 1 : 0;
             var absSpeed = Math.Abs(state.XSpeed);
             var pMeterMode = UpdatePMeterEx(ref state, PMeterModeForHorizontal(state, input, absSpeed));
-            var target = Math.Abs(NativeFlatHorizontalTarget(dir, pMeterMode));
             var turningAround = state.XSpeed != 0 && Math.Sign(state.XSpeed) != dir;
-            if (state.OnGround)
-            {
-                AddXAccel(ref state, NativeFlatHorizontalAcceleration(dir, input.Run, turningAround));
-            }
-            else
-            {
-                var accel = turningAround
-                    ? input.Run ? NativeFlatRunTurnAcceleration : NativeFlatWalkTurnAcceleration
-                    : AirAccel;
-                AddXAccel(ref state, dir * accel);
-            }
-            state.XSpeed = ClampSigned8(state.XSpeed);
-            if ((dir > 0 && state.XSpeed > target) || (dir < 0 && state.XSpeed < -target))
-            {
-                state.XSpeed = dir * target;
-                state.SubXSpeed = 0;
-            }
+            ApplyNativeFlatHorizontal(ref state, dir, input.Run, turningAround, pMeterMode);
         }
         else
         {
@@ -564,6 +546,11 @@ public sealed class SmwPhysics
 
     private static int NativeFlatHorizontalAcceleration(int dir, bool runHeld, bool turningAround)
     {
+        return HorizontalAccelerationTable[NativeFlatHorizontalAccelerationIndex(dir, runHeld, turningAround)];
+    }
+
+    private static int NativeFlatHorizontalAccelerationIndex(int dir, bool runHeld, bool turningAround)
+    {
         var k = 4 * NativeDirectionBit(dir);
         if (turningAround)
         {
@@ -574,18 +561,65 @@ public sealed class SmwPhysics
             k += 2;
         }
 
-        return HorizontalAccelerationTable[(k & 0xFF) >> 1];
+        return (k & 0xFF) >> 1;
     }
 
     private static int NativeFlatHorizontalTarget(int dir, int pMeterMode)
     {
+        return HorizontalMaxSpeedTable[NativeFlatHorizontalTargetIndex(dir, pMeterMode)];
+    }
+
+    private static int NativeFlatHorizontalTargetIndex(int dir, int pMeterMode)
+    {
         var j = NativeDirectionBit(dir) | (2 * Math.Clamp(pMeterMode, 0, 3));
-        return HorizontalMaxSpeedTable[j];
+        return j;
     }
 
     private static int NativeFlatNoInputGroundFriction(int xSpeed)
     {
         return HorizontalGroundFrictionTable[xSpeed < 0 ? 1 : 0];
+    }
+
+    private static void ApplyNativeFlatHorizontal(
+        ref PlayerState state,
+        int dir,
+        bool runHeld,
+        bool turningAround,
+        int pMeterMode)
+    {
+        var target = NativeFlatHorizontalTarget(dir, pMeterMode);
+        if (ShouldApplyNativeFlatDrag(state.XSpeed, target))
+        {
+            ApplyNativeFlatDrag(ref state, inAir: !state.OnGround);
+            return;
+        }
+
+        AddXAccel(ref state, NativeFlatHorizontalAcceleration(dir, runHeld, turningAround));
+    }
+
+    private static bool ShouldApplyNativeFlatDrag(int xSpeed, int target)
+    {
+        var x = xSpeed & 0xFF;
+        var t = target & 0xFF;
+        return x == t || ((t ^ ((x - t) & 0xFF)) & 0x80) == 0;
+    }
+
+    private static void ApplyNativeFlatDrag(ref PlayerState state, bool inAir)
+    {
+        var j = state.XSpeed < 0 ? 2 : 0;
+        var tableIndex = j >> 1;
+        AddXAccel(ref state, inAir ? HorizontalDecelerationTable[tableIndex] : HorizontalGroundFrictionTable[tableIndex]);
+        ClampNativeFlatDragToTarget(ref state, tableIndex);
+    }
+
+    private static void ClampNativeFlatDragToTarget(ref PlayerState state, int tableIndex)
+    {
+        var combined = CombinedXSpeed16(state);
+        var target = HorizontalTargetSubSpeedTable[0];
+        if (((ToU16(HorizontalDecelerationTable[tableIndex]) ^ ToU16(combined - target)) & 0x8000) == 0)
+        {
+            SetCombinedXSpeed16(ref state, target);
+        }
     }
 
     private static int NativeDirectionBit(int dir)
@@ -938,8 +972,18 @@ public sealed class SmwPhysics
 
     private static void AddXAccel(ref PlayerState state, int accel)
     {
-        var combined = ((state.XSpeed & 0xFF) << 8) | (state.SubXSpeed & 0xFF);
-        combined = (combined + accel) & 0xFFFF;
+        var combined = (CombinedXSpeed16(state) + accel) & 0xFFFF;
+        SetCombinedXSpeed16(ref state, combined);
+    }
+
+    private static int CombinedXSpeed16(PlayerState state)
+    {
+        return ((state.XSpeed & 0xFF) << 8) | (state.SubXSpeed & 0xFF);
+    }
+
+    private static void SetCombinedXSpeed16(ref PlayerState state, int combined)
+    {
+        combined &= 0xFFFF;
         state.SubXSpeed = combined & 0xFF;
         state.XSpeed = ToS8((combined >> 8) & 0xFF);
     }
@@ -973,8 +1017,8 @@ public sealed class SmwPhysics
         return value >= 0x80 ? value - 0x100 : value;
     }
 
-    private static int ClampSigned8(int value)
+    private static int ToU16(int value)
     {
-        return Math.Clamp(value, -128, 127);
+        return value & 0xFFFF;
     }
 }

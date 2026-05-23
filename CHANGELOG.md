@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replaced the remaining flat horizontal speed-cap hard clamp with native-style `00D742/00D76B` table drag, so held walk/run motion oscillates around the SMW caps through friction/deceleration tables instead of pinning subspeed to zero.
+- Added a live RCON headless regression that settles Mario on the actual level-105 diagonal-pipe slope at `x=921,y=208`, traces a jump, and asserts he leaves the slope with the native jump speed.
 - Switched flat no-input ground friction to read the native `kHandlePlayerPhysics_DATA_00D309` table entries instead of a standalone `0x0020` constant.
 - Switched grounded flat left/right acceleration and speed caps to read the native horizontal acceleration/max-speed tables directly, preserving the current flat behavior while removing another constants-only shortcut.
 - Added RCON `pipe`/`pipe_probe` diagnostics for nearby right-diagonal pipe floor/body/ceiling cells so slope-pipe collision bugs can be triaged from live coordinates.

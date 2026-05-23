@@ -361,6 +361,33 @@ for _ in $(seq 1 80); do
 done
 grep -q "smw-debug-trace: tag=rcon_probe i=2/2" "$LOG_FILE"
 grep -q "smw-debug-state: tag=rcon_probe_done" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh powerup small | tee "$RCON_LOG"
+grep -q "pow=0" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 921 208 | tee "$RCON_LOG"
+grep -q "x=921.00" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh velocity 2 0 | tee "$RCON_LOG"
+grep -q "xs=2" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
+grep -q "ok step_queued=1" "$RCON_LOG"
+for _ in $(seq 1 80); do
+  if grep -q "x=921.13 y=213.00" "$LOG_FILE"; then
+    break
+  fi
+  sleep 0.05
+done
+grep -q "x=921.13 y=213.00" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh trace 4 jump tag=rcon_slope_jump | tee "$RCON_LOG"
+grep -q "ok trace_queued=4" "$RCON_LOG"
+for _ in $(seq 1 80); do
+  if grep -q "smw-debug-state: tag=rcon_slope_jump_done" "$LOG_FILE"; then
+    break
+  fi
+  sleep 0.05
+done
+grep -q "smw-debug-trace: tag=rcon_slope_jump i=1/4" "$LOG_FILE"
+grep -q "ys=-77" "$LOG_FILE"
+grep -q "g=0" "$LOG_FILE"
+grep -q "smw-debug-state: tag=rcon_slope_jump_done" "$LOG_FILE"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh quit >/dev/null || true
 wait "$RCON_PID" || true
 
