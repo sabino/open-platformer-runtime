@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added post-hit Mario blink presentation for the native-style hurt timer: powered damage now hides only the rendered player OAM tiles on a 4-frame cadence while keeping collision/debug gizmos visible, and `state`/`player_oam` expose `blink`/`blink_hidden` plus slot alpha for frame-step verification.
 - Tightened runtime actor damage toward the native `DamagePlayer_Hurt` flow: powered Mario now powers down to small with a native-style `0x7F` post-hit invulnerability timer exposed as `hurt`, while small Mario takes the hurt death path instead of receiving generic knockback.
 - Removed the temporary knockback from powered sprite damage, keeping Mario in place for the first power-down slice instead of pushing him to the level boundary during idle start-screen actor contact.
 - Added deterministic Godot runtime autoplay for repeatable playability probes: `--smw-autoplay=explore` and RCON `autoplay explore|off|status` now hold right/run and inject jump pulses using the same simple native-reference exploration policy, with headless coverage through 80 stepped frames in level `105`.

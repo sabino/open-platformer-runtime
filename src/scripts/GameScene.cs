@@ -31,6 +31,7 @@ public partial class GameScene : Node2D
     private const float SpriteActorMaxFall = 4.0f;
     private const int NativePlayerHurtAnimationFrames = 0x2F;
     private const int NativePlayerPostPowerdownInvulnerabilityFrames = 0x7F;
+    private const int NativePlayerHurtBlinkFrameShift = 2;
     private const int JumpingPiranhaCycleFrames = 192;
     private const int JumpingPiranhaHiddenFrames = 48;
     private const int JumpingPiranhaRiseFrames = 24;
@@ -202,6 +203,7 @@ public partial class GameScene : Node2D
     private int _lastPlayerFacing = -1;
     private int _lastPlayerPowerup = -1;
     private bool _lastPlayerDucking;
+    private bool _lastPlayerBlinkHidden;
     private bool _pipeTransitionLatch;
     private int _playerHurtCooldown;
     private string _lastActorEvent = "none";
@@ -3626,7 +3628,7 @@ public partial class GameScene : Node2D
         {
             _playerDebugLabel.Text =
                 $"p={_state.PMeter:X2} pow={_state.Powerup} h={height} g={(_state.OnGround ? 1 : 0)} " +
-                $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} air={_state.InAirState:X2} hurt={_playerHurtCooldown}";
+                $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} air={_state.InAirState:X2} hurt={_playerHurtCooldown} blink={(_lastPlayerBlinkHidden ? 1 : 0)}";
             _playerDebugLabel.Position = new Vector2(-8.0f, -18.0f);
         }
     }
@@ -5033,6 +5035,7 @@ public partial class GameScene : Node2D
     {
         if (_playerTileSprites.Count == 0)
         {
+            _lastPlayerBlinkHidden = false;
             return;
         }
 
@@ -5044,6 +5047,7 @@ public partial class GameScene : Node2D
             _state.Powerup == _lastPlayerPowerup &&
             _state.Ducking == _lastPlayerDucking)
         {
+            ApplyPlayerHurtBlink();
             return;
         }
 
@@ -5052,6 +5056,24 @@ public partial class GameScene : Node2D
         _lastPlayerPowerup = _state.Powerup;
         _lastPlayerDucking = _state.Ducking;
         RenderPlayerOamPose(pose, _state.Powerup, nativeFacing);
+        ApplyPlayerHurtBlink();
+    }
+
+    private void ApplyPlayerHurtBlink()
+    {
+        _lastPlayerBlinkHidden = IsPlayerHurtBlinkHidden();
+        var alpha = _lastPlayerBlinkHidden ? 0.0f : 1.0f;
+        var modulate = new Color(1.0f, 1.0f, 1.0f, alpha);
+        foreach (var sprite in _playerTileSprites)
+        {
+            sprite.Modulate = modulate;
+        }
+    }
+
+    private bool IsPlayerHurtBlinkHidden()
+    {
+        return _playerHurtCooldown > 0 &&
+            (((_debugFrameCounter >> NativePlayerHurtBlinkFrameShift) & 1) != 0);
     }
 
     private int ChoosePlayerPose()
@@ -7492,6 +7514,7 @@ public partial class GameScene : Node2D
         var bodyBase = _bodyTilePointers[tablePose];
         var flipH = (_playerTileXFlip[Math.Clamp(nativeFacing, 0, _playerTileXFlip.Count - 1)] & 0x40) != 0;
         var palette = PlayerPaletteVariantForPowerup(powerup);
+        var blinkHidden = _lastPlayerBlinkHidden ? 1 : 0;
         const int normalSizeMask = 0xC8;
         var slotMasks = new[] { 0x80, 0x40, 0x20, 0x10 };
 
@@ -7499,7 +7522,7 @@ public partial class GameScene : Node2D
         builder.Append(
             $"smw-debug-player-oam: tag={tag} metadata=1 frame={_debugFrameCounter} pose={pose} table_pose={tablePose} " +
             $"powerup={powerup} palette={palette} facing={nativeFacing} flip_h={(flipH ? 1 : 0)} " +
-            $"walk_frame={_playerWalkingFrame} anim_timer={_playerAnimTimer} render_y={PlayerRenderYOffsetForState(powerup, _state.Ducking)} " +
+            $"walk_frame={_playerWalkingFrame} anim_timer={_playerAnimTimer} hurt={_playerHurtCooldown} blink_hidden={blinkHidden} render_y={PlayerRenderYOffsetForState(powerup, _state.Ducking)} " +
             $"descriptor_base={descriptorBase} disp_base={dispBase} head_ptr=0x{headBase:X2} body_ptr=0x{bodyBase:X2} sprites={_playerTileSprites.Count}");
 
         for (var slot = 0; slot < 4; slot++)
@@ -7516,13 +7539,14 @@ public partial class GameScene : Node2D
             var sprite = slot < _playerTileSprites.Count ? _playerTileSprites[slot] : null;
             var rect = sprite?.RegionRect ?? default;
             var pos = sprite?.Position ?? default;
+            var alpha = sprite?.Modulate.A ?? 0.0f;
 
             builder.Append(
                 $" slot{slot}:desc_idx={descriptorIndex}:disp_idx={dispIndex}:desc={(descriptor >= 0 ? descriptor.ToString("X2", CultureInfo.InvariantCulture) : "--")}:" +
                 $"dyn={(resolved ? 1 : 0)}:tile={(resolved ? tile.ToString(CultureInfo.InvariantCulture) : "--")}:" +
                 $"disp={(hasDisp ? _playerXDisp[dispIndex].ToString(CultureInfo.InvariantCulture) : "--")},{(hasDisp ? _playerYDisp[dispIndex].ToString(CultureInfo.InvariantCulture) : "--")}:" +
                 $"size={(large ? 16 : 8)}:visible={(visible ? 1 : 0)}:" +
-                $"pos={pos.X:0.00},{pos.Y:0.00}:rect={rect.Position.X:0.00},{rect.Position.Y:0.00},{rect.Size.X:0.00},{rect.Size.Y:0.00}");
+                $"alpha={alpha:0.00}:pos={pos.X:0.00},{pos.Y:0.00}:rect={rect.Position.X:0.00},{rect.Position.Y:0.00},{rect.Size.X:0.00},{rect.Size.Y:0.00}");
         }
 
         return builder.ToString();
@@ -7536,7 +7560,7 @@ public partial class GameScene : Node2D
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
-            $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} hurt={_playerHurtCooldown} " +
+            $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} hurt={_playerHurtCooldown} blink={(_lastPlayerBlinkHidden ? 1 : 0)} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
