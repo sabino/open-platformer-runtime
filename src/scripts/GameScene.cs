@@ -1927,6 +1927,10 @@ public partial class GameScene : Node2D
         {
             return false;
         }
+        if (_state.YSpeed >= 0 && (IsPlayerSupportedByFloorSlope(_state) || PlayerTouchesDiagonalPipeFloorCell(_state)))
+        {
+            return false;
+        }
 
         var height = SmwPhysics.PlayerHeightFor(_state);
         var left = _state.XFloat;
@@ -1998,6 +2002,14 @@ public partial class GameScene : Node2D
         var tileMaxX = WorldToTileX(right);
         var tileMinY = WorldToTileY(top);
         var tileMaxY = WorldToTileY(bottom);
+        if (IsPlayerSupportedByFloorSlope(_state) ||
+            IsPlayerSupportedByFloorSlope(previousState) ||
+            PlayerTouchesDiagonalPipeFloorCell(_state) ||
+            PlayerTouchesDiagonalPipeFloorCell(previousState))
+        {
+            return false;
+        }
+
         float? bestTarget = null;
         var bestCorrection = float.MaxValue;
 
@@ -2042,6 +2054,74 @@ public partial class GameScene : Node2D
 
         MovePlayerX(bestTarget.Value);
         return true;
+    }
+
+    private bool IsPlayerSupportedByFloorSlope(SmwPhysics.PlayerState state)
+    {
+        if (_slopes.Count == 0 || state.YSpeed < 0)
+        {
+            return false;
+        }
+
+        var top = state.YFloat;
+        var bottom = top + SmwPhysics.PlayerHeightFor(state);
+        Span<float> probes = stackalloc float[3];
+        probes[0] = state.XFloat + SmwPhysics.PlayerWidth * 0.5f;
+        probes[1] = state.XFloat + 2.0f;
+        probes[2] = state.XFloat + SmwPhysics.PlayerWidth - 2.0f;
+        foreach (var probeX in probes)
+        {
+            if (!SmwPhysics.TryResolveFloorSlope(
+                    probeX,
+                    bottom,
+                    state.YSpeed,
+                    _slopes,
+                    aboveTolerance: Map16TileSize,
+                    belowTolerance: Map16TileSize,
+                    out var floorY))
+            {
+                continue;
+            }
+
+            if (top > floorY + Map16TileSize)
+            {
+                continue;
+            }
+
+            return bottom >= floorY - Map16TileSize && bottom <= floorY + Map16TileSize;
+        }
+
+        return false;
+    }
+
+    private bool PlayerTouchesDiagonalPipeFloorCell(SmwPhysics.PlayerState state)
+    {
+        if (_diagonalPipeFloorCells.Count == 0)
+        {
+            return false;
+        }
+
+        var height = SmwPhysics.PlayerHeightFor(state);
+        var left = state.XFloat;
+        var right = left + SmwPhysics.PlayerWidth;
+        var top = state.YFloat;
+        var mid = top + height * 0.5f;
+        var bottom = top + height;
+        Span<Vector2> probes = stackalloc Vector2[5];
+        probes[0] = new Vector2(left, mid);
+        probes[1] = new Vector2(right - 1.0f, mid);
+        probes[2] = new Vector2(left + 2.0f, bottom);
+        probes[3] = new Vector2(left + SmwPhysics.PlayerWidth * 0.5f, bottom);
+        probes[4] = new Vector2(right - 2.0f, bottom);
+        foreach (var probe in probes)
+        {
+            if (_diagonalPipeFloorCells.Contains((WorldToTileX(probe.X), WorldToTileY(probe.Y))))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static float NearestHorizontalEscape(float playerLeft, float playerRight, float tileLeft, float tileRight)
