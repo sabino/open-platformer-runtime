@@ -14,6 +14,10 @@ The current C# runtime stores horizontal and vertical velocity in SMW-style sign
 
 The runtime also carries separate subpixel accumulators for position and acceleration. This is important because many native constants are fractional in practice, even when the visible pixel position changes only by whole pixels.
 
+## Native Slope Contact
+
+SMW does not treat slopes as continuous physics lines. Once a Map16 tile resolves to a native slope kind, the player/block collision path samples `kSlopeDataTables_ShapeOfSlope[kind * 16 + x_in_block]` and compares that 16-entry per-tile height against Mario's position in the block. The Godot runtime now keeps the generated slope segment as placement metadata, but floor contact height is computed from that native shape table. Ceiling/underside pipe helpers still use the geometric segment path until the rest of the block act-as pipeline is ported.
+
 ## Current Native-Style Constants
 
 These are the values currently implemented in `SmwPhysics.cs`:

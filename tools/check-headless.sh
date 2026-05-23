@@ -119,8 +119,7 @@ actors_near 128
 EOF
 cat >"$SLOPE_PROBE_COMMAND_FILE" <<'EOF'
 pause
-spawn 921 208
-powerup small
+spawn 921 208 small
 velocity 2 0
 step 1
 EOF
@@ -134,8 +133,7 @@ EOF
 cat >"$PIPE_SLOPE_SUPPORT_COMMAND_FILE" <<'EOF'
 pause
 actors off
-spawn 2025 256
-powerup small
+spawn 2025 256 small
 velocity -3 0
 step 1
 EOF
@@ -305,8 +303,9 @@ grep -q "overlays=1" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$SLOPE_PROBE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$SLOPE_PROBE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "x=921.13 y=213.00" "$LOG_FILE"
+grep -q "x=921.13 y=203.00" "$LOG_FILE"
 grep -q "g=1" "$LOG_FILE"
+grep -q "slope=19" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIPE_UNDERSIDE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIPE_UNDERSIDE_COMMAND_FILE" "$LOG_FILE"
@@ -318,7 +317,8 @@ grep -q "x=2064.00 y=304.00" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIPE_SLOPE_SUPPORT_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "x=2024.81 y=261.00" "$LOG_FILE"
+grep -q "x=2024.81 y=242.00" "$LOG_FILE"
+grep -q "slope=21" "$LOG_FILE"
 grep -q "actors_on=0" "$LOG_FILE"
 ! grep -q "x=2048.00" "$LOG_FILE"
 
@@ -510,12 +510,13 @@ grep -q "xs=2" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
 grep -q "ok step_queued=1" "$RCON_LOG"
 for _ in $(seq 1 80); do
-  if grep -q "x=921.13 y=213.00" "$LOG_FILE"; then
+  if grep -q "x=921.13 y=203.00" "$LOG_FILE"; then
     break
   fi
   sleep 0.05
 done
-grep -q "x=921.13 y=213.00" "$LOG_FILE"
+grep -q "x=921.13 y=203.00" "$LOG_FILE"
+grep -q "slope=19" "$LOG_FILE"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh trace 4 jump tag=rcon_slope_jump | tee "$RCON_LOG"
 grep -q "ok trace_queued=4" "$RCON_LOG"
 for _ in $(seq 1 80); do

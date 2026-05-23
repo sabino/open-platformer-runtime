@@ -177,6 +177,16 @@ public sealed class SmwPhysics
         8, 9, 10, 11, 12, 13,
     ];
 
+    private static readonly byte[] NativeSlopeShapeTable = Convert.FromHexString(
+        "0F0F0F0F0E0E0E0E0D0D0D0D0C0C0C0C0B0B0B0B0A0A0A0A09090909080808080707070706060606050505050404040403030303020202020101010100000000" +
+        "000000000101010102020202030303030404040405050505060606060707070708080808090909090A0A0A0A0B0B0B0B0C0C0C0C0D0D0D0D0E0E0E0E0F0F0F0F" +
+        "0F0F0E0E0D0D0C0C0B0B0A0A090908080707060605050404030302020101000000000101020203030404050506060707080809090A0A0B0B0C0C0D0D0E0E0F0F" +
+        "0F0E0D0C0B0A09080706050403020100000102030405060708090A0B0C0D0E0F0F0E0D0C0B0A09080706050403020100000102030405060708090A0B0C0D0E0F" +
+        "0806040302020101000000000000000000000000000000000101020203040608FFFEFDFCFBFAF9F8F7F6F5F4F3F2F1F0F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF" +
+        "FFFFFEFEFDFDFCFCFBFBFAFAF9F9F8F8F7F7F6F6F5F5F4F4F3F3F2F2F1F1F0F0F0F0F1F1F2F2F3F3F4F4F5F5F6F6F7F7F8F8F9F9FAFAFBFBFCFCFDFDFEFEFFFF" +
+        "0F0E0D0C0B0A09080706050403020100000102030405060708090A0B0C0D0E0F000102030405060708090A0B0C0D0E0F0F0E0D0C0B0A09080706050403020100" +
+        "10101010101010100E0C0A08060402000E0C0A0806040200FEFCFAF8F6F4F2F000020406080A0C0E1010101010101010F0F2F4F6F8FAFCFE00020406080A0C0E");
+
     private static readonly int[] JumpHeightTable =
     [
         -80, -74, -82, -76,
@@ -519,7 +529,7 @@ public sealed class SmwPhysics
                 continue;
             }
 
-            surfaceY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            surfaceY = SurfaceYAt(slope, probeX);
             var effectiveBelowTolerance = EffectiveSlopeBelowTolerance(slope, belowTolerance);
             if (ySpeed < 0 || bottom < surfaceY - aboveTolerance || bottom > surfaceY + effectiveBelowTolerance)
             {
@@ -591,7 +601,7 @@ public sealed class SmwPhysics
                 continue;
             }
 
-            var candidateY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            var candidateY = SurfaceYAt(slope, probeX);
             if (MathF.Abs(candidateY - surfaceY) <= 0.01f)
             {
                 return EffectiveSlopeBelowTolerance(slope, fallback);
@@ -1059,7 +1069,7 @@ public sealed class SmwPhysics
                 continue;
             }
 
-            var surfaceY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            var surfaceY = SurfaceYAt(slope, probeX);
             if (slope.Ceiling)
             {
                 if (DebugSlopeTrace)
@@ -1216,7 +1226,7 @@ public sealed class SmwPhysics
                 continue;
             }
 
-            var candidateY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            var candidateY = SurfaceYAt(slope, probeX);
             if (MathF.Abs(candidateY - surfaceY) <= 0.01f)
             {
                 floorSlope = slope;
@@ -1226,6 +1236,44 @@ public sealed class SmwPhysics
 
         floorSlope = default;
         return false;
+    }
+
+    public static bool TrySurfaceYAt(SlopeSurface slope, float probeX, out float surfaceY)
+    {
+        var minX = MathF.Min(slope.X0, slope.X1);
+        var maxX = MathF.Max(slope.X0, slope.X1);
+        if (probeX < minX || probeX > maxX)
+        {
+            surfaceY = 0.0f;
+            return false;
+        }
+
+        var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+        if (t < 0.0f || t > 1.0f)
+        {
+            surfaceY = 0.0f;
+            return false;
+        }
+
+        surfaceY = SurfaceYAt(slope, probeX);
+        return true;
+    }
+
+    private static float SurfaceYAt(SlopeSurface slope, float probeX)
+    {
+        if (!slope.Ceiling &&
+            slope.NativeSlopeKind >= 0 &&
+            slope.NativeSlopeKind * 16 + 15 < NativeSlopeShapeTable.Length)
+        {
+            var localX = Math.Clamp((int)MathF.Floor(probeX - MathF.Min(slope.X0, slope.X1)), 0, 15);
+            var tileTop = MathF.Min(slope.Y0, slope.Y1);
+            return tileTop + unchecked((sbyte)NativeSlopeShapeTable[slope.NativeSlopeKind * 16 + localX]);
+        }
+
+        var minX = MathF.Min(slope.X0, slope.X1);
+        var maxX = MathF.Max(slope.X0, slope.X1);
+        var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+        return slope.Y0 + (slope.Y1 - slope.Y0) * t;
     }
 
     private static void AddXAccel(ref PlayerState state, int accel)

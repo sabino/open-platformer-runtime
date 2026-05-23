@@ -5756,20 +5756,7 @@ public partial class GameScene : Node2D
 
     private static float? SurfaceYAtProbe(SmwPhysics.SlopeSurface slope, float probeX)
     {
-        var minX = MathF.Min(slope.X0, slope.X1);
-        var maxX = MathF.Max(slope.X0, slope.X1);
-        if (probeX < minX || probeX > maxX)
-        {
-            return null;
-        }
-
-        var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
-        if (t < 0.0f || t > 1.0f)
-        {
-            return null;
-        }
-
-        return slope.Y0 + (slope.Y1 - slope.Y0) * t;
+        return SmwPhysics.TrySurfaceYAt(slope, probeX, out var surfaceY) ? surfaceY : null;
     }
 
     private string PrintDebugPipeCells(string[] parts)
