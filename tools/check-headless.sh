@@ -43,6 +43,7 @@ EOF
 printf '1 down\n' >"$PIPE_SCRIPT"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 2>&1 | tee "$LOG_FILE"
+grep -q "smw-menu-audio: samples=3 buttons=3" "$LOG_FILE"
 grep -q "smw-menu: assets=1 audio=1 level_preview=1 player_preview=1" "$LOG_FILE"
 ! grep -q "smw-runtime: level=" "$LOG_FILE"
 
@@ -135,6 +136,7 @@ grep -q "smw-runtime: level_music level=105 music_index=0 bank=Level" "$LOG_FILE
 
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: disabled=1" "$LOG_FILE"
+grep -q "smw-menu-audio: samples=0 buttons=3" "$LOG_FILE"
 ! grep -q "smw-audio: internal_apu=1" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1477" "$LOG_FILE"
 grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
@@ -172,6 +174,9 @@ grep -q "smw-test-powerup: powerup=0 height=16 render_y=-16 player_palette=0" "$
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=fire 2>&1 | tee "$LOG_FILE"
 grep -q "smw-test-powerup: powerup=3 height=32 render_y=0 player_palette=2" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 1 --smw-audio-sample=09 2>&1 | tee "$LOG_FILE"
+grep -q "smw-audio: sample_preview sample=09 available=1 samples=3" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-input-script="$INPUT_SCRIPT" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-input-script: loaded path=$INPUT_SCRIPT segments=4 frames=4" "$LOG_FILE"
@@ -295,6 +300,11 @@ grep -q "god=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh audio status | tee "$RCON_LOG"
 grep -q "smw-debug-audio: tag=status enabled=1" "$RCON_LOG"
 grep -q "bank=Level" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh audio sample 09 | tee "$RCON_LOG"
+grep -q "smw-debug-audio: tag=sample" "$RCON_LOG"
+grep -q "sample=09 available=1" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh audio jump | tee "$RCON_LOG"
+grep -q "command=port1_jump" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh perf status | tee "$RCON_LOG"
 grep -q "smw-debug-perf: tag=status" "$RCON_LOG"
 grep -q "audio_loaded=1" "$RCON_LOG"

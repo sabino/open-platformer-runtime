@@ -47,6 +47,7 @@ public partial class Main : Node2D
         string? testLevel = null;
         string? capturePath = null;
         string? audioPreview = null;
+        int? audioSamplePreview = null;
         string? inputScriptPath = null;
         string? debugCommandPath = null;
         int? debugRconPort = null;
@@ -82,6 +83,10 @@ public partial class Main : Node2D
             else if (arg.StartsWith("--smw-audio-preview=", StringComparison.Ordinal))
             {
                 audioPreview = arg["--smw-audio-preview=".Length..];
+            }
+            else if (arg.StartsWith("--smw-audio-sample=", StringComparison.Ordinal))
+            {
+                audioSamplePreview = ParseHexOrDecimal(arg["--smw-audio-sample=".Length..]);
             }
             else if (arg.StartsWith("--smw-input-script=", StringComparison.Ordinal))
             {
@@ -160,6 +165,10 @@ public partial class Main : Node2D
         if (audioPreview != null)
         {
             _audio?.PlayMusicPreview(audioPreview);
+        }
+        if (audioSamplePreview != null)
+        {
+            GD.Print($"smw-audio: sample_preview {_audio?.PlaySampleProbe(audioSamplePreview.Value) ?? $"sample={audioSamplePreview.Value:X2} available=0 samples=0"}");
         }
     }
 
@@ -460,7 +469,11 @@ public partial class Main : Node2D
         panel.AddChild(samples);
         AddCommandButton(samples, "Jump", () => _audio?.PlayJump());
         AddCommandButton(samples, "2-note", () => _audio?.PlaySpinJump());
-        AddSampleButton(samples, 9, "BRR09");
+        foreach (var sampleId in SmwAudio.ProbeSampleIds)
+        {
+            AddSampleButton(samples, sampleId, $"BRR{sampleId:X2}");
+        }
+        GD.Print($"smw-menu-audio: samples={(_audio?.LoadedProbeSampleCount ?? 0)} buttons={SmwAudio.ProbeSampleIds.Length}");
 
         var musicTitle = new Label { Text = "Music Banks" };
         musicTitle.AddThemeFontSizeOverride("font_size", 10);

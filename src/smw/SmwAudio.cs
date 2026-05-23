@@ -23,6 +23,8 @@ public partial class SmwAudio : Node
     private double _musicFrameAccumulator;
     private bool _musicPlaying;
 
+    public static readonly int[] ProbeSampleIds = [9, 14, 16];
+
     public override void _Ready()
     {
         EnsureLoaded();
@@ -42,7 +44,7 @@ public partial class SmwAudio : Node
     }
 
     public int LoadedProbeSampleCount =>
-        (HasSample(9) ? 1 : 0) + (HasSample(14) ? 1 : 0) + (HasSample(16) ? 1 : 0);
+        CountLoadedProbeSamples();
 
     public void PlayMenuStart()
     {
@@ -74,6 +76,18 @@ public partial class SmwAudio : Node
         }
 
         AddVoice(new Voice(sample, step: 1.0, volume: 0.42f, pan: 0.0f, durationSamples: 0, delaySamples: 0));
+    }
+
+    public string PlaySampleProbe(int sampleId)
+    {
+        EnsureLoaded();
+        var available = _samples.ContainsKey(sampleId);
+        if (available)
+        {
+            PlaySample(sampleId);
+        }
+
+        return $"sample={sampleId:X2} available={(available ? 1 : 0)} samples={LoadedProbeSampleCount}";
     }
 
     public void PlayMusicPreview(string bankName)
@@ -119,6 +133,21 @@ public partial class SmwAudio : Node
         _loaded = true;
         SetupGenerator();
         LoadSpcSamples();
+    }
+
+    private int CountLoadedProbeSamples()
+    {
+        EnsureLoaded();
+        var count = 0;
+        foreach (var sampleId in ProbeSampleIds)
+        {
+            if (_samples.ContainsKey(sampleId))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private void SetupGenerator()

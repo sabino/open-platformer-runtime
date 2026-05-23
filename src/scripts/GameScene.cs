@@ -4970,7 +4970,60 @@ public partial class GameScene : Node2D
             return status;
         }
 
+        var command = parts[1].ToLowerInvariant();
+        if (command is "sample" or "brr" or "sfx")
+        {
+            RequirePartCount(parts, 3);
+            EnsureDebugAudioEnabled();
+            var sampleId = ParseHexOrDecimalDebug(parts[2]);
+            var sampleStatus = _audio?.PlaySampleProbe(sampleId) ?? $"sample={sampleId:X2} available=0 samples=0";
+            var line = $"{BuildDebugAudioState("sample")} {sampleStatus}";
+            GD.Print(line);
+            return line;
+        }
+        if (command is "jump")
+        {
+            EnsureDebugAudioEnabled();
+            _audio?.PlayJump();
+            var line = $"{BuildDebugAudioState("jump")} command=port1_jump";
+            GD.Print(line);
+            return line;
+        }
+        if (command is "spin" or "two-note" or "twonote")
+        {
+            EnsureDebugAudioEnabled();
+            _audio?.PlaySpinJump();
+            var line = $"{BuildDebugAudioState("spin")} command=port1_two_note";
+            GD.Print(line);
+            return line;
+        }
+        if (command is "music" or "preview")
+        {
+            RequirePartCount(parts, 3);
+            EnsureDebugAudioEnabled();
+            var bank = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(parts[2].ToLowerInvariant());
+            _audio?.PlayMusicPreview(bank);
+            var line = $"{BuildDebugAudioState("music")} preview={bank}";
+            GD.Print(line);
+            return line;
+        }
+        if (command is "stop")
+        {
+            _audio?.StopMusicPreview();
+            var line = $"{BuildDebugAudioState("stop")} command=stop";
+            GD.Print(line);
+            return line;
+        }
+
         return DebugSetAudioEnabled(ParseDebugBool(parts[1]));
+    }
+
+    private void EnsureDebugAudioEnabled()
+    {
+        if (!AudioEnabled || _audio == null || _audio.ProcessMode == ProcessModeEnum.Disabled)
+        {
+            DebugSetAudioEnabled(true);
+        }
     }
 
     private string BuildDebugAudioState(string tag)
