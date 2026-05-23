@@ -64,6 +64,9 @@ public partial class GameScene : Node2D
     private readonly List<Sprite2D> _playerTileSprites = [];
     private readonly List<RuntimeSpriteActor> _spriteActors = [];
     private readonly List<Rect2> _goalTapeTriggers = [];
+    private readonly List<CoinPickup> _coinPickups = [];
+    private readonly Dictionary<(int X, int Y), Sprite2D> _map16TileSprites = [];
+    private readonly Dictionary<(int X, int Y), PlacedMap16Tile> _map16TilesByCoord = [];
 
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
@@ -98,6 +101,8 @@ public partial class GameScene : Node2D
     private int _entranceMotionFrames;
     private int _entranceMotionAction;
     private Vector2 _entranceMotionPixelsPerFrame;
+    private int _coinCount;
+    private int _dragonCoinCount;
 
     public bool DebugOverlays { get; set; }
 
@@ -158,6 +163,7 @@ public partial class GameScene : Node2D
 
         UpdatePlayerGraphic();
         UpdateSpriteActors();
+        CheckCoinPickups();
         CheckGoalTape();
         UpdateHud();
         UpdateDebugGizmos();
@@ -189,6 +195,14 @@ public partial class GameScene : Node2D
         public bool OnGround { get; set; }
         public int WakeScreen { get; init; }
         public Rect2 Rect => new(X, Y, SpriteActorWidth, SpriteActorHeight);
+    }
+
+    private sealed class CoinPickup
+    {
+        public required Rect2 Rect { get; init; }
+        public required List<Sprite2D> Sprites { get; init; }
+        public bool DragonCoin { get; init; }
+        public bool Collected { get; set; }
     }
 
     private void LoadAssetPack()
@@ -596,6 +610,9 @@ public partial class GameScene : Node2D
         _slopes.Clear();
         _spriteActors.Clear();
         _goalTapeTriggers.Clear();
+        _coinPickups.Clear();
+        _map16TileSprites.Clear();
+        _map16TilesByCoord.Clear();
         _cameraGizmo?.QueueFree();
         _cameraGizmo = null;
         StartWorldRoot();
@@ -614,6 +631,7 @@ public partial class GameScene : Node2D
             AddSolid(new Rect2(368, 144, 64, 48), new Color(0.20f, 0.48f, 0.22f, 0.22f), DebugOverlays);
         }
 
+        AddCoinPickups();
         RebuildPipeEntrances();
         AddRuntimeSpriteActors();
         AddGoalTapeTriggers();
@@ -849,9 +867,64 @@ public partial class GameScene : Node2D
                 TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             };
             container.AddChild(sprite);
+            _map16TileSprites[(tile.X, tile.Y)] = sprite;
+            _map16TilesByCoord[(tile.X, tile.Y)] = tile;
         }
 
         return true;
+    }
+
+    private void AddCoinPickups()
+    {
+        var handled = new HashSet<(int X, int Y)>();
+        foreach (var tile in _placedTiles)
+        {
+            if (handled.Contains((tile.X, tile.Y)))
+            {
+                continue;
+            }
+
+            if (IsYoshiCoinTop(tile))
+            {
+                var sprites = new List<Sprite2D>();
+                if (_map16TileSprites.TryGetValue((tile.X, tile.Y), out var topSprite))
+                {
+                    sprites.Add(topSprite);
+                }
+                if (_map16TileSprites.TryGetValue((tile.X, tile.Y + 1), out var bottomSprite))
+                {
+                    sprites.Add(bottomSprite);
+                }
+
+                _coinPickups.Add(new CoinPickup
+                {
+                    Rect = new Rect2(TileToWorld(tile.X, tile.Y), new Vector2(Map16TileSize, Map16TileSize * 2)),
+                    Sprites = sprites,
+                    DragonCoin = true,
+                });
+                handled.Add((tile.X, tile.Y));
+                handled.Add((tile.X, tile.Y + 1));
+                continue;
+            }
+
+            if (!IsSingleCoinTile(tile))
+            {
+                continue;
+            }
+
+            var singleSprites = new List<Sprite2D>();
+            if (_map16TileSprites.TryGetValue((tile.X, tile.Y), out var sprite))
+            {
+                singleSprites.Add(sprite);
+            }
+
+            _coinPickups.Add(new CoinPickup
+            {
+                Rect = new Rect2(TileToWorld(tile.X, tile.Y), new Vector2(Map16TileSize, Map16TileSize)),
+                Sprites = singleSprites,
+            });
+            handled.Add((tile.X, tile.Y));
+        }
     }
 
     private void AddGeneratedCollision()
@@ -860,6 +933,10 @@ public partial class GameScene : Node2D
         var slopeTiles = new List<PlacedMap16Tile>();
         foreach (var tile in _placedTiles)
         {
+            if (IsCoinMarkerTile(tile))
+            {
+                continue;
+            }
             if (IsSlopeSurfaceTile(tile))
             {
                 slopeTiles.Add(tile);
@@ -904,6 +981,12 @@ public partial class GameScene : Node2D
 
         if (TryBuildStandardSlopeTileSurface(tile, x0, y0, x1, out slope))
         {
+            return true;
+        }
+
+        if (IsDiagonalPipeCeilingTile(tile))
+        {
+            slope = new SmwPhysics.SlopeSurface(x0, y1, x1, y0, Ceiling: true);
             return true;
         }
 
@@ -1060,6 +1143,12 @@ public partial class GameScene : Node2D
         };
     }
 
+    private static bool IsDiagonalPipeCeilingTile(PlacedMap16Tile tile)
+    {
+        return tile.Source == "right_diagonal_pipe" &&
+            tile.Map16 is 0x01C5 or 0x01C6 or 0x01EF or 0x015C;
+    }
+
     private static bool IsSlopeDownRightTile(PlacedMap16Tile tile)
     {
         if (tile.Source.Contains("upside_down", StringComparison.Ordinal))
@@ -1166,12 +1255,24 @@ public partial class GameScene : Node2D
 
     private static bool IsSolidMap16Source(string source)
     {
+        if (IsSlopeObjectSource(source))
+        {
+            return false;
+        }
+
         return source.Contains("ledge", StringComparison.Ordinal) ||
             source.Contains("ground", StringComparison.Ordinal) ||
             source.Contains("mushroom", StringComparison.Ordinal) ||
             source.Contains("pipe", StringComparison.Ordinal) ||
             source.Contains("slope", StringComparison.Ordinal) ||
             source.StartsWith("std_generic_", StringComparison.Ordinal);
+    }
+
+    private static bool IsSlopeObjectSource(string source)
+    {
+        return source.Contains("diagonal_pipe", StringComparison.Ordinal) ||
+            source.Contains("diagonal_ledge", StringComparison.Ordinal) ||
+            source.Contains("slope", StringComparison.Ordinal);
     }
 
     private static bool IsSlopeSurfaceTile(PlacedMap16Tile tile)
@@ -1189,7 +1290,8 @@ public partial class GameScene : Node2D
 
         return tile.Source switch
         {
-            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB,
+            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB ||
+                IsDiagonalPipeCeilingTile(tile),
             "left_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AA),
             "steep_right_slope_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AF),
             _ => false,
@@ -1198,8 +1300,35 @@ public partial class GameScene : Node2D
 
     private static bool IsCoinMarkerTile(PlacedMap16Tile tile)
     {
+        if (IsYoshiCoinTop(tile) || IsYoshiCoinBottom(tile) || IsSingleCoinTile(tile))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsYoshiCoinTop(PlacedMap16Tile tile)
+    {
+        return tile.Source.Contains("yoshi_coin_top", StringComparison.OrdinalIgnoreCase) ||
+            tile.Map16 == 0x002D;
+    }
+
+    private static bool IsYoshiCoinBottom(PlacedMap16Tile tile)
+    {
+        return tile.Source.Contains("yoshi_coin_bottom", StringComparison.OrdinalIgnoreCase) ||
+            tile.Map16 == 0x002E;
+    }
+
+    private static bool IsSingleCoinTile(PlacedMap16Tile tile)
+    {
+        if (IsYoshiCoinTop(tile) || IsYoshiCoinBottom(tile))
+        {
+            return false;
+        }
+
         return tile.Source.Contains("coin", StringComparison.OrdinalIgnoreCase) ||
-            tile.Map16 is 0x002B or 0x002C or 0x002D or 0x002E;
+            tile.Map16 is 0x002B or 0x002C;
     }
 
     private static bool IsDebugBlockMarkerTile(PlacedMap16Tile tile)
@@ -1290,7 +1419,9 @@ public partial class GameScene : Node2D
         var node = new Line2D
         {
             Width = 2.0f,
-            DefaultColor = new Color(1.0f, 0.15f, 0.65f, 0.75f),
+            DefaultColor = slope.Ceiling
+                ? new Color(0.15f, 0.85f, 1.0f, 0.85f)
+                : new Color(1.0f, 0.15f, 0.65f, 0.75f),
             ZIndex = 120,
         };
         node.AddPoint(new Vector2(slope.X0, slope.Y0));
@@ -1738,6 +1869,46 @@ public partial class GameScene : Node2D
         _state.SubYSpeed = 0;
         _state.OnGround = false;
         _audio?.PlayJump();
+    }
+
+    private void CheckCoinPickups()
+    {
+        if (_coinPickups.Count == 0)
+        {
+            return;
+        }
+
+        var playerRect = _physics.PlayerRect(_state);
+        foreach (var pickup in _coinPickups)
+        {
+            if (pickup.Collected || !playerRect.Intersects(pickup.Rect))
+            {
+                continue;
+            }
+
+            CollectCoin(pickup);
+        }
+    }
+
+    private void CollectCoin(CoinPickup pickup)
+    {
+        pickup.Collected = true;
+        foreach (var sprite in pickup.Sprites)
+        {
+            sprite.Visible = false;
+        }
+
+        _coinCount++;
+        if (pickup.DragonCoin)
+        {
+            _dragonCoinCount++;
+        }
+
+        _audio?.PlaySample(9);
+        GD.Print(
+            $"smw-runtime: coin_pickup level={_currentLevelId} " +
+            $"dragon={(pickup.DragonCoin ? 1 : 0)} coins={_coinCount} dragon_coins={_dragonCoinCount} " +
+            $"x={pickup.Rect.Position.X:0.00} y={pickup.Rect.Position.Y:0.00}");
     }
 
     private void CheckGoalTape()
@@ -2455,16 +2626,33 @@ public partial class GameScene : Node2D
             return;
         }
 
+        var footTile = DescribeFootTile();
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} " +
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
+            $"coins={_coinCount}/{_dragonCoinCount} tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
+    }
+
+    private string DescribeFootTile()
+    {
+        var footX = (int)MathF.Floor((_state.XFloat + SmwPhysics.PlayerWidth * 0.5f) / Map16TileSize);
+        var footY = (int)MathF.Floor((_state.YFloat + SmwPhysics.PlayerHeightFor(_state) - LevelVisualYOffset + 1.0f) / Map16TileSize);
+        if (!_map16TilesByCoord.TryGetValue((footX, footY), out var tile))
+        {
+            return $"{footX},{footY}:----";
+        }
+
+        var role = IsSlopeSurfaceTile(tile) ? "slope" :
+            IsCoinMarkerTile(tile) ? "coin" :
+            IsSolidMap16Source(tile.Source) ? "solid" :
+            "pass";
+        return $"{footX},{footY}:{tile.Map16:X3}:{role}:{tile.Source}";
     }
 
     private void PrintRuntimeState()
     {
         var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
-        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} coin_pickups={_coinPickups.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)

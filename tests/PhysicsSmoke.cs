@@ -23,6 +23,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckSlopeCeiling(physics))
+        {
+            return 1;
+        }
         if (!CheckStepUpCollision(physics))
         {
             return 1;
@@ -251,6 +255,34 @@ public static class PhysicsSmoke
         if (state.X > 50 || state.Y <= 80)
         {
             Console.Error.WriteLine($"expected high wall side impact to block, got x={state.X} y={state.Y}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckSlopeCeiling(SmwPhysics physics)
+    {
+        var slopes = new List<SmwPhysics.SlopeSurface>
+        {
+            new(0, 96, 64, 64, Ceiling: true),
+        };
+        var state = physics.MakeState(24, 84);
+        state.YSpeed = -16;
+
+        physics.Step(ref state, new SmwPhysics.FrameInput(), [], slopes);
+        if (state.Y != 80 || state.YSpeed != 0 || state.OnGround)
+        {
+            Console.Error.WriteLine($"expected upward motion to stop against slope ceiling, got y={state.Y} ys={state.YSpeed} ground={state.OnGround}");
+            return false;
+        }
+
+        state = physics.MakeState(24, 84);
+        state.YSpeed = 16;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), [], slopes);
+        if (state.Y == 80 || state.YSpeed == 0)
+        {
+            Console.Error.WriteLine($"expected falling motion to ignore slope ceiling, got y={state.Y} ys={state.YSpeed}");
             return false;
         }
 

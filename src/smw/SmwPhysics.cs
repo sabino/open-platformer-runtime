@@ -100,7 +100,7 @@ public sealed class SmwPhysics
         public bool Run;
     }
 
-    public readonly record struct SlopeSurface(float X0, float Y0, float X1, float Y1);
+    public readonly record struct SlopeSurface(float X0, float Y0, float X1, float Y1, bool Ceiling = false);
 
     public PlayerState MakeState(int xPx, int yPx, int powerup = BigPowerup)
     {
@@ -398,30 +398,53 @@ public sealed class SmwPhysics
 
     private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes)
     {
-        if (slopes.Count == 0 || state.YSpeed < 0)
+        if (slopes.Count == 0)
         {
             return;
         }
 
-        var footX = state.XFloat + PlayerWidth * 0.5f;
+        var probeX = state.XFloat + PlayerWidth * 0.5f;
         var playerHeight = PlayerHeightFor(state);
         var bottom = state.YFloat + playerHeight;
+        var top = state.YFloat;
         foreach (var slope in slopes)
         {
             var minX = MathF.Min(slope.X0, slope.X1);
             var maxX = MathF.Max(slope.X0, slope.X1);
-            if (footX < minX || footX > maxX)
+            if (probeX < minX || probeX > maxX)
             {
                 continue;
             }
 
-            var t = maxX == minX ? 0.0f : (footX - slope.X0) / (slope.X1 - slope.X0);
+            var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
             if (t < 0.0f || t > 1.0f)
             {
                 continue;
             }
 
             var surfaceY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            if (slope.Ceiling)
+            {
+                if (state.YSpeed > 0 || top < surfaceY - 16.0f || top > surfaceY + 6.0f)
+                {
+                    continue;
+                }
+
+                state.Y = (int)MathF.Round(surfaceY);
+                state.SubY = 0;
+                state.SubYSpeed = 0;
+                if (state.YSpeed < 0)
+                {
+                    state.YSpeed = 0;
+                }
+                return;
+            }
+
+            if (state.YSpeed < 0)
+            {
+                continue;
+            }
+
             if (bottom < surfaceY - 6.0f || bottom > surfaceY + 16.0f)
             {
                 continue;

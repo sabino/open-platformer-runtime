@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added runtime normal-coin and dragon-coin pickups from imported Map16 coin markers, including HUD counters, collection logs, sprite hiding, and headless pickup checks.
+- Added ceiling-style slope surfaces for the underside of imported diagonal pipes, with separate debug overlay coloring, so pipe bodies can block upward movement without restoring hidden rectangular support collision.
+- Removed temporary rectangular collision from imported slope/diagonal support tiles again so Mario resolves against the slope segments instead of standing on hidden stair-step support blocks.
+- Added a debug-HUD foot-tile probe that reports the Map16 coordinate, tile ID, collision role, and source label under Mario for faster slope/collision triage.
 - Added a runtime bridge for native entrance actions: pipe-action entrances now briefly lock input and move Mario with the corresponding pipe direction, while action `6` starts the vanilla-style shoot-out vector from the secondary return pipe.
 - Routed runtime level entry through the imported vanilla entrance tables: first boot, direct screen exits, and secondary exits now spawn from `$05F000/$05F200` and `$05F800/$05FA00/$05FC00/$05FE00` instead of a generic floor-tile scan.
 - Added horizontal pipe trigger rectangles for screen exits, allowing the underground `1CB` return pipe to resolve back to `105` through the secondary-entrance table during runtime/debug play.

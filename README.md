@@ -13,12 +13,13 @@ The current first slice covers:
 - A SNES-sized `256x224` logical viewport that opens as a 3x Wayland window for normal graphical runs.
 - Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; the Godot runtime no longer depends on WAV/MP3 playback for these probes.
 - A menu audio panel for internal port-1 SFX command probes and BRR sample probes, plus imported music bank visibility while the full SPC/DSP command sequencer is still pending.
-- An opt-in debug overlay showing imported asset previews plus collision rectangles/outlines, slope lines, player hitbox/feet, active camera bounds, pipe/goal triggers, sprite hitboxes, sprite spawn markers, object markers, and coin/block semantic markers.
+- An opt-in debug overlay showing imported asset previews plus collision rectangles/outlines, slope lines, player hitbox/feet, active camera bounds, pipe/goal triggers, sprite hitboxes, sprite spawn markers, object markers, coin/block semantic markers, and the Map16 tile currently under Mario's feet.
 - Runtime placement of the generated Yoshi Island 1 Map16 tilemap, with temporary merged collision rectangles derived from imported tile placement sources.
 - Runtime rendering of generated Layer 2 RLE background previews behind the imported Layer 1 Map16 placements for level `105` and pipe target `1CB`.
 - Layer 1/2 object placement and several Map16 projection rules are cross-checked against Lunar Magic Universal's current `lmcore` parser/renderer, including native object tile coordinates, pipes, standard `0x12` slopes, left diagonal ledges, and right diagonal pipes.
 - Map16 rendering converts the raw SMW quadrant word order into render quadrant order before generating Godot atlases and level previews.
-- Runtime collision separates imported diagonal pipe/slope/ledge clusters into per-Map16-tile slope surfaces instead of merging them into full rectangular blocker tiles or long averaged slope lines.
+- Runtime collision separates imported diagonal pipe/slope/ledge clusters into per-Map16-tile floor and ceiling slope surfaces instead of merging them into full rectangular blocker tiles or long averaged slope lines; temporary slope-family support/fill rectangles are suppressed until the native Map16 act-as path is ported.
+- Runtime coin pickup state is derived from imported Map16 coin markers, including normal coins and dragon coins.
 - Runtime camera scrolling uses SMW-style horizontal and vertical screen-space thresholds instead of center-follow, clamped to generated tile bounds so Yoshi Island 1's lower routes can be inspected during drops.
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
 - Partial object expansion for the Yoshi Island 1 direct pipe target `1CB`, including horizontal pipes and underground ceiling ledges/edges in the generated Map16 tilemap.
@@ -73,7 +74,7 @@ The visible wrappers default to Sway workspace `6`; override with `SMW_SWAY_WORK
 
 For reproducible lower-route captures, the runtime also accepts `--smw-test-spawn=x,y` alongside `--smw-capture=...`. Use `--smw-test-powerup=small|big|cape|fire` to force the debug player form for hitbox checks.
 
-Pass `--smw-debug-overlays` to a Godot run when you want collision rectangles/outlines, slope lines, player hitbox/feet, camera bounds, pipe/goal triggers, sprite hitboxes, screen lines, object/sprite/coin/block markers, the debug HUD, and the imported asset preview panel. Normal playable runs hide those overlays.
+Pass `--smw-debug-overlays` to a Godot run when you want collision rectangles/outlines, slope lines, player hitbox/feet, camera bounds, pipe/goal triggers, sprite hitboxes, screen lines, object/sprite/coin/block markers, the debug HUD, the foot-tile Map16 probe, and the imported asset preview panel. Normal playable runs hide those overlays.
 
 Build the C# project:
 
