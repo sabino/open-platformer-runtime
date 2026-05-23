@@ -23,11 +23,12 @@ ACTOR_COMMAND_FILE="$(mktemp)"
 REX_COMMAND_FILE="$(mktemp)"
 BREAK_COMMAND_FILE="$(mktemp)"
 WING_BLOCK_COMMAND_FILE="$(mktemp)"
+WING_BLOCK_REWARD_COMMAND_FILE="$(mktemp)"
 PIRANHA_HIDDEN_COMMAND_FILE="$(mktemp)"
 PIRANHA_VISIBLE_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 1 right run
@@ -69,6 +70,13 @@ powerup big
 velocity 0 24
 step 1
 EOF
+cat >"$WING_BLOCK_REWARD_COMMAND_FILE" <<'EOF'
+pause
+spawn 592 256
+powerup big
+velocity 0 -64
+step 1
+EOF
 cat >"$PIRANHA_HIDDEN_COMMAND_FILE" <<'EOF'
 pause
 spawn 1808 320
@@ -91,6 +99,11 @@ grep -q "goal_tapes=1" "$LOG_FILE"
 grep -q "player_sprites=8" "$LOG_FILE"
 grep -q "smw-runtime: entrance level=105 source=105 secondary=0 settings=0 spawn=16,288" "$LOG_FILE"
 grep -q "smw-runtime: level_music level=105 music_index=0 bank=Level" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-audio: disabled=1" "$LOG_FILE"
+! grep -q "smw-audio: internal_apu=1" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-test-screen-exit=7 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: entrance_motion action=4 frames=28 dx=0.00 dy=1.00" "$LOG_FILE"
@@ -171,6 +184,13 @@ grep -q "x=592.00 y=208.00" "$LOG_FILE"
 grep -q "g=1" "$LOG_FILE"
 grep -q "near=83:0:592.00,239.50" "$LOG_FILE"
 grep -q "actor_event=block:83:top" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$WING_BLOCK_REWARD_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$WING_BLOCK_REWARD_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-runtime: block_reward level=105 sprite=83 reward=flower" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "pow=3" "$LOG_FILE"
+grep -q "actor_event=block:83:reward:flower" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIRANHA_HIDDEN_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIRANHA_HIDDEN_COMMAND_FILE" "$LOG_FILE"

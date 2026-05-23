@@ -14,7 +14,7 @@ The current first slice covers:
 - Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; the Godot runtime no longer depends on WAV/MP3 playback for these probes.
 - A menu audio panel for internal port-1 SFX command probes and BRR sample probes, plus imported music bank visibility while the full SPC/DSP command sequencer is still pending.
 - An opt-in debug overlay showing imported asset previews plus collision rectangles/outlines, slope lines, player hitbox/feet, active camera bounds, pipe/goal triggers, sprite hitboxes, sprite spawn markers, object markers, coin/block semantic markers, and the Map16 tile currently under Mario's feet.
-- Runtime placement of the generated Yoshi Island 1 Map16 tilemap, with temporary merged collision rectangles derived from imported tile placement sources.
+- Runtime placement of the generated Yoshi Island 1 Map16 tilemap through a batched custom draw layer, with temporary merged collision rectangles derived from imported tile placement sources.
 - Runtime rendering of generated Layer 2 RLE background previews behind the imported Layer 1 Map16 placements for level `105` and pipe target `1CB`.
 - Layer 1/2 object placement and several Map16 projection rules are cross-checked against Lunar Magic Universal's current `lmcore` parser/renderer, including native object tile coordinates, pipes, standard `0x12` slopes, left diagonal ledges, and right diagonal pipes.
 - Map16 rendering converts the raw SMW quadrant word order into render quadrant order before generating Godot atlases and level previews.
@@ -75,6 +75,8 @@ The visible wrappers default to Sway workspace `6`; override with `SMW_SWAY_WORK
 For reproducible lower-route captures, the runtime also accepts `--smw-test-spawn=x,y` alongside `--smw-capture=...`. Use `--smw-test-powerup=small|big|cape|fire` to force the debug player form for hitbox checks.
 
 For deterministic autoplay checks, pass `--smw-input-script=/path/to/script`. Each non-comment line starts with a frame count followed by held inputs separated by spaces, commas, colons, or semicolons, for example `8 right run` or `4 right run jump`. Supported tokens are `left`, `right`, `down`, `jump`, `spin`, and `run`; `jump` and `spin` emit a pressed edge on the first frame of that line.
+
+Pass `--smw-no-audio` or set `SMW_AUDIO=0` to disable the internal BRR/APU probe for quick performance A/B tests. Normal playtest runs keep audio enabled.
 
 Pass `--smw-debug-overlays` to a Godot run when you want collision rectangles/outlines, slope lines, player hitbox/feet, camera bounds, pipe/goal triggers, sprite hitboxes, screen lines, object/sprite/coin/block markers, the debug HUD, the foot-tile Map16 probe, and the imported asset preview panel. Normal playable runs hide those overlays.
 

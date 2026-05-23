@@ -7,6 +7,8 @@ public partial class SmwAudio : Node
     private const int SampleRate = 32000;
     private const int FramesPerSecond = 60;
     private const int InstrumentTable = 0x5570;
+    private const int MaxVoices = 10;
+    private const int MaxFramesPerAudioProcess = 512;
     private readonly Dictionary<int, DecodedSample> _samples = [];
     private readonly List<Voice> _voices = [];
     private byte[] _spcRam = new byte[0x10000];
@@ -71,7 +73,7 @@ public partial class SmwAudio : Node
             return;
         }
 
-        _voices.Add(new Voice(sample, step: 1.0, volume: 0.42f, pan: 0.0f, durationSamples: 0, delaySamples: 0));
+        AddVoice(new Voice(sample, step: 1.0, volume: 0.42f, pan: 0.0f, durationSamples: 0, delaySamples: 0));
     }
 
     public void PlayMusicPreview(string bankName)
@@ -285,7 +287,7 @@ public partial class SmwAudio : Node
         }
 
         var step = ComputeDspPitchStep(note, pitchBase);
-        _voices.Add(new Voice(
+        AddVoice(new Voice(
             sample,
             step,
             volume,
@@ -379,13 +381,19 @@ public partial class SmwAudio : Node
             return;
         }
 
+        PruneInactiveVoices();
+        if (_voices.Count == 0)
+        {
+            return;
+        }
+
         var framesAvailable = _playback.GetFramesAvailable();
         if (framesAvailable <= 0)
         {
             return;
         }
 
-        var frameCount = Math.Min(framesAvailable, 1024);
+        var frameCount = Math.Min(framesAvailable, MaxFramesPerAudioProcess);
         if (_mixBuffer.Length != frameCount)
         {
             _mixBuffer = new Vector2[frameCount];
@@ -397,6 +405,28 @@ public partial class SmwAudio : Node
         }
 
         _playback.PushBuffer(_mixBuffer);
+    }
+
+    private void AddVoice(Voice voice)
+    {
+        PruneInactiveVoices();
+        while (_voices.Count >= MaxVoices)
+        {
+            _voices.RemoveAt(0);
+        }
+
+        _voices.Add(voice);
+    }
+
+    private void PruneInactiveVoices()
+    {
+        for (var i = _voices.Count - 1; i >= 0; i--)
+        {
+            if (!_voices[i].Active)
+            {
+                _voices.RemoveAt(i);
+            }
+        }
     }
 
     private Vector2 RenderFrame()

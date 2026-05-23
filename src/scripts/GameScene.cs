@@ -105,7 +105,6 @@ public partial class GameScene : Node2D
     private readonly List<ScriptedInputSegment> _inputScript = [];
     private readonly List<Rect2> _goalTapeTriggers = [];
     private readonly List<CoinPickup> _coinPickups = [];
-    private readonly Dictionary<(int X, int Y), Sprite2D> _map16TileSprites = [];
     private readonly Dictionary<(int X, int Y), PlacedMap16Tile> _map16TilesByCoord = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeBodyCells = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeCeilingCells = [];
@@ -125,6 +124,7 @@ public partial class GameScene : Node2D
     private ImageTexture? _playerTexture;
     private ImageTexture? _spriteTexture;
     private ImageTexture? _map16Texture;
+    private Map16TileLayer? _map16Layer;
     private Godot.Collections.Dictionary? _entranceTables;
     private string _currentLevelId = "105";
     private string _levelGfxAtlasPath = "res://generated/smw/tilesets/level_105_tileset7_8x8.png";
@@ -151,6 +151,7 @@ public partial class GameScene : Node2D
     private Vector2 _entranceMotionPixelsPerFrame;
     private int _coinCount;
     private int _dragonCoinCount;
+    private int _oneUpCount;
     private int _blockBreakCount;
     private int _inputScriptIndex;
     private int _inputScriptFrame;
@@ -175,13 +176,14 @@ public partial class GameScene : Node2D
 
     public bool DebugOverlays { get; set; }
     public SmwAudio? Audio { get; set; }
+    public bool AudioEnabled { get; set; } = true;
 
     public override void _Ready()
     {
         GetViewport().TransparentBg = false;
         RenderingServer.SetDefaultClearColor(new Color(0.0f, 0.39f, 0.74f, 1.0f));
         _audio = Audio;
-        if (_audio == null)
+        if (_audio == null && AudioEnabled)
         {
             _audio = new SmwAudio { Name = "SmwAudio" };
             AddChild(_audio);
@@ -310,6 +312,7 @@ public partial class GameScene : Node2D
         public float XSpeed { get; set; }
         public float YSpeed { get; set; }
         public int MotionFrame { get; set; }
+        public bool Used { get; set; }
         public bool Alive { get; set; } = true;
         public bool OnGround { get; set; }
         public int WakeScreen { get; init; }
@@ -322,9 +325,64 @@ public partial class GameScene : Node2D
     private sealed class CoinPickup
     {
         public required Rect2 Rect { get; init; }
-        public required List<Sprite2D> Sprites { get; init; }
+        public required List<(int X, int Y)> Tiles { get; init; }
         public bool DragonCoin { get; init; }
         public bool Collected { get; set; }
+    }
+
+    private sealed partial class Map16TileLayer : Node2D
+    {
+        private ImageTexture? _texture;
+        private readonly List<PlacedMap16Tile> _tiles = [];
+        private readonly HashSet<(int X, int Y)> _hiddenTiles = [];
+
+        public void Configure(ImageTexture texture, IEnumerable<PlacedMap16Tile> tiles)
+        {
+            _texture = texture;
+            _tiles.Clear();
+            _tiles.AddRange(tiles);
+            _hiddenTiles.Clear();
+            QueueRedraw();
+        }
+
+        public void HideTile(int x, int y)
+        {
+            if (_hiddenTiles.Add((x, y)))
+            {
+                QueueRedraw();
+            }
+        }
+
+        public override void _Draw()
+        {
+            if (_texture == null)
+            {
+                return;
+            }
+
+            foreach (var tile in _tiles)
+            {
+                if (_hiddenTiles.Contains((tile.X, tile.Y)) || tile.Map16 < 0)
+                {
+                    continue;
+                }
+
+                var region = new Rect2(
+                    (tile.Map16 % Map16AtlasColumns) * Map16TileSize,
+                    (tile.Map16 / Map16AtlasColumns) * Map16TileSize,
+                    Map16TileSize,
+                    Map16TileSize);
+                if (region.Position.Y + Map16TileSize > _texture.GetHeight())
+                {
+                    continue;
+                }
+
+                DrawTextureRectRegion(
+                    _texture,
+                    new Rect2(TileToWorld(tile.X, tile.Y), new Vector2(Map16TileSize, Map16TileSize)),
+                    region);
+            }
+        }
     }
 
     private SmwPhysics.FrameInput ReadFrameInput()
@@ -917,7 +975,6 @@ public partial class GameScene : Node2D
         _spriteActors.Clear();
         _goalTapeTriggers.Clear();
         _coinPickups.Clear();
-        _map16TileSprites.Clear();
         _map16TilesByCoord.Clear();
         _diagonalPipeBodyCells.Clear();
         _diagonalPipeCeilingCells.Clear();
@@ -925,6 +982,7 @@ public partial class GameScene : Node2D
         _cameraGizmo = null;
         _spriteTexture = null;
         _map16Texture = null;
+        _map16Layer = null;
         StartWorldRoot();
         AddWorldBackground();
         AddLayer2BackgroundPreview();
@@ -1116,7 +1174,7 @@ public partial class GameScene : Node2D
         return 0;
     }
 
-    private List<Node> AddSpriteActorVisuals(Node2D node, int spriteId, int state)
+    private List<Node> AddSpriteActorVisuals(Node2D node, int spriteId, int state, bool used = false)
     {
         var visuals = new List<Node>();
         foreach (var tile in SpriteOamTilesFor(spriteId, state))
@@ -1127,7 +1185,7 @@ public partial class GameScene : Node2D
             }
         }
 
-        AddSpriteCommandVisual(node, spriteId, visuals);
+        AddSpriteCommandVisual(node, spriteId, used, visuals);
         return visuals;
     }
 
@@ -1170,12 +1228,12 @@ public partial class GameScene : Node2D
         return true;
     }
 
-    private void AddSpriteCommandVisual(Node2D node, int spriteId, List<Node> visuals)
+    private void AddSpriteCommandVisual(Node2D node, int spriteId, bool used, List<Node> visuals)
     {
         switch (spriteId)
         {
             case 0x83:
-                AddMap16SpriteVisual(node, 0x0124, Vector2.Zero, visuals);
+                AddMap16SpriteVisual(node, used ? 0x0125 : 0x0124, Vector2.Zero, visuals);
                 break;
             case 0xB9:
                 if (!AddMap16SpriteVisual(node, 0x0125, Vector2.Zero, visuals))
@@ -1461,13 +1519,7 @@ public partial class GameScene : Node2D
 
         var texture = ImageTexture.CreateFromImage(image);
         _map16Texture = texture;
-        var container = new Node2D
-        {
-            Name = "GeneratedMap16Tiles",
-            ZIndex = -10,
-        };
-        AddWorldChild(container);
-
+        var layerTiles = new List<PlacedMap16Tile>();
         foreach (var tile in _placedTiles)
         {
             if (tile.Map16 < 0)
@@ -1475,29 +1527,25 @@ public partial class GameScene : Node2D
                 continue;
             }
 
-            var region = new Rect2(
-                (tile.Map16 % Map16AtlasColumns) * Map16TileSize,
-                (tile.Map16 / Map16AtlasColumns) * Map16TileSize,
-                Map16TileSize,
-                Map16TileSize);
-            if (region.Position.Y + Map16TileSize > image.GetHeight())
+            var regionY = (tile.Map16 / Map16AtlasColumns) * Map16TileSize;
+            if (regionY + Map16TileSize > image.GetHeight())
             {
                 continue;
             }
 
-            var sprite = new Sprite2D
-            {
-                Texture = texture,
-                RegionEnabled = true,
-                RegionRect = region,
-                Position = TileToWorld(tile.X, tile.Y),
-                Centered = false,
-                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
-            };
-            container.AddChild(sprite);
-            _map16TileSprites[(tile.X, tile.Y)] = sprite;
+            layerTiles.Add(tile);
             _map16TilesByCoord[(tile.X, tile.Y)] = tile;
         }
+
+        var layer = new Map16TileLayer
+        {
+            Name = "GeneratedMap16Tiles",
+            ZIndex = -10,
+        };
+        layer.TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
+        layer.Configure(texture, layerTiles);
+        _map16Layer = layer;
+        AddWorldChild(layer);
 
         return true;
     }
@@ -1514,20 +1562,10 @@ public partial class GameScene : Node2D
 
             if (IsYoshiCoinTop(tile))
             {
-                var sprites = new List<Sprite2D>();
-                if (_map16TileSprites.TryGetValue((tile.X, tile.Y), out var topSprite))
-                {
-                    sprites.Add(topSprite);
-                }
-                if (_map16TileSprites.TryGetValue((tile.X, tile.Y + 1), out var bottomSprite))
-                {
-                    sprites.Add(bottomSprite);
-                }
-
                 _coinPickups.Add(new CoinPickup
                 {
                     Rect = new Rect2(TileToWorld(tile.X, tile.Y), new Vector2(Map16TileSize, Map16TileSize * 2)),
-                    Sprites = sprites,
+                    Tiles = [(tile.X, tile.Y), (tile.X, tile.Y + 1)],
                     DragonCoin = true,
                 });
                 handled.Add((tile.X, tile.Y));
@@ -1540,16 +1578,10 @@ public partial class GameScene : Node2D
                 continue;
             }
 
-            var singleSprites = new List<Sprite2D>();
-            if (_map16TileSprites.TryGetValue((tile.X, tile.Y), out var sprite))
-            {
-                singleSprites.Add(sprite);
-            }
-
             _coinPickups.Add(new CoinPickup
             {
                 Rect = new Rect2(TileToWorld(tile.X, tile.Y), new Vector2(Map16TileSize, Map16TileSize)),
-                Sprites = singleSprites,
+                Tiles = [(tile.X, tile.Y)],
             });
             handled.Add((tile.X, tile.Y));
         }
@@ -1665,11 +1697,7 @@ public partial class GameScene : Node2D
     {
         _placedTiles.RemoveAll(candidate => candidate.X == tile.X && candidate.Y == tile.Y);
         _map16TilesByCoord.Remove((tile.X, tile.Y));
-        if (_map16TileSprites.Remove((tile.X, tile.Y), out var sprite))
-        {
-            sprite.Visible = false;
-            sprite.QueueFree();
-        }
+        _map16Layer?.HideTile(tile.X, tile.Y);
     }
 
     private static bool IsSpinJumpBreakableTurnBlock(PlacedMap16Tile tile)
@@ -2970,7 +2998,10 @@ public partial class GameScene : Node2D
             _state.YSpeed = 8;
             _state.SubYSpeed = 0;
             _state.OnGround = false;
-            _lastActorEvent = $"block:{actor.SpriteId:X2}:bump";
+            if (!TriggerSolidBlockActorReward(actor))
+            {
+                _lastActorEvent = $"block:{actor.SpriteId:X2}:bump";
+            }
             _audio?.PlayJump();
             return true;
         }
@@ -3014,7 +3045,10 @@ public partial class GameScene : Node2D
             _state.YSpeed = Math.Max(8, _state.YSpeed);
             _state.SubYSpeed = 0;
             _state.OnGround = false;
-            _lastActorEvent = $"block:{actor.SpriteId:X2}:bump";
+            if (!TriggerSolidBlockActorReward(actor))
+            {
+                _lastActorEvent = $"block:{actor.SpriteId:X2}:bump";
+            }
         }
         else if (overlapFromLeft < overlapFromRight)
         {
@@ -3034,6 +3068,60 @@ public partial class GameScene : Node2D
         }
 
         return true;
+    }
+
+    private bool TriggerSolidBlockActorReward(RuntimeSpriteActor actor)
+    {
+        if (actor.SpriteId != 0x83 || actor.Used)
+        {
+            return false;
+        }
+
+        actor.Used = true;
+        var contentIndex = WorldTileXNibble(actor.X) & 0x03;
+        var reward = contentIndex switch
+        {
+            0 => "coin",
+            1 => _state.Powerup == SmwPhysics.SmallPowerup ? "mushroom" : "flower",
+            2 => "feather",
+            3 => "1up",
+            _ => "coin",
+        };
+
+        switch (contentIndex)
+        {
+            case 0:
+                _coinCount++;
+                break;
+            case 1:
+                _physics.SetPowerup(
+                    ref _state,
+                    _state.Powerup == SmwPhysics.SmallPowerup ? SmwPhysics.BigPowerup : SmwPhysics.FirePowerup);
+                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
+                UpdatePlayerGraphic(force: true);
+                break;
+            case 2:
+                _physics.SetPowerup(ref _state, SmwPhysics.CapePowerup);
+                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
+                UpdatePlayerGraphic(force: true);
+                break;
+            case 3:
+                _oneUpCount++;
+                break;
+        }
+
+        ReplaceSpriteActorVisuals(actor);
+        _audio?.PlaySample(9);
+        _lastActorEvent = $"block:{actor.SpriteId:X2}:reward:{reward}";
+        GD.Print(
+            $"smw-runtime: block_reward level={_currentLevelId} sprite={actor.SpriteId:X2} reward={reward} " +
+            $"x={actor.X:0.00} y={actor.Y:0.00} coins={_coinCount} oneups={_oneUpCount} pow={_state.Powerup}");
+        return true;
+    }
+
+    private static int WorldTileXNibble(float x)
+    {
+        return ((int)MathF.Floor(x / Map16TileSize)) & 0x0F;
     }
 
     private void LandPlayerOnSolidBlockActor(RuntimeSpriteActor actor, float actorTop)
@@ -3113,7 +3201,7 @@ public partial class GameScene : Node2D
         }
 
         actor.Visuals.Clear();
-        actor.Visuals.AddRange(AddSpriteActorVisuals(actor.Node, actor.SpriteId, actor.State));
+        actor.Visuals.AddRange(AddSpriteActorVisuals(actor.Node, actor.SpriteId, actor.State, actor.Used));
     }
 
     private void HurtPlayerFromActor(RuntimeSpriteActor actor)
@@ -3161,9 +3249,10 @@ public partial class GameScene : Node2D
     private void CollectCoin(CoinPickup pickup)
     {
         pickup.Collected = true;
-        foreach (var sprite in pickup.Sprites)
+        foreach (var tile in pickup.Tiles)
         {
-            sprite.Visible = false;
+            _map16Layer?.HideTile(tile.X, tile.Y);
+            _map16TilesByCoord.Remove((tile.X, tile.Y));
         }
 
         _coinCount++;

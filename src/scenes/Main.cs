@@ -12,6 +12,7 @@ public partial class Main : Node2D
     private SmwAudio? _audio;
     private ColorRect? _gameBackground;
     private bool _debugOverlays;
+    private bool _audioEnabled = true;
 
     public override void _Ready()
     {
@@ -25,8 +26,17 @@ public partial class Main : Node2D
         }
 
         SetupInputMap();
-        _audio = new SmwAudio { Name = "SmwAudio" };
-        AddChild(_audio);
+        _audioEnabled = ShouldEnableAudio();
+        if (_audioEnabled)
+        {
+            _audio = new SmwAudio { Name = "SmwAudio" };
+            AddChild(_audio);
+        }
+        else
+        {
+            GD.Print("smw-audio: disabled=1");
+        }
+
         ShowMenu();
 
         var autostart = false;
@@ -45,6 +55,12 @@ public partial class Main : Node2D
             if (arg == "--smw-test-autostart")
             {
                 autostart = true;
+            }
+            else if (arg == "--smw-no-audio" ||
+                arg.Equals("--smw-audio=off", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("--smw-audio=0", StringComparison.OrdinalIgnoreCase))
+            {
+                _audioEnabled = false;
             }
             else if (arg == "--smw-debug-overlays")
             {
@@ -389,8 +405,32 @@ public partial class Main : Node2D
             Name = "GameScene",
             DebugOverlays = _debugOverlays,
             Audio = _audio,
+            AudioEnabled = _audioEnabled,
         };
         AddChild(_game);
+    }
+
+    private static bool ShouldEnableAudio()
+    {
+        var env = OS.GetEnvironment("SMW_AUDIO");
+        if (env == "0" ||
+            env.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+            env.Equals("off", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        foreach (var arg in OS.GetCmdlineArgs())
+        {
+            if (arg == "--smw-no-audio" ||
+                arg.Equals("--smw-audio=off", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("--smw-audio=0", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private void EnsureGameBackground()
