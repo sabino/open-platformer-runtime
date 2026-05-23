@@ -16,7 +16,6 @@ public sealed class SmwPhysics
 
     public const int NativeFlatWalkTurnAcceleration = 0x0280;
     public const int NativeFlatRunTurnAcceleration = 0x0500;
-    private const int GroundFriction = 0x0020;
     private const int AirAccel = 0x0100;
     private const int PMeterMax = 0x70;
     private const int PMeterSprintThreshold = 0x23;
@@ -510,7 +509,7 @@ public sealed class SmwPhysics
 
             if (state.XSpeed > 0)
             {
-                AddXAccel(ref state, -GroundFriction);
+                AddXAccel(ref state, NativeFlatNoInputGroundFriction(state.XSpeed));
                 if (state.XSpeed < 0)
                 {
                     state.XSpeed = 0;
@@ -519,7 +518,7 @@ public sealed class SmwPhysics
             }
             else if (state.XSpeed < 0)
             {
-                AddXAccel(ref state, GroundFriction);
+                AddXAccel(ref state, NativeFlatNoInputGroundFriction(state.XSpeed));
                 if (state.XSpeed > 0)
                 {
                     state.XSpeed = 0;
@@ -582,6 +581,11 @@ public sealed class SmwPhysics
     {
         var j = NativeDirectionBit(dir) | (2 * Math.Clamp(pMeterMode, 0, 3));
         return HorizontalMaxSpeedTable[j];
+    }
+
+    private static int NativeFlatNoInputGroundFriction(int xSpeed)
+    {
+        return HorizontalGroundFrictionTable[xSpeed < 0 ? 1 : 0];
     }
 
     private static int NativeDirectionBit(int dir)
