@@ -69,6 +69,8 @@ Runtime sprite note: `GameScene` loads generated `sprite_layer.sprites` records 
 
 Runtime goal note: sprite `0x7B` is the native goal tape (`Spr07B_GoalTape` in the C++ reference). Yoshi Island 1 imports one such sprite at screen `12`, x `4832`, and `GameScene` now creates a visible tape trigger from that record. Touching it enters a temporary course-clear state and plays the internal credits-preview sequencer; native bonus stars, walkout, score tally, overworld progression, and post-goal power-up logic remain pending.
 
+Runtime death/restart note: falling below the imported level bounds by 96 pixels logs `smw-runtime: player_death`, increments the runtime death counter, reloads the current level geometry, and resets Mario to the current level's main entrance. This is a first playable-slice recovery path; native death animation, lives, midway entrance rules, overworld loss handling, and power-up/coin persistence semantics remain pending.
+
 Runtime capture note: `tools/capture-wayland.sh` launches the Godot .NET binary with `--display-driver wayland`, waits for the exact launched PID to appear in Sway, moves it to workspace `6` by default, floats/resizes it to the intended 3x SNES viewport, waits for the `smw-runtime` level log, and captures that compositor rectangle with `grim`. This avoids the previous false-positive capture of existing terminal windows whose titles contained `smw`.
 
 Runtime RCON capture note: the loopback debug server supports `snapshot`/`capture_now` for immediate viewport PNG writes and `capture <path> <frames>` for scheduled writes after process frames. RCON command parsing deliberately keeps `:` inside path tokens so `res://generated/...` paths remain valid.

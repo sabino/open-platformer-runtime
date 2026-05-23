@@ -39,6 +39,7 @@ public partial class GameScene : Node2D
     private const int WingedQuestionBlockCycleFrames = 64;
     private const int GoalTapeSpriteId = 0x7B;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
+    private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
     [
@@ -166,6 +167,7 @@ public partial class GameScene : Node2D
     private int _dragonCoinCount;
     private int _oneUpCount;
     private int _blockBreakCount;
+    private int _deathCount;
     private int _inputScriptIndex;
     private int _inputScriptFrame;
     private int _inputScriptElapsedFrames;
@@ -269,6 +271,10 @@ public partial class GameScene : Node2D
                 (int)MathF.Round(GetLevelPixelRight()));
             ResolveDiagonalPipeTileContacts(previousState);
             TryBreakSpinJumpTurnBlocks(previousState);
+            if (TryHandlePlayerFallDeath())
+            {
+                previousStateForActors = _state;
+            }
         }
         UpdateCamera();
 
@@ -4400,7 +4406,7 @@ public partial class GameScene : Node2D
             $"xs={_state.XSpeed} ys={_state.YSpeed} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} " +
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"coins={_coinCount}/{_dragonCoinCount} tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
+            $"coins={_coinCount}/{_dragonCoinCount} deaths={_deathCount} tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
     }
 
     private string DescribeFootTile()
@@ -5433,7 +5439,7 @@ public partial class GameScene : Node2D
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
-            $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount}";
+            $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
     }
 
     private string DescribeNearestActor()
@@ -5872,6 +5878,54 @@ public partial class GameScene : Node2D
         _lastActorEvent = "none";
         _blockBreakCount = 0;
         _state = MakeInitialPlayerState(entrance);
+        ResetPlayerAnimationState();
+        _cameraInitialized = false;
+        UpdateCamera();
+        BuildWorld();
+        BuildHud();
+        if (_player != null)
+        {
+            _player.Position = PlayerRenderPosition();
+        }
+
+        _lastPlayerPose = -1;
+        _lastPlayerPowerup = -1;
+        _lastPlayerDucking = false;
+        UpdatePlayerGraphic(force: true);
+        PrintRuntimeState();
+        StartLevelMusic();
+    }
+
+    private bool TryHandlePlayerFallDeath()
+    {
+        if (_courseClear || _state.YFloat <= GetLevelPixelBottom() + FallDeathMarginPixels)
+        {
+            return false;
+        }
+
+        _deathCount++;
+        GD.Print(
+            $"smw-runtime: player_death level={_currentLevelId} cause=fall count={_deathCount} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
+        RestartCurrentLevelAfterDeath();
+        return true;
+    }
+
+    private void RestartCurrentLevelAfterDeath()
+    {
+        if (!LoadLevelData(_currentLevelId))
+        {
+            GD.PrintErr($"smw-runtime: unable to reload level {_currentLevelId} after death");
+            return;
+        }
+
+        _courseClear = false;
+        _playerHurtCooldown = 0;
+        _lastActorEvent = "death:fall";
+        _blockBreakCount = 0;
+        _pipeTransitionLatch = false;
+        _entranceMotionFrames = 0;
+        _state = MakeInitialPlayerState();
         ResetPlayerAnimationState();
         _cameraInitialized = false;
         UpdateCamera();

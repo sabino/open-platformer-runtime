@@ -28,10 +28,11 @@ PIRANHA_HIDDEN_COMMAND_FILE="$(mktemp)"
 PIRANHA_VISIBLE_COMMAND_FILE="$(mktemp)"
 SLOPE_PROBE_COMMAND_FILE="$(mktemp)"
 PIPE_UNDERSIDE_COMMAND_FILE="$(mktemp)"
+DEATH_COMMAND_FILE="$(mktemp)"
 TRACE_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -114,6 +115,13 @@ spawn 2056 304
 powerup small
 velocity -3 0
 step 1
+EOF
+cat >"$DEATH_COMMAND_FILE" <<'EOF'
+pause
+spawn 128 640
+velocity 0 64
+step 1
+state after_death
 EOF
 cat >"$TRACE_COMMAND_FILE" <<'EOF'
 pause
@@ -259,6 +267,14 @@ grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "level=105" "$LOG_FILE"
 grep -q "x=2064.00 y=304.00" "$LOG_FILE"
 ! grep -q "level=1CB" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$DEATH_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$DEATH_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-runtime: player_death level=105 cause=fall count=1" "$LOG_FILE"
+grep -q "smw-debug-state: tag=after_death" "$LOG_FILE"
+grep -q "x=16.00 y=288.00" "$LOG_FILE"
+grep -q "actor_event=death:fall" "$LOG_FILE"
+grep -q "deaths=1" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 5 --smw-test-autostart --smw-debug-command-file="$TRACE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$TRACE_COMMAND_FILE" "$LOG_FILE"
