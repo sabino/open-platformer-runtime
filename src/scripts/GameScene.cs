@@ -2187,19 +2187,19 @@ public partial class GameScene : Node2D
 
         if (IsDiagonalPipeCeilingTile(tile))
         {
-            slope = new SmwPhysics.SlopeSurface(x0, y1, x1, y0, Ceiling: true);
+            slope = MakeSlopeSurface(tile.Map16, x0, y1, x1, y0, ceiling: true);
             return true;
         }
 
         if (IsSlopeUpRightTile(tile))
         {
-            slope = new SmwPhysics.SlopeSurface(x0, y1, x1, y0);
+            slope = MakeSlopeSurface(tile.Map16, x0, y1, x1, y0);
             return true;
         }
 
         if (IsSlopeDownRightTile(tile))
         {
-            slope = new SmwPhysics.SlopeSurface(x0, y0, x1, y1);
+            slope = MakeSlopeSurface(tile.Map16, x0, y0, x1, y1);
             return true;
         }
 
@@ -2216,12 +2216,26 @@ public partial class GameScene : Node2D
     {
         if (TryGetStandardSlopeOffsets(tile.Map16, out var leftYOffset, out var rightYOffset))
         {
-            slope = new SmwPhysics.SlopeSurface(x0, y0 + leftYOffset, x1, y0 + rightYOffset);
+            slope = MakeSlopeSurface(tile.Map16, x0, y0 + leftYOffset, x1, y0 + rightYOffset);
             return true;
         }
 
         slope = default;
         return false;
+    }
+
+    private static SmwPhysics.SlopeSurface MakeSlopeSurface(
+        int map16,
+        float x0,
+        float y0,
+        float x1,
+        float y1,
+        bool ceiling = false)
+    {
+        var nativeKind = SmwPhysics.TryNativeSlopeKindForMap16(map16, out var kind) ? kind : 32;
+        var nativeSnapDistance = SmwPhysics.NativeSlopeSnapDistanceForKind(nativeKind);
+        var snapDistance = nativeSnapDistance > 0.0f ? nativeSnapDistance : -1.0f;
+        return new SmwPhysics.SlopeSurface(x0, y0, x1, y1, ceiling, nativeKind, snapDistance);
     }
 
     private static bool TryGetStandardSlopeOffsets(int map16, out float leftYOffset, out float rightYOffset)
@@ -5189,7 +5203,8 @@ public partial class GameScene : Node2D
             $"xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
-            $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
+            $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
+            $"jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
             $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
 
         if (_debugTraceOam)
@@ -5535,7 +5550,8 @@ public partial class GameScene : Node2D
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
-            $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
+            $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
+            $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
     }
@@ -5647,7 +5663,7 @@ public partial class GameScene : Node2D
             .OrderBy(item => item.DistanceSq)
             .Take(8)
             .Select(item =>
-                $"{item.Index}:line={item.Slope.X0:0.00},{item.Slope.Y0:0.00}->{item.Slope.X1:0.00},{item.Slope.Y1:0.00}:ceil={(item.Slope.Ceiling ? 1 : 0)}");
+                $"{item.Index}:line={item.Slope.X0:0.00},{item.Slope.Y0:0.00}->{item.Slope.X1:0.00},{item.Slope.Y1:0.00}:ceil={(item.Slope.Ceiling ? 1 : 0)}:kind={item.Slope.NativeSlopeKind}:snap={item.Slope.SnapDistance:0.00}");
         var description = string.Join(" | ", slopes);
         return $"slopes={(string.IsNullOrEmpty(description) ? "none" : description)}";
     }

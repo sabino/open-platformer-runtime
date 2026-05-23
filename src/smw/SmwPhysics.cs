@@ -106,6 +106,72 @@ public sealed class SmwPhysics
         0x01, 0x00, 0x00, 0x00, 0x00,
     ];
 
+    public static readonly byte[] NativeSlopePlayerTable =
+    [
+        0x08, 0x08, 0x08, 0x08, 0x10, 0x10, 0x10, 0x10,
+        0x18, 0x18, 0x20, 0x20, 0x28, 0x30, 0x08, 0x10,
+        0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x38, 0x50, 0x48, 0x40, 0x58, 0x58, 0x60, 0x60,
+        0x00,
+    ];
+
+    public static readonly byte[] NativeSlopePlayerStationaryYSpeedTable =
+    [
+        0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+        0x20, 0x20, 0x20, 0x20, 0x30, 0x30, 0x40, 0x30,
+        0x30, 0x30, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x30, 0x30, 0x30, 0x30, 0x40, 0x40, 0x40, 0x40,
+        0x00,
+    ];
+
+    public static readonly sbyte[] NativeSlopePlayerTowardsPeakYSpeedTable =
+    [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        unchecked((sbyte)0xEC), unchecked((sbyte)0xEC), unchecked((sbyte)0xEE), unchecked((sbyte)0xEE),
+        unchecked((sbyte)0xDA), unchecked((sbyte)0xDA), 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        unchecked((sbyte)0xDA), unchecked((sbyte)0xDA), unchecked((sbyte)0xDA), unchecked((sbyte)0xDA),
+        0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+
+    public static readonly byte[] NativeSlopePlayerSnapDistanceTable =
+    [
+        0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
+        0x09, 0x09, 0x09, 0x09, 0x0B, 0x0B, 0x0B, 0x0B,
+        0x0B, 0x0B, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0B, 0x0B, 0x0B, 0x0B, 0x14, 0x14, 0x14, 0x14,
+        0x06,
+    ];
+
+    public static readonly sbyte[] NativeSlopeTypeTable =
+    [
+        unchecked((sbyte)0xFF), unchecked((sbyte)0xFF), unchecked((sbyte)0xFF), unchecked((sbyte)0xFF),
+        0x01, 0x01, 0x01, 0x01,
+        unchecked((sbyte)0xFE), unchecked((sbyte)0xFE), 0x02, 0x02,
+        unchecked((sbyte)0xFD), 0x03, unchecked((sbyte)0xFD), 0x03,
+        unchecked((sbyte)0xFD), 0x03, unchecked((sbyte)0xFD), 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x08, 0x08, unchecked((sbyte)0xF8), unchecked((sbyte)0xF8),
+        unchecked((sbyte)0xFC), unchecked((sbyte)0xFC), 0x04, 0x04,
+        0x00,
+    ];
+
+    public static readonly byte[] NativeSlopeSteepnessTable =
+    [
+        0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
+        2, 2, 2, 2, 2, 3, 3, 3, 3, 3,
+        4, 4, 4, 4, 4, 5, 5, 5, 5, 5,
+        6, 6, 6, 6, 6, 7, 7, 7, 7, 7,
+        8, 8, 8, 8, 8, 9, 9, 9, 9, 9,
+        10, 10, 10, 10, 10, 11, 11, 11, 11, 11,
+        12, 12, 12, 12, 12, 13, 13, 13, 13, 13,
+        14, 15, 16, 17, 3, 3, 4, 4, 9, 9,
+        10, 10, 12, 12, 13, 13, 18, 19, 20, 21,
+        22, 23, 28, 29, 30, 31, 24, 25, 26, 27,
+        8, 9, 10, 11, 12, 13,
+    ];
+
     private static readonly int[] JumpHeightTable =
     [
         -80, -74, -82, -76,
@@ -133,6 +199,9 @@ public sealed class SmwPhysics
         public bool RunningTakeoff;
         public bool Ducking;
         public int CapeFloatFrames;
+        public int SlopeKind;
+        public int SlopePlayer;
+        public int SlopeType;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -159,6 +228,9 @@ public sealed class SmwPhysics
             Ducking = state.Ducking;
             JumpHeldFrames = state.JumpHeldFrames;
             CapeFloatFrames = state.CapeFloatFrames;
+            SlopeKind = state.SlopeKind;
+            SlopePlayer = state.SlopePlayer;
+            SlopeType = state.SlopeType;
         }
 
         public readonly int X;
@@ -178,6 +250,9 @@ public sealed class SmwPhysics
         public readonly bool Ducking;
         public readonly int JumpHeldFrames;
         public readonly int CapeFloatFrames;
+        public readonly int SlopeKind;
+        public readonly int SlopePlayer;
+        public readonly int SlopeType;
     }
 
     public struct FrameInput
@@ -192,7 +267,14 @@ public sealed class SmwPhysics
         public bool Run;
     }
 
-    public readonly record struct SlopeSurface(float X0, float Y0, float X1, float Y1, bool Ceiling = false);
+    public readonly record struct SlopeSurface(
+        float X0,
+        float Y0,
+        float X1,
+        float Y1,
+        bool Ceiling = false,
+        int NativeSlopeKind = 32,
+        float SnapDistance = -1.0f);
 
     public PlayerState MakeState(int xPx, int yPx, int powerup = BigPowerup)
     {
@@ -202,6 +284,7 @@ public sealed class SmwPhysics
             Y = yPx,
             Facing = 1,
             Powerup = Math.Clamp(powerup, SmallPowerup, FirePowerup),
+            SlopeKind = -1,
         };
     }
 
@@ -264,6 +347,9 @@ public sealed class SmwPhysics
 
         IntegrateY(ref state);
         state.OnGround = false;
+        state.SlopeKind = -1;
+        state.SlopePlayer = 0;
+        state.SlopeType = 0;
         ResolveAxis(ref state, solids, solidStepUpEnabled, solidVerticalEnabled, horizontal: false);
         ResolveSlopes(ref state, slopes, previousBottom);
         if (!state.OnGround &&
@@ -378,6 +464,27 @@ public sealed class SmwPhysics
         return JumpHeightTable[JumpSpeedIndexFor(xSpeed, spin)];
     }
 
+    public static bool TryNativeSlopeKindForMap16(int map16, out int kind)
+    {
+        var low = map16 & 0xFF;
+        var index = low - 0x6E;
+        if (index < 0 || index >= NativeSlopeSteepnessTable.Length)
+        {
+            kind = 32;
+            return false;
+        }
+
+        kind = NativeSlopeSteepnessTable[index];
+        return kind >= 0 && kind < NativeSlopePlayerSnapDistanceTable.Length;
+    }
+
+    public static float NativeSlopeSnapDistanceForKind(int kind)
+    {
+        return kind >= 0 && kind < NativeSlopePlayerSnapDistanceTable.Length
+            ? NativeSlopePlayerSnapDistanceTable[kind]
+            : 16.0f;
+    }
+
     public static bool TryResolveFloorSlope(
         float probeX,
         float bottom,
@@ -408,7 +515,8 @@ public sealed class SmwPhysics
             }
 
             surfaceY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
-            if (ySpeed < 0 || bottom < surfaceY - aboveTolerance || bottom > surfaceY + belowTolerance)
+            var effectiveBelowTolerance = EffectiveSlopeBelowTolerance(slope, belowTolerance);
+            if (ySpeed < 0 || bottom < surfaceY - aboveTolerance || bottom > surfaceY + effectiveBelowTolerance)
             {
                 continue;
             }
@@ -443,7 +551,49 @@ public sealed class SmwPhysics
             return false;
         }
 
-        return top < surfaceY - 1.0f && previousBottom <= surfaceY + belowTolerance;
+        var effectiveBelowTolerance = EffectiveSlopeBelowTolerance(slopes, probeX, surfaceY, belowTolerance);
+        return top < surfaceY - 1.0f && previousBottom <= surfaceY + effectiveBelowTolerance;
+    }
+
+    private static float EffectiveSlopeBelowTolerance(SlopeSurface slope, float fallback)
+    {
+        return slope.SnapDistance >= 0.0f ? slope.SnapDistance : fallback;
+    }
+
+    private static float EffectiveSlopeBelowTolerance(
+        IReadOnlyList<SlopeSurface> slopes,
+        float probeX,
+        float surfaceY,
+        float fallback)
+    {
+        foreach (var slope in slopes)
+        {
+            if (slope.Ceiling)
+            {
+                continue;
+            }
+
+            var minX = MathF.Min(slope.X0, slope.X1);
+            var maxX = MathF.Max(slope.X0, slope.X1);
+            if (probeX < minX || probeX > maxX)
+            {
+                continue;
+            }
+
+            var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+            if (t < 0.0f || t > 1.0f)
+            {
+                continue;
+            }
+
+            var candidateY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            if (MathF.Abs(candidateY - surfaceY) <= 0.01f)
+            {
+                return EffectiveSlopeBelowTolerance(slope, fallback);
+            }
+        }
+
+        return fallback;
     }
 
     private static void ApplyDucking(ref PlayerState state, FrameInput input)
@@ -902,7 +1052,7 @@ public sealed class SmwPhysics
             }
         }
 
-        if (!TryResolvePlayerFloorSlopeFromAbove(state, top, bottom, previousBottom, slopes, out var floorY))
+        if (!TryResolvePlayerFloorSlopeFromAbove(state, top, bottom, previousBottom, slopes, out var floorY, out var floorSlope))
         {
             return;
         }
@@ -910,10 +1060,7 @@ public sealed class SmwPhysics
         state.Y = (int)MathF.Round(floorY - playerHeight);
         state.SubY = 0;
         state.SubYSpeed = 0;
-        if (state.YSpeed > 0)
-        {
-            state.YSpeed = 0;
-        }
+        ApplyNativeSlopeContact(ref state, floorSlope);
         state.OnGround = true;
         state.RunningTakeoff = false;
     }
@@ -924,7 +1071,8 @@ public sealed class SmwPhysics
         float bottom,
         float previousBottom,
         IReadOnlyList<SlopeSurface> slopes,
-        out float floorY)
+        out float floorY,
+        out SlopeSurface floorSlope)
     {
         var leftProbe = state.XFloat + 2.0f;
         var centerProbe = state.XFloat + PlayerWidth * 0.5f;
@@ -962,11 +1110,70 @@ public sealed class SmwPhysics
                 16.0f,
                 out floorY))
             {
+                FindMatchingFloorSlope(probeX, floorY, slopes, out floorSlope);
                 return true;
             }
         }
 
         floorY = 0.0f;
+        floorSlope = default;
+        return false;
+    }
+
+    private static void ApplyNativeSlopeContact(ref PlayerState state, SlopeSurface slope)
+    {
+        var kind = slope.NativeSlopeKind;
+        if (kind < 0 || kind >= NativeSlopePlayerTable.Length)
+        {
+            kind = 32;
+        }
+
+        state.SlopeKind = kind;
+        state.SlopePlayer = NativeSlopePlayerTable[kind];
+        state.SlopeType = NativeSlopeTypeTable[kind];
+
+        var stationaryYSpeed = NativeSlopePlayerStationaryYSpeedTable[kind];
+        if (state.YSpeed > stationaryYSpeed)
+        {
+            state.YSpeed = stationaryYSpeed;
+        }
+    }
+
+    private static bool FindMatchingFloorSlope(
+        float probeX,
+        float surfaceY,
+        IReadOnlyList<SlopeSurface> slopes,
+        out SlopeSurface floorSlope)
+    {
+        foreach (var slope in slopes)
+        {
+            if (slope.Ceiling)
+            {
+                continue;
+            }
+
+            var minX = MathF.Min(slope.X0, slope.X1);
+            var maxX = MathF.Max(slope.X0, slope.X1);
+            if (probeX < minX || probeX > maxX)
+            {
+                continue;
+            }
+
+            var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+            if (t < 0.0f || t > 1.0f)
+            {
+                continue;
+            }
+
+            var candidateY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            if (MathF.Abs(candidateY - surfaceY) <= 0.01f)
+            {
+                floorSlope = slope;
+                return true;
+            }
+        }
+
+        floorSlope = default;
         return false;
     }
 

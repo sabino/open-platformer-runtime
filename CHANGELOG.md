@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Ported the native SMW slope metadata tables into `SmwPhysics`, attaching decoded slope kind and snap distance to generated Map16 slope surfaces, exposing current slope contact through HUD/RCON state, and extending collision probes with `kind`/`snap` diagnostics.
 - Added visible Mario collision sensor gizmos and an RCON `sensors` command that reports head/side/foot Map16 probes, pipe-cell roles, and current floor-slope contact for frame-by-frame collision debugging.
 - Limited right-diagonal-pipe horizontal intrusion recovery to body cells only, leaving floor cells to the slope-floor solver instead of treating them as pipe-volume blockers.
 - Removed per-fill audio mix-buffer reallocations and exposed mixer frame/call/time counters through audio/performance RCON status for visible-run slowdown triage.

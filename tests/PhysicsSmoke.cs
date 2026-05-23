@@ -11,6 +11,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckNativeSlopeTables())
+        {
+            return 1;
+        }
         if (!CheckDebugTraceState(physics))
         {
             return 1;
@@ -202,6 +206,43 @@ public static class PhysicsSmoke
                 Console.Error.WriteLine($"cape float y-speed table mismatch at {i}");
                 return false;
             }
+        }
+
+        return true;
+    }
+
+    private static bool CheckNativeSlopeTables()
+    {
+        if (SmwPhysics.NativeSlopePlayerTable.Length != 33 ||
+            SmwPhysics.NativeSlopePlayerStationaryYSpeedTable.Length != 33 ||
+            SmwPhysics.NativeSlopePlayerTowardsPeakYSpeedTable.Length != 33 ||
+            SmwPhysics.NativeSlopePlayerSnapDistanceTable.Length != 33 ||
+            SmwPhysics.NativeSlopeTypeTable.Length != 33 ||
+            SmwPhysics.NativeSlopeSteepnessTable.Length != 106)
+        {
+            Console.Error.WriteLine("expected native slope tables to match SMW table lengths");
+            return false;
+        }
+
+        if (!SmwPhysics.TryNativeSlopeKindForMap16(0x016E, out var gradualLeft) ||
+            gradualLeft != 0 ||
+            !SmwPhysics.TryNativeSlopeKindForMap16(0x01AF, out var steepRight) ||
+            steepRight != 13 ||
+            !SmwPhysics.TryNativeSlopeKindForMap16(0x01C4, out var pipeSlope) ||
+            pipeSlope != 18 ||
+            SmwPhysics.TryNativeSlopeKindForMap16(0x01EB, out _))
+        {
+            Console.Error.WriteLine("expected native Map16 slope-kind decode to follow SMW slope steepness table");
+            return false;
+        }
+
+        if (SmwPhysics.NativeSlopeSnapDistanceForKind(0) != 0x08 ||
+            SmwPhysics.NativeSlopeSnapDistanceForKind(8) != 0x09 ||
+            SmwPhysics.NativeSlopeSnapDistanceForKind(12) != 0x0B ||
+            SmwPhysics.NativeSlopeSnapDistanceForKind(28) != 0x14)
+        {
+            Console.Error.WriteLine("expected native slope snap distances to match SMW player table");
+            return false;
         }
 
         return true;
@@ -647,6 +688,23 @@ public static class PhysicsSmoke
             out _))
         {
             Console.Error.WriteLine("expected from-above slope probe to reject player already below slope surface");
+            return false;
+        }
+
+        var nativeSnapSlopes = new List<SmwPhysics.SlopeSurface>
+        {
+            new(0, 128, 128, 96, NativeSlopeKind: 0, SnapDistance: SmwPhysics.NativeSlopeSnapDistanceForKind(0)),
+        };
+        if (SmwPhysics.TryResolveFloorSlope(
+            probeX: 64.0f,
+            bottom: 121.0f,
+            ySpeed: 2.0f,
+            nativeSnapSlopes,
+            aboveTolerance: 8.0f,
+            belowTolerance: 16.0f,
+            out _))
+        {
+            Console.Error.WriteLine("expected native slope snap distance to override the broad fallback tolerance");
             return false;
         }
 
