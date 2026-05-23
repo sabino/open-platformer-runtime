@@ -80,6 +80,11 @@ public partial class GameScene : Node2D
     private const int AutoplayExploreStuckJumpThreshold = 75;
     private const int AutoplayExploreStuckJumpPeriod = 40;
     private const int AutoplayExploreStuckJumpHeldFrames = 12;
+    private const float AutoplayExploreActorJumpAheadPixels = 112.0f;
+    private const float AutoplayExploreActorJumpBehindPixels = 8.0f;
+    private const float AutoplayExploreActorVerticalRangePixels = 72.0f;
+    private const float AutoplayExploreActorDuckAheadPixels = 160.0f;
+    private const float AutoplayExploreActorDuckBehindPixels = 24.0f;
     private static readonly int[] StompScoreByNativeGivePointsIndex = [100, 200, 400, 800, 1000, 2000, 4000, 8000];
     private static readonly int[] FireballBounceYSpeedBySlopeType = [0, -72, -64, -56, -48, -40, -32, -24, -16];
     private const float FallDeathMarginPixels = 96.0f;
@@ -714,20 +719,99 @@ public partial class GameScene : Node2D
             _autoplayStuckFrames = 0;
         }
 
+        var duck = _state.OnGround && ShouldAutoplayDuckUnderActorAhead();
         var periodicJump = _state.OnGround &&
+            !duck &&
             _autoplayFrame % AutoplayExploreJumpPeriod < AutoplayExploreJumpHeldFrames;
         var stuckJump = _autoplayStuckFrames > AutoplayExploreStuckJumpThreshold &&
+            !duck &&
             _autoplayFrame % AutoplayExploreStuckJumpPeriod < AutoplayExploreStuckJumpHeldFrames;
-        var jump = periodicJump || stuckJump;
+        var actorJump = _state.OnGround && !duck && ShouldAutoplayJumpForActorAhead();
+        var jump = periodicJump || stuckJump || actorJump;
         var jumpPressed = jump && !_autoplayJumpHeld;
         _autoplayJumpHeld = jump;
         return new SmwPhysics.FrameInput
         {
             Right = true,
+            Down = duck,
             Jump = jump,
             JumpPressed = jumpPressed,
             Run = true,
         };
+    }
+
+    private bool ShouldAutoplayJumpForActorAhead()
+    {
+        var playerRect = _physics.PlayerRect(_state);
+        var playerRight = playerRect.Position.X + playerRect.Size.X;
+        foreach (var actor in _spriteActors)
+        {
+            if (!actor.Alive ||
+                !actor.Active ||
+                !actor.Behavior.CanInteract ||
+                !actor.Behavior.Stompable ||
+                IsPowerupItemSprite(actor.SpriteId) ||
+                IsSolidBlockSprite(actor.SpriteId) ||
+                (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
+            {
+                continue;
+            }
+
+            var actorRect = actor.Rect;
+            var ahead = actorRect.Position.X - playerRight;
+            if (ahead < -AutoplayExploreActorJumpBehindPixels || ahead > AutoplayExploreActorJumpAheadPixels)
+            {
+                continue;
+            }
+
+            var actorBottom = actorRect.Position.Y + actorRect.Size.Y;
+            var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+            if (actorBottom < playerRect.Position.Y - AutoplayExploreActorVerticalRangePixels ||
+                actorRect.Position.Y > playerBottom + AutoplayExploreActorVerticalRangePixels)
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool ShouldAutoplayDuckUnderActorAhead()
+    {
+        var playerRect = _physics.PlayerRect(_state);
+        var playerRight = playerRect.Position.X + playerRect.Size.X;
+        foreach (var actor in _spriteActors)
+        {
+            if (!actor.Alive ||
+                !actor.Active ||
+                !actor.Behavior.CanInteract ||
+                actor.Behavior.Stompable ||
+                IsPowerupItemSprite(actor.SpriteId) ||
+                IsSolidBlockSprite(actor.SpriteId) ||
+                (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
+            {
+                continue;
+            }
+
+            var actorRect = actor.Rect;
+            var ahead = actorRect.Position.X - playerRight;
+            if (ahead < -AutoplayExploreActorDuckBehindPixels || ahead > AutoplayExploreActorDuckAheadPixels)
+            {
+                continue;
+            }
+
+            var actorBottom = actorRect.Position.Y + actorRect.Size.Y;
+            if (actorRect.Position.Y < playerRect.Position.Y &&
+                actorBottom >= playerRect.Position.Y - 96.0f &&
+                actorBottom <= playerRect.Position.Y + 12.0f)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool HasAnyFrameInput(SmwPhysics.FrameInput input)
@@ -2030,7 +2114,7 @@ public partial class GameScene : Node2D
     {
         return spriteId switch
         {
-            0x9F => new SpriteActorBehavior(new Rect2(0, 0, 64, 64), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
+            0x9F => new SpriteActorBehavior(new Rect2(8, 16, 48, 24), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
             0x95 => new SpriteActorBehavior(new Rect2(0, -4, 20, 36), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
             0xAB => new SpriteActorBehavior(new Rect2(-4, -15, 20, 31), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
             0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.58f),
@@ -3708,7 +3792,7 @@ public partial class GameScene : Node2D
                 continue;
             }
 
-            var handledPlayerCollision = ResolvePlayerSpriteActorCollision(actor, _physics.PlayerRect(_state));
+            var handledPlayerCollision = ResolvePlayerSpriteActorCollision(actor, _physics.PlayerRect(_state), previousPlayerRect);
             actor.Node.Position = new Vector2(actor.X, actor.Y);
             if (handledPlayerCollision)
             {
@@ -4473,7 +4557,7 @@ public partial class GameScene : Node2D
         _lastActorEvent = $"block:{actor.SpriteId:X2}:top";
     }
 
-    private bool ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect)
+    private bool ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect, Rect2 previousPlayerRect)
     {
         var actorRect = actor.Rect;
         if (!actor.Alive ||
@@ -4504,8 +4588,12 @@ public partial class GameScene : Node2D
             return true;
         }
 
-        var playerBottom = _state.YFloat + SmwPhysics.PlayerHeightFor(_state);
-        var stomped = actor.Behavior.Stompable && _state.YSpeed > 0 && playerBottom <= actorRect.Position.Y + 10.0f;
+        var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+        var previousBottom = previousPlayerRect.Position.Y + previousPlayerRect.Size.Y;
+        var actorTop = actorRect.Position.Y;
+        var crossedActorTop = previousBottom <= actorTop + 20.0f && playerBottom >= actorTop - 2.0f;
+        var topContact = playerBottom <= actorTop + 32.0f;
+        var stomped = actor.Behavior.Stompable && _state.YSpeed > 0 && topContact && crossedActorTop;
         if (stomped)
         {
             if (TryStompRex(actor))
