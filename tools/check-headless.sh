@@ -31,11 +31,12 @@ C7_DEBUG_VISUAL_COMMAND_FILE="$(mktemp)"
 SLOPE_PROBE_COMMAND_FILE="$(mktemp)"
 PIPE_UNDERSIDE_COMMAND_FILE="$(mktemp)"
 PIPE_SLOPE_SUPPORT_COMMAND_FILE="$(mktemp)"
+PIPE_UNDERSIDE_JUMP_COMMAND_FILE="$(mktemp)"
 DEATH_COMMAND_FILE="$(mktemp)"
 TRACE_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -137,6 +138,13 @@ spawn 2025 256
 powerup small
 velocity -3 0
 step 1
+EOF
+cat >"$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" <<'EOF'
+pause
+actors off
+spawn 2048 304 small
+ground on
+trace_full 3 jump tag=pipe_underside_jump
 EOF
 cat >"$DEATH_COMMAND_FILE" <<'EOF'
 pause
@@ -313,6 +321,14 @@ grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "x=2024.81 y=261.00" "$LOG_FILE"
 grep -q "actors_on=0" "$LOG_FILE"
 ! grep -q "x=2048.00" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 6 --smw-test-autostart --smw-debug-command-file="$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-test-ground: grounded=1" "$LOG_FILE"
+grep -q "smw-debug-trace: tag=pipe_underside_jump i=1/3" "$LOG_FILE"
+grep "smw-debug-trace: tag=pipe_underside_jump i=1/3" "$LOG_FILE" | grep -q "ys=-77"
+! grep "smw-debug-trace: tag=pipe_underside_jump i=1/3" "$LOG_FILE" | grep -q "y=313.00"
+grep -q "smw-debug-state: tag=pipe_underside_jump_done" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$DEATH_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$DEATH_COMMAND_FILE" "$LOG_FILE"

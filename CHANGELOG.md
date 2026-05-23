@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Gated ceiling-slope bonks by previous-frame position and stopped the right-diagonal-pipe ceiling helper from overriding upward motion, so a controlled jump probe under the Yoshi Island 1 sloped pipe keeps native upward speed instead of snapping to the underside.
+- Added optional `SMW_DEBUG_COLLISION_TRACE=1` and `SMW_DEBUG_SLOPE_TRACE=1` physics logs for exact rect/slope contact branches during RCON-driven headless repros.
 - Fed native slope contact metadata back into horizontal physics so held movement and no-input slope sliding read the SMW `player_slope_player_is_on1` acceleration, cap, friction, and target sub-speed table rows instead of falling back to flat-ground rows.
 - Added RCON `slope_probe`, `trace_sensors`, and `trace_full` diagnostics so unattended playtests can log per-foot slope candidates, snap distances, pipe-cell roles, and sensor state frame-by-frame.
 - Guarded Mario's OAM pose bridge against out-of-atlas dynamic tile regions so any still-unported pose descriptor fails hidden instead of drawing stray texture fragments.

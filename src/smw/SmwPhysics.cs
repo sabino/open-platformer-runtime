@@ -4,6 +4,11 @@ using System.Collections.Generic;
 
 public sealed class SmwPhysics
 {
+    private static readonly bool DebugCollisionTrace =
+        System.Environment.GetEnvironmentVariable("SMW_DEBUG_COLLISION_TRACE") == "1";
+    private static readonly bool DebugSlopeTrace =
+        System.Environment.GetEnvironmentVariable("SMW_DEBUG_SLOPE_TRACE") == "1";
+
     public const int PlayerWidth = 14;
     public const int SmallPowerup = 0;
     public const int BigPowerup = 1;
@@ -879,6 +884,15 @@ public sealed class SmwPhysics
                 continue;
             }
 
+            if (DebugCollisionTrace)
+            {
+                GD.Print(
+                    $"smw-physics-collision: axis={(horizontal ? "x" : "y")} solid={solidIndex} " +
+                    $"rect={rect.Position.X:0.00},{rect.Position.Y:0.00},{rect.Size.X:0.00},{rect.Size.Y:0.00} " +
+                    $"solid={solid.Position.X:0.00},{solid.Position.Y:0.00},{solid.Size.X:0.00},{solid.Size.Y:0.00} " +
+                    $"xs={state.XSpeed} ys={state.YSpeed}");
+            }
+
             if (horizontal)
             {
                 if (ShouldIgnoreWideFloorForHorizontalCollision(rect, solid))
@@ -1029,6 +1043,7 @@ public sealed class SmwPhysics
         var playerHeight = PlayerHeightFor(state);
         var bottom = state.YFloat + playerHeight;
         var top = state.YFloat;
+        var previousTop = previousBottom - playerHeight;
         foreach (var slope in slopes)
         {
             var minX = MathF.Min(slope.X0, slope.X1);
@@ -1047,7 +1062,16 @@ public sealed class SmwPhysics
             var surfaceY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
             if (slope.Ceiling)
             {
-                if (state.YSpeed >= 0 || top < surfaceY - 16.0f || top > surfaceY + 6.0f)
+                if (DebugSlopeTrace)
+                {
+                    GD.Print(
+                        $"smw-physics-slope: ceil x={probeX:0.00} top={top:0.00} prev_top={previousTop:0.00} " +
+                        $"surface={surfaceY:0.00} ys={state.YSpeed} line={slope.X0:0.00},{slope.Y0:0.00}->{slope.X1:0.00},{slope.Y1:0.00}");
+                }
+                if (state.YSpeed >= 0 ||
+                    previousTop < surfaceY - 1.0f ||
+                    top < surfaceY - 16.0f ||
+                    top > surfaceY + 6.0f)
                 {
                     continue;
                 }
