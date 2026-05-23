@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added `--smw-input-script=/path/to/script`, a deterministic frame-count input runner for C# Godot playtest/autoplay smoke checks and future TAS compatibility work.
+- Added `--smw-input-script=/path/to/script`, a deterministic frame-count input runner for C# Godot playtest/autoplay smoke checks and future TAS compatibility work, including headless coverage for scripted diagonal-pipe entry.
 - Reused the floor-slope probe for runtime sprite actors so imported Yoshi Island 1 enemies can snap to generated slope surfaces instead of only colliding with rectangular solids.
 - Added grounded big-form ducking to the C# physics/runtime state: holding down now switches to a 16px duck hitbox with foot preservation, suppresses grounded horizontal acceleration, updates debug HUD/gizmos, and renders native player pose `60`.
 - Matched the native no-horizontal-input branch more closely by skipping friction while airborne instead of applying a temporary air-friction approximation.
