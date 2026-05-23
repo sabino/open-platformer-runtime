@@ -169,6 +169,8 @@ public partial class GameScene : Node2D
     private int _debugCommandInputFrames;
     private int _debugCommandInputFrame;
     private SmwPhysics.FrameInput _debugCommandInput;
+    private bool _debugActorsEnabled = true;
+    private bool _debugInvincible;
     private TcpListener? _debugRconListener;
     private readonly List<TcpClient> _debugRconClients = [];
     private readonly Dictionary<TcpClient, StringBuilder> _debugRconBuffers = [];
@@ -2790,6 +2792,10 @@ public partial class GameScene : Node2D
         {
             return false;
         }
+        if (!_debugActorsEnabled)
+        {
+            return false;
+        }
 
         for (var i = _spriteActors.Count - 1; i >= 0; i--)
         {
@@ -3223,6 +3229,11 @@ public partial class GameScene : Node2D
         var actorRect = actor.Rect;
         if (_playerHurtCooldown > 0)
         {
+            return;
+        }
+        if (_debugInvincible)
+        {
+            _lastActorEvent = $"god:{actor.SpriteId:X2}:{actor.State}";
             return;
         }
 
@@ -4185,6 +4196,42 @@ public partial class GameScene : Node2D
         GD.Print($"smw-test-spinjump: spin={(spinJump ? 1 : 0)}");
     }
 
+    public void DebugSetOverlays(bool enabled)
+    {
+        if (DebugOverlays == enabled)
+        {
+            GD.Print($"smw-debug: overlays={(DebugOverlays ? 1 : 0)} unchanged=1");
+            return;
+        }
+
+        DebugOverlays = enabled;
+        _player?.QueueFree();
+        _player = null;
+        BuildWorld();
+        BuildPlayer();
+        BuildHud();
+        if (_player != null)
+        {
+            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+        }
+        UpdatePlayerGraphic(force: true);
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print($"smw-debug: overlays={(DebugOverlays ? 1 : 0)} rebuilt=1");
+    }
+
+    public void DebugSetActorsEnabled(bool enabled)
+    {
+        _debugActorsEnabled = enabled;
+        GD.Print($"smw-debug: actors={(_debugActorsEnabled ? 1 : 0)}");
+    }
+
+    public void DebugSetInvincible(bool enabled)
+    {
+        _debugInvincible = enabled;
+        GD.Print($"smw-debug: invincible={(_debugInvincible ? 1 : 0)}");
+    }
+
     public void DebugUseCommandFile(string path)
     {
         _debugCommandPath = path.StartsWith("res://", StringComparison.Ordinal) ||
@@ -4438,6 +4485,22 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugSetPlayerSpinJump(ParseDebugBool(parts[1]));
                 return BuildDebugState("spinjump");
+            case "overlays":
+            case "gizmos":
+            case "debug":
+                RequirePartCount(parts, 2);
+                DebugSetOverlays(ParseDebugBool(parts[1]));
+                return BuildDebugState("overlays");
+            case "actors":
+            case "sprites":
+                RequirePartCount(parts, 2);
+                DebugSetActorsEnabled(ParseDebugBool(parts[1]));
+                return BuildDebugState("actors");
+            case "god":
+            case "invincible":
+                RequirePartCount(parts, 2);
+                DebugSetInvincible(ParseDebugBool(parts[1]));
+                return BuildDebugState("invincible");
             case "level":
                 RequirePartCount(parts, 2);
                 DebugEnterLevel(parts[1].ToUpperInvariant());
@@ -4510,7 +4573,8 @@ public partial class GameScene : Node2D
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"actors={_spriteActors.Count} near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount}";
+            $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
+            $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount}";
     }
 
     private string DescribeNearestActor()

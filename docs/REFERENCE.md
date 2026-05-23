@@ -64,6 +64,8 @@ Runtime capture note: `tools/capture-wayland.sh` launches the Godot .NET binary 
 
 Runtime RCON capture note: the loopback debug server supports `snapshot`/`capture_now` for immediate viewport PNG writes and `capture <path> <frames>` for scheduled writes after process frames. RCON command parsing deliberately keeps `:` inside path tokens so `res://generated/...` paths remain valid.
 
+Runtime RCON control note: long Wayland playtest sessions can now enable or disable debug presentation and interference live. `overlays`/`gizmos` rebuilds the world presentation and player HUD with collision, slope, actor, pipe, goal, screen, and semantic markers; `actors` freezes runtime sprite actor motion and interaction without hiding them; `god` suppresses actor damage while still recording the attempted interaction in `actor_event`.
+
 Sprite GFX note: the importer now writes `spritesets/level_*_spritegfx*_8x8.png` and matching metadata from the same sprite upload table used by the native code. These files are raw sprite VRAM previews, not final enemy frames. Correct Koopa, Yoshi, power-up, and effect rendering still requires porting each sprite's OAM assembly, tile index, tile size, flip, priority, and palette selection rules.
 
 External Godot physics reference note: Tortellini at `https://github.com/ToadsworthLP/Tortellini` was checked as a Godot/C# Mario-style controller reference. The useful pieces are architectural rather than numeric: explicit movement states, slope slide/floor-normal handling, and snapping around `MoveAndSlide`. Its Godot 3-era 3D implementation and exported feel constants are not used as the source of truth for this 2D classic-platformer-compatible runtime; the native SMW tables remain the target.

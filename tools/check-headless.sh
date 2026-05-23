@@ -223,6 +223,12 @@ SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 880 304 | tee "$RCON_LO
 grep -q "x=880.00" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh powerup small | tee "$RCON_LOG"
 grep -q "pow=0" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh overlays on | tee "$RCON_LOG"
+grep -q "overlays=1" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh actors off | tee "$RCON_LOG"
+grep -q "actors_on=0" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh god on | tee "$RCON_LOG"
+grep -q "god=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
 grep -q "ok step_queued=1" "$RCON_LOG"
 for _ in $(seq 1 80); do
