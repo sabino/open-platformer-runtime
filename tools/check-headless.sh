@@ -35,11 +35,12 @@ PIPE_UNDERSIDE_JUMP_COMMAND_FILE="$(mktemp)"
 DEATH_COMMAND_FILE="$(mktemp)"
 TIME_UP_COMMAND_FILE="$(mktemp)"
 GAME_OVER_COMMAND_FILE="$(mktemp)"
+PAUSE_COMMAND_FILE="$(mktemp)"
 TRACE_COMMAND_FILE="$(mktemp)"
 COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -165,6 +166,13 @@ pause
 lives 1
 timer frames 1
 step 1
+EOF
+cat >"$PAUSE_COMMAND_FILE" <<'EOF'
+pause
+spawn 32 288
+timer frames 120
+game_pause on
+step 3
 EOF
 cat >"$TRACE_COMMAND_FILE" <<'EOF'
 pause
@@ -389,6 +397,13 @@ grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "gameover=1"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "lives=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=gameover:time_up"
 
+"$GODOT_BIN" --headless --path . --quit-after 7 --smw-test-autostart --smw-debug-command-file="$PAUSE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$PAUSE_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-runtime: pause level=105 state=1 source=debug" "$LOG_FILE"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "gamepause=1"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "x=32.00 y=288.00"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "timer_frames=120"
+
 "$GODOT_BIN" --headless --path . --quit-after 5 --smw-test-autostart --smw-debug-command-file="$TRACE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$TRACE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-test-ground: grounded=1" "$LOG_FILE"
@@ -489,6 +504,16 @@ grep -q "smw-debug-timer: tag=set frames=120 seconds=2" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh timer | tee "$RCON_LOG"
 grep -q "smw-debug-timer: tag=status" "$RCON_LOG"
 grep -q "seconds=2" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh game_pause on | tee "$RCON_LOG"
+grep -q "gamepause=1" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 2 | tee "$RCON_LOG"
+grep -q "ok step_queued=2" "$RCON_LOG"
+sleep 0.2
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh state rcon_paused | tee "$RCON_LOG"
+grep -q "gamepause=1" "$RCON_LOG"
+grep -q "timer_frames=120" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh game_pause off | tee "$RCON_LOG"
+grep -q "gamepause=0" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh lives 1 | tee "$RCON_LOG"
 grep -q "lives=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh timer frames 1 | tee "$RCON_LOG"
