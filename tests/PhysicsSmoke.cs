@@ -127,6 +127,11 @@ public static class PhysicsSmoke
             unchecked((sbyte)0xd0), 0x30,
         ];
 
+        if (SmwPhysics.HorizontalMaxSpeedTable.Length != 148)
+        {
+            Console.Error.WriteLine($"expected full horizontal max speed table, got {SmwPhysics.HorizontalMaxSpeedTable.Length}");
+            return false;
+        }
         for (var i = 0; i < expected.Length; i++)
         {
             if (SmwPhysics.HorizontalMaxSpeedTable[i] != expected[i])
@@ -143,6 +148,19 @@ public static class PhysicsSmoke
             SmwPhysics.HorizontalAccelerationTable[75] != SmwPhysics.NativeFlatRunTurnAcceleration)
         {
             Console.Error.WriteLine("expected native horizontal acceleration table to expose flat turn rows");
+            return false;
+        }
+
+        if (SmwPhysics.HorizontalDecelerationTable.Length != 30 ||
+            SmwPhysics.HorizontalGroundFrictionTable.Length != 30 ||
+            SmwPhysics.HorizontalTargetSubSpeedTable.Length != 17 ||
+            SmwPhysics.HorizontalGroundFrictionTable[0] != -0x0020 ||
+            SmwPhysics.HorizontalGroundFrictionTable[1] != 0x0020 ||
+            SmwPhysics.HorizontalDecelerationTable[22] != -0x0400 ||
+            SmwPhysics.HorizontalTargetSubSpeedTable[11] != -0x2000 ||
+            SmwPhysics.HorizontalTargetSubSpeedTable[12] != 0x2000)
+        {
+            Console.Error.WriteLine("expected native horizontal friction/deceleration/target sub-speed tables");
             return false;
         }
 
