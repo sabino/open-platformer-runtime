@@ -101,6 +101,14 @@ public partial class SmwAudio : Node
         _voices.Clear();
     }
 
+    public string DebugStatus()
+    {
+        var framesAvailable = _playback?.GetFramesAvailable() ?? -1;
+        return $"loaded={(_loaded ? 1 : 0)} samples={LoadedProbeSampleCount} voices={_voices.Count} " +
+            $"music={(_musicPlaying ? 1 : 0)} music_frame={_musicFrame} events={_musicPattern.Count} " +
+            $"loop_frames={_musicLoopFrames} frames_available={framesAvailable}";
+    }
+
     private void EnsureLoaded()
     {
         if (_loaded)

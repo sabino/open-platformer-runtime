@@ -626,7 +626,10 @@ public partial class GameScene : Node2D
             return;
         }
 
-        _audio?.PlayMusicPreview(_currentLevelMusicPreview);
+        if (AudioEnabled)
+        {
+            _audio?.PlayMusicPreview(_currentLevelMusicPreview);
+        }
         GD.Print($"smw-runtime: level_music level={_currentLevelId} music_index={_currentLevelMusicIndex} bank={_currentLevelMusicPreview}");
     }
 
@@ -4430,6 +4433,35 @@ public partial class GameScene : Node2D
         GD.Print($"smw-debug: invincible={(_debugInvincible ? 1 : 0)}");
     }
 
+    public string DebugSetAudioEnabled(bool enabled)
+    {
+        AudioEnabled = enabled;
+        if (!AudioEnabled)
+        {
+            _audio?.StopMusicPreview();
+            if (_audio != null)
+            {
+                _audio.ProcessMode = ProcessModeEnum.Disabled;
+            }
+
+            var disabled = BuildDebugAudioState("toggle");
+            GD.Print(disabled);
+            return disabled;
+        }
+
+        if (_audio == null)
+        {
+            _audio = new SmwAudio { Name = "SmwAudio" };
+            AddChild(_audio);
+        }
+
+        _audio.ProcessMode = ProcessModeEnum.Inherit;
+        StartLevelMusic();
+        var enabledState = BuildDebugAudioState("toggle");
+        GD.Print(enabledState);
+        return enabledState;
+    }
+
     public void DebugUseCommandFile(string path)
     {
         _debugCommandPath = path.StartsWith("res://", StringComparison.Ordinal) ||
@@ -4707,6 +4739,8 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugSetInvincible(ParseDebugBool(parts[1]));
                 return BuildDebugState("invincible");
+            case "audio":
+                return ExecuteDebugAudioCommand(parts);
             case "level":
                 RequirePartCount(parts, 2);
                 DebugEnterLevel(parts[1].ToUpperInvariant());
@@ -4872,6 +4906,24 @@ public partial class GameScene : Node2D
         var line = $"smw-debug-actors-near: radius={radius:0.00} {DescribeActorsNear(radius)}";
         GD.Print(line);
         return line;
+    }
+
+    private string ExecuteDebugAudioCommand(string[] parts)
+    {
+        if (parts.Length < 2 || parts[1].Equals("status", StringComparison.OrdinalIgnoreCase))
+        {
+            var status = BuildDebugAudioState("status");
+            GD.Print(status);
+            return status;
+        }
+
+        return DebugSetAudioEnabled(ParseDebugBool(parts[1]));
+    }
+
+    private string BuildDebugAudioState(string tag)
+    {
+        var audioStatus = _audio?.DebugStatus() ?? "loaded=0 samples=0 voices=0 music=0 music_frame=0 events=0 loop_frames=0 frames_available=-1";
+        return $"smw-debug-audio: tag={tag} enabled={(AudioEnabled ? 1 : 0)} node={(_audio != null ? 1 : 0)} bank={_currentLevelMusicPreview} {audioStatus}";
     }
 
     private string PrintDebugPlayerOam(string tag)

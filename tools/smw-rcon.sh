@@ -17,6 +17,8 @@ Examples:
   $0 spawn 2025 256
   $0 state
   $0 oam
+  $0 audio status
+  $0 audio off
 EOF
   exit 2
 fi

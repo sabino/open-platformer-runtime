@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added RCON `audio status|off|on` controls so visible Wayland playtests can stop/restart the internal APU probe and inspect voice/generator-buffer state without relaunching.
 - Restricted right-diagonal pipe underside correction during active horizontal walking and added a headless regression at the reported sloped-pipe underside coordinate so walking under it stays in level `105` instead of taking the pipe transition path, while stationary embedded-pipe recovery still resolves to the known `x=896` boundary.
 - Added RCON `player_oam`/`oam`/`pose` inspection so visual Mario glitches can be traced to the exact native pose, palette variant, descriptor bytes, dynamic GFX32 source tiles, sprite positions, and atlas regions active at that frame.
 - Generated `GFX32/GFX33` player atlases for all four native player palette variants and switched the runtime fire power-up render path to the Fire Mario palette instead of reusing normal Mario colors.
