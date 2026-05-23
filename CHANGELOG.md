@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Made the visible level timer affect gameplay: when it reaches zero, the runtime logs a `time_up` player death, decrements the temporary life counter, restarts the current level, and exposes RCON `timer`/`time` controls for deterministic clock probes.
 - Added a normal-play status bar and RCON `hud`/`status` probe for score, lives, coins, dragon coins, timer, level, and course-clear state, with score increments for imported coins and the first block rewards.
 - Added a course-clear control-lock slice: after touching the imported goal tape, Mario now enters a rightward autowalk state with RCON/trace `clear` and `walkout` diagnostics instead of freezing in place at the tape.
 - Moved the imported goal tape from a static placeholder into a runtime visual driven by the native `0x10/0xF0` Y-speed cadence, widened the gate trigger from generated Map16 post bounds, and added an RCON `goal` probe for first-level course-clear debugging.

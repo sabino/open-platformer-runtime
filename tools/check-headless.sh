@@ -33,11 +33,12 @@ PIPE_UNDERSIDE_COMMAND_FILE="$(mktemp)"
 PIPE_SLOPE_SUPPORT_COMMAND_FILE="$(mktemp)"
 PIPE_UNDERSIDE_JUMP_COMMAND_FILE="$(mktemp)"
 DEATH_COMMAND_FILE="$(mktemp)"
+TIME_UP_COMMAND_FILE="$(mktemp)"
 TRACE_COMMAND_FILE="$(mktemp)"
 COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -151,6 +152,12 @@ spawn 128 640
 velocity 0 64
 step 1
 state after_death
+EOF
+cat >"$TIME_UP_COMMAND_FILE" <<'EOF'
+pause
+timer frames 1
+step 1
+state after_time_up
 EOF
 cat >"$TRACE_COMMAND_FILE" <<'EOF'
 pause
@@ -356,6 +363,16 @@ grep -q "x=16.00 y=288.00" "$LOG_FILE"
 grep -q "actor_event=death:fall" "$LOG_FILE"
 grep -q "deaths=1" "$LOG_FILE"
 
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$TIME_UP_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$TIME_UP_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-timer: tag=set frames=1 seconds=1" "$LOG_FILE"
+grep -q "smw-runtime: player_death level=105 cause=time_up count=1" "$LOG_FILE"
+grep -q "smw-debug-state: tag=after_time_up" "$LOG_FILE"
+grep -q "x=16.00 y=288.00" "$LOG_FILE"
+grep -q "actor_event=death:time_up" "$LOG_FILE"
+grep -q "time=300" "$LOG_FILE"
+grep -q "deaths=1" "$LOG_FILE"
+
 "$GODOT_BIN" --headless --path . --quit-after 5 --smw-test-autostart --smw-debug-command-file="$TRACE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$TRACE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-test-ground: grounded=1" "$LOG_FILE"
@@ -451,6 +468,11 @@ grep -q "smw-debug-status:" "$RCON_LOG"
 grep -q "score=0" "$RCON_LOG"
 grep -q "lives=5" "$RCON_LOG"
 grep -q "COIN 00" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh timer frames 120 | tee "$RCON_LOG"
+grep -q "smw-debug-timer: tag=set frames=120 seconds=2" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh timer | tee "$RCON_LOG"
+grep -q "smw-debug-timer: tag=status" "$RCON_LOG"
+grep -q "seconds=2" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh tile | tee "$RCON_LOG"
 grep -q "smw-debug-tile:" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh collision 2064 304 48 | tee "$RCON_LOG"

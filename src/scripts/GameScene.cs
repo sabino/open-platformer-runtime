@@ -3863,12 +3863,22 @@ public partial class GameScene : Node2D
 
     private void TickLevelTimer()
     {
-        if (_courseClear || _levelTimerFrames <= 0)
+        if (_courseClear)
         {
             return;
         }
 
+        if (_levelTimerFrames <= 0)
+        {
+            HandlePlayerDeath("time_up", "death:time_up");
+            return;
+        }
+
         _levelTimerFrames--;
+        if (_levelTimerFrames <= 0)
+        {
+            HandlePlayerDeath("time_up", "death:time_up");
+        }
     }
 
     private int LevelTimerSecondsRemaining()
@@ -5405,6 +5415,10 @@ public partial class GameScene : Node2D
             case "statusbar":
             case "hud":
                 return PrintDebugStatusHud();
+            case "timer":
+            case "time":
+            case "clock":
+                return ExecuteDebugTimerCommand(parts);
             case "player_oam":
             case "oam":
             case "pose":
@@ -5964,6 +5978,56 @@ public partial class GameScene : Node2D
         var line =
             $"smw-debug-status: score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} " +
             $"time={LevelTimerSecondsRemaining()} clear={(_courseClear ? 1 : 0)} text=\"{BuildStatusHudText()}\"";
+        GD.Print(line);
+        return line;
+    }
+
+    private string ExecuteDebugTimerCommand(string[] parts)
+    {
+        if (parts.Length == 1 ||
+            string.Equals(parts[1], "status", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parts[1], "get", StringComparison.OrdinalIgnoreCase))
+        {
+            return PrintDebugTimer("status");
+        }
+
+        if (string.Equals(parts[1], "frames", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parts[1], "frame", StringComparison.OrdinalIgnoreCase))
+        {
+            RequirePartCount(parts, 3);
+            return DebugSetLevelTimerFrames(ParseHexOrDecimalDebug(parts[2]), "set");
+        }
+
+        if (string.Equals(parts[1], "seconds", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parts[1], "second", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parts[1], "sec", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parts[1], "s", StringComparison.OrdinalIgnoreCase))
+        {
+            RequirePartCount(parts, 3);
+            return DebugSetLevelTimerSeconds(ParseHexOrDecimalDebug(parts[2]), "set");
+        }
+
+        return DebugSetLevelTimerSeconds(ParseHexOrDecimalDebug(parts[1]), "set");
+    }
+
+    private string DebugSetLevelTimerSeconds(int seconds, string tag)
+    {
+        var clampedSeconds = Math.Clamp(seconds, 0, 999);
+        _levelTimerFrames = clampedSeconds * NativeFramesPerSecond;
+        return PrintDebugTimer(tag);
+    }
+
+    private string DebugSetLevelTimerFrames(int frames, string tag)
+    {
+        _levelTimerFrames = Math.Clamp(frames, 0, 999 * NativeFramesPerSecond);
+        return PrintDebugTimer(tag);
+    }
+
+    private string PrintDebugTimer(string tag)
+    {
+        var line =
+            $"smw-debug-timer: tag={tag} frames={_levelTimerFrames} seconds={LevelTimerSecondsRemaining()} " +
+            $"clear={(_courseClear ? 1 : 0)} lives={_lives} deaths={_deathCount}";
         GD.Print(line);
         return line;
     }
@@ -6692,13 +6756,18 @@ public partial class GameScene : Node2D
             return false;
         }
 
+        HandlePlayerDeath("fall", "death:fall");
+        return true;
+    }
+
+    private void HandlePlayerDeath(string cause, string actorEvent)
+    {
         _deathCount++;
         _lives = Math.Max(0, _lives - 1);
         GD.Print(
-            $"smw-runtime: player_death level={_currentLevelId} cause=fall count={_deathCount} " +
+            $"smw-runtime: player_death level={_currentLevelId} cause={cause} count={_deathCount} " +
             $"lives={_lives} x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
-        RestartCurrentLevel("death:fall");
-        return true;
+        RestartCurrentLevel(actorEvent);
     }
 
     private void RestartCurrentLevel(string actorEvent)
