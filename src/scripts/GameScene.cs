@@ -1233,7 +1233,18 @@ public partial class GameScene : Node2D
         switch (spriteId)
         {
             case 0x83:
-                AddMap16SpriteVisual(node, used ? 0x0125 : 0x0124, Vector2.Zero, visuals);
+                if (used)
+                {
+                    AddMap16SpriteVisual(node, 0x0125, Vector2.Zero, visuals);
+                }
+                else if (AddSpriteOamTile(node, new SpriteOamTile(0, -1, 0x2A, 0x00, 0, true), out var questionBlock))
+                {
+                    visuals.Add(questionBlock);
+                }
+                else
+                {
+                    AddMap16SpriteVisual(node, 0x0124, Vector2.Zero, visuals);
+                }
                 break;
             case 0xB9:
                 if (!AddMap16SpriteVisual(node, 0x0125, Vector2.Zero, visuals))
@@ -1381,9 +1392,11 @@ public partial class GameScene : Node2D
 
     private static readonly SpriteOamTile[] ClappinChuckOamTiles =
     [
-        new(0, -4, 0x06, 0x0B, 3, true),
-        new(0, 0, 0x2D, 0x0B, 3, true),
-        new(4, 0, 0x2D, 0x4B, 3, true),
+        new(0, -12, 0x06, 0x4B, 2, true),
+        new(4, 0, 0x40, 0x4B, 2, true),
+        new(-4, 0, 0x40, 0x0B, 2, true),
+        new(-6, -8, 0x0C, 0x0B, 2, false),
+        new(14, -8, 0x0C, 0x4B, 2, false),
     ];
 
     private static readonly SpriteOamTile[] SquishedRexOamTiles =
@@ -1398,16 +1411,17 @@ public partial class GameScene : Node2D
 
     private static readonly SpriteOamTile[] WingOamTiles =
     [
-        new(-1, -4, 0x5D, 0x46, 0, false),
-        new(-9, -12, 0xC6, 0x46, 0, true),
-        new(9, -4, 0x5D, 0x06, 0, false),
-        new(9, -12, 0xC6, 0x06, 0, true),
+        new(-11, -10, 0xC6, 0x46, 1, true),
+        new(11, -10, 0xC6, 0x06, 1, true),
     ];
 
     private static readonly SpriteOamTile[] JumpingPiranhaOamTiles =
     [
-        new(8, -1, 0xAC, 0x58, 1, true),
-        new(8, 7, 0xCE, 0x5B, 1, true),
+        new(8, -17, 0xAE, 0x58, 1, true),
+        new(8, -9, 0x83, 0x0A, 1, false),
+        new(16, -9, 0x83, 0x4A, 1, false),
+        new(8, -1, 0xC4, 0x0A, 1, false),
+        new(16, -1, 0xC4, 0x4A, 1, false),
     ];
 
     private static IReadOnlyList<SpriteOamTile> ShellOamTilesFor(int spriteId)
@@ -4358,7 +4372,7 @@ public partial class GameScene : Node2D
         }
 
         var parts = line.Split(
-            [' ', '\t', ',', ':', ';'],
+            [' ', '\t', ',', ';'],
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length == 0)
         {
@@ -4444,6 +4458,11 @@ public partial class GameScene : Node2D
                     : 1;
                 DebugCaptureViewport(parts[1], frames, quitAfterCapture: false);
                 return $"ok capture_scheduled={parts[1]} frames={frames}";
+            case "capture_now":
+            case "snapshot":
+                RequirePartCount(parts, 2);
+                var captureError = CaptureViewportNow(parts[1], quitAfterCapture: false);
+                return $"ok capture_saved={parts[1]} error={captureError}";
             case "state":
                 return PrintDebugState(parts.Length >= 2 ? parts[1] : "manual");
             case "quit":
@@ -4722,7 +4741,7 @@ public partial class GameScene : Node2D
         CaptureViewportNow(capturePath, quitAfterCapture);
     }
 
-    private void CaptureViewportNow(string capturePath, bool quitAfterCapture)
+    private Error CaptureViewportNow(string capturePath, bool quitAfterCapture)
     {
         var image = GetViewport().GetTexture()?.GetImage();
         if (image == null)
@@ -4732,7 +4751,7 @@ public partial class GameScene : Node2D
             {
                 GetTree().Quit(1);
             }
-            return;
+            return Error.Unavailable;
         }
 
         image.Convert(Image.Format.Rgba8);
@@ -4754,6 +4773,8 @@ public partial class GameScene : Node2D
         {
             GetTree().Quit(error == Error.Ok ? 0 : 1);
         }
+
+        return error;
     }
 
     private void EnterLevel(string levelId, LevelEntrance? entrance = null)

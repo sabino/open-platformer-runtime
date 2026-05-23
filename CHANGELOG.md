@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed RCON viewport capture parsing for `res://` paths, added a synchronous `snapshot`/`capture_now` command, and verified it saves clean runtime PNGs without compositor/editor UI.
+- Synced several runtime sprite preview OAM recipes with the current Lunar Magic Universal code path: flying question block wings now use the correct sprite bank, the flying block face uses the sprite question-block tile while unused, and Clappin' Chuck/jumping Piranha use the fuller editor-preview tile sets.
 - Suppressed currently-unmapped static `PlayerGFXRt` tile descriptors in the Godot Mario renderer, removing stray colored pixel fragments from poses that previously treated those OAM char numbers as raw GFX32 atlas tiles.
 - Batched runtime Map16 terrain rendering into a single custom draw layer instead of spawning one `Sprite2D` per placed tile, preserving coin/block tile hiding while reducing visible-run node and draw overhead.
 - Added an audio performance guard: the internal BRR generator now prunes inactive voices, caps active voices and per-frame mix work, and supports `--smw-no-audio` / `SMW_AUDIO=0` for fast A/B testing.

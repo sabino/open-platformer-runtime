@@ -74,6 +74,8 @@ The visible wrappers default to Sway workspace `6`; override with `SMW_SWAY_WORK
 
 For reproducible lower-route captures, the runtime also accepts `--smw-test-spawn=x,y` alongside `--smw-capture=...`. Use `--smw-test-powerup=small|big|cape|fire` to force the debug player form for hitbox checks.
 
+During a debug RCON run, `tools/smw-rcon.sh snapshot res://generated/smw/captures/name.png` saves the current Godot viewport immediately, while `capture <path> <frames>` schedules a capture after one or more process frames.
+
 For deterministic autoplay checks, pass `--smw-input-script=/path/to/script`. Each non-comment line starts with a frame count followed by held inputs separated by spaces, commas, colons, or semicolons, for example `8 right run` or `4 right run jump`. Supported tokens are `left`, `right`, `down`, `jump`, `spin`, and `run`; `jump` and `spin` emit a pressed edge on the first frame of that line.
 
 Pass `--smw-no-audio` or set `SMW_AUDIO=0` to disable the internal BRR/APU probe for quick performance A/B tests. Normal playtest runs keep audio enabled.
