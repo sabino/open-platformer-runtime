@@ -4,6 +4,7 @@ config_version=5
 
 config/name="Open Platformer Runtime"
 run/main_scene="res://src/scenes/Main.tscn"
+run/max_fps=60
 config/features=PackedStringArray("4.6")
 config/icon="res://icon.svg"
 

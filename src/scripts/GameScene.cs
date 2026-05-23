@@ -126,6 +126,8 @@ public partial class GameScene : Node2D
     private string _levelLayoutPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
     private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
     private string _levelLayer2BackgroundPath = "res://generated/smw/levels/level_105_layer2_background.png";
+    private int _currentLevelMusicIndex;
+    private string _currentLevelMusicPreview = "Level";
     private float _cameraX;
     private float _cameraY;
     private bool _cameraInitialized;
@@ -165,13 +167,18 @@ public partial class GameScene : Node2D
     private readonly byte[] _debugRconReadBuffer = new byte[4096];
 
     public bool DebugOverlays { get; set; }
+    public SmwAudio? Audio { get; set; }
 
     public override void _Ready()
     {
         GetViewport().TransparentBg = false;
         RenderingServer.SetDefaultClearColor(new Color(0.0f, 0.39f, 0.74f, 1.0f));
-        _audio = new SmwAudio { Name = "SmwAudio" };
-        AddChild(_audio);
+        _audio = Audio;
+        if (_audio == null)
+        {
+            _audio = new SmwAudio { Name = "SmwAudio" };
+            AddChild(_audio);
+        }
         LoadAssetPack();
         _state = MakeInitialPlayerState();
         ResetPlayerAnimationState();
@@ -179,6 +186,7 @@ public partial class GameScene : Node2D
         BuildPlayer();
         BuildHud();
         PrintRuntimeState();
+        StartLevelMusic();
     }
 
     public override void _PhysicsProcess(double delta)
@@ -458,6 +466,7 @@ public partial class GameScene : Node2D
 
         var levelDetails = levelParsed.AsGodotDictionary();
         ApplyLevelAssetPaths(levelDetails);
+        ApplyLevelHeaderMetadata(levelDetails);
         if (!levelDetails.TryGetValue("layer1", out var layer1Variant) || layer1Variant.VariantType != Variant.Type.Dictionary)
         {
             return false;
@@ -494,6 +503,44 @@ public partial class GameScene : Node2D
         LoadSpriteSpawns(levelDetails);
         LoadPlacedTiles(_levelTilemapPath);
         return true;
+    }
+
+    private void ApplyLevelHeaderMetadata(Godot.Collections.Dictionary levelDetails)
+    {
+        _currentLevelMusicIndex = 0;
+        _currentLevelMusicPreview = "Level";
+        if (!levelDetails.TryGetValue("header", out var headerVariant) ||
+            headerVariant.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var header = headerVariant.AsGodotDictionary();
+        if (header.TryGetValue("music_index", out var musicVariant))
+        {
+            _currentLevelMusicIndex = musicVariant.AsInt32();
+        }
+
+        _currentLevelMusicPreview = MusicPreviewForLevelHeader(_currentLevelMusicIndex);
+    }
+
+    private static string MusicPreviewForLevelHeader(int musicIndex)
+    {
+        return musicIndex switch
+        {
+            _ => "Level",
+        };
+    }
+
+    private void StartLevelMusic()
+    {
+        if (_courseClear)
+        {
+            return;
+        }
+
+        _audio?.PlayMusicPreview(_currentLevelMusicPreview);
+        GD.Print($"smw-runtime: level_music level={_currentLevelId} music_index={_currentLevelMusicIndex} bank={_currentLevelMusicPreview}");
     }
 
     private void LoadSpriteSpawns(Godot.Collections.Dictionary levelDetails)
@@ -4405,6 +4452,7 @@ public partial class GameScene : Node2D
         _lastPlayerDucking = false;
         UpdatePlayerGraphic(force: true);
         PrintRuntimeState();
+        StartLevelMusic();
     }
 
     public override void _ExitTree()

@@ -15,6 +15,7 @@ public partial class Main : Node2D
 
     public override void _Ready()
     {
+        Engine.MaxFps = 60;
         if (!DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
         {
             GetWindow().Transparent = false;
@@ -387,6 +388,7 @@ public partial class Main : Node2D
         {
             Name = "GameScene",
             DebugOverlays = _debugOverlays,
+            Audio = _audio,
         };
         AddChild(_game);
     }

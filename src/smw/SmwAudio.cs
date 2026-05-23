@@ -12,6 +12,7 @@ public partial class SmwAudio : Node
     private byte[] _spcRam = new byte[0x10000];
     private AudioStreamPlayer? _player;
     private AudioStreamGeneratorPlayback? _playback;
+    private Vector2[] _mixBuffer = [];
     private bool _loaded;
     private IReadOnlyList<MusicEvent> _musicPattern = Array.Empty<MusicEvent>();
     private int _musicLoopFrames;
@@ -357,10 +358,15 @@ public partial class SmwAudio : Node
         var q = pp / 12;
         var r = pp % 12;
         var value = baseNoteFreqs[r];
-        while (q != 6)
+        while (q < 6)
         {
             value >>= 1;
             q++;
+        }
+        while (q > 6)
+        {
+            value <<= 1;
+            q--;
         }
 
         return value;
@@ -380,13 +386,17 @@ public partial class SmwAudio : Node
         }
 
         var frameCount = Math.Min(framesAvailable, 1024);
-        var frames = new Vector2[frameCount];
-        for (var i = 0; i < frameCount; i++)
+        if (_mixBuffer.Length != frameCount)
         {
-            frames[i] = RenderFrame();
+            _mixBuffer = new Vector2[frameCount];
         }
 
-        _playback.PushBuffer(frames);
+        for (var i = 0; i < frameCount; i++)
+        {
+            _mixBuffer[i] = RenderFrame();
+        }
+
+        _playback.PushBuffer(_mixBuffer);
     }
 
     private Vector2 RenderFrame()
