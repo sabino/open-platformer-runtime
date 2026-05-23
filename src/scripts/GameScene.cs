@@ -4448,6 +4448,12 @@ public partial class GameScene : Node2D
         EnterLevel(levelId);
     }
 
+    public void DebugRestartCurrentLevel()
+    {
+        RestartCurrentLevel("debug:restart");
+        GD.Print($"smw-debug: restart level={_currentLevelId}");
+    }
+
     public void DebugEnterScreenExit(int screen)
     {
         if (TryResolveScreenExit(screen, out var entrance))
@@ -4933,6 +4939,11 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugEnterLevel(parts[1].ToUpperInvariant());
                 return BuildDebugState("level");
+            case "restart":
+            case "reset":
+            case "reload":
+                DebugRestartCurrentLevel();
+                return BuildDebugState("restart");
             case "screen_exit":
             case "exit":
                 RequirePartCount(parts, 2);
@@ -5907,21 +5918,21 @@ public partial class GameScene : Node2D
         GD.Print(
             $"smw-runtime: player_death level={_currentLevelId} cause=fall count={_deathCount} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
-        RestartCurrentLevelAfterDeath();
+        RestartCurrentLevel("death:fall");
         return true;
     }
 
-    private void RestartCurrentLevelAfterDeath()
+    private void RestartCurrentLevel(string actorEvent)
     {
         if (!LoadLevelData(_currentLevelId))
         {
-            GD.PrintErr($"smw-runtime: unable to reload level {_currentLevelId} after death");
+            GD.PrintErr($"smw-runtime: unable to reload level {_currentLevelId}");
             return;
         }
 
         _courseClear = false;
         _playerHurtCooldown = 0;
-        _lastActorEvent = "death:fall";
+        _lastActorEvent = actorEvent;
         _blockBreakCount = 0;
         _pipeTransitionLatch = false;
         _entranceMotionFrames = 0;
