@@ -138,6 +138,11 @@ assert first_object["raw"] == [0x58, 0x10, 0xBF], first_object
 assert first_object["placement"]["x_tile"] == 0, first_object["placement"]
 assert first_object["placement"]["y_tile"] == 24, first_object["placement"]
 assert first_object["placement"]["map16_offset"] == 0x180, first_object["placement"]
+screen_jump_object = level_105["layer1"]["objects"][34]
+post_jump_object = level_105["layer1"]["objects"][35]
+assert screen_jump_object["raw"] == [0x0A, 0x00, 0x01], screen_jump_object
+assert post_jump_object["placement"]["screen_cursor"] == 0x0B, post_jump_object["placement"]
+assert post_jump_object["placement"]["x_tile"] == 0x0B2, post_jump_object["placement"]
 tile_sources = {tile["source"] for tile in tilemap["placed_tiles"]}
 assert "right_diagonal_pipe" in tile_sources, tile_sources
 assert "left_diagonal_ledge_edge" in tile_sources, tile_sources

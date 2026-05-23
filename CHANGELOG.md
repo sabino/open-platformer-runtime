@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Ported Lunar Magic Universal's screen-jump object cursor behavior into the importer, fixing later object placement after extended object `01`.
+- Added runtime diagonal-pipe entrance rectangles for imported screen exits, so the sloped pipe can trigger the existing pipe transition path with `Down`.
 - Added runtime normal-coin and dragon-coin pickups from imported Map16 coin markers, including HUD counters, collection logs, sprite hiding, and headless pickup checks.
 - Added ceiling-style slope surfaces for the underside of imported diagonal pipes, with separate debug overlay coloring, so pipe bodies can block upward movement without restoring hidden rectangular support collision.
 - Removed temporary rectangular collision from imported slope/diagonal support tiles again so Mario resolves against the slope segments instead of standing on hidden stair-step support blocks.

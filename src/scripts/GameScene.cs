@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 public partial class GameScene : Node2D
 {
@@ -175,7 +176,7 @@ public partial class GameScene : Node2D
 
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
     private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
-    private readonly record struct PipeEntrance(Rect2 Rect, int Screen, bool Horizontal);
+    private readonly record struct PipeEntrance(Rect2 Rect, int Screen, bool Horizontal, string Kind);
     private readonly record struct LevelEntrance(
         string LevelId,
         Vector2 Position,
@@ -1458,10 +1459,13 @@ public partial class GameScene : Node2D
     {
         foreach (var entrance in _pipeEntrances)
         {
+            var isDiagonal = entrance.Kind == "diagonal";
             var node = new ColorRect
             {
                 Name = "PipeDebug",
-                Color = new Color(0.10f, 0.75f, 0.22f, 0.65f),
+                Color = isDiagonal
+                    ? new Color(0.05f, 0.85f, 0.78f, 0.45f)
+                    : new Color(0.10f, 0.75f, 0.22f, 0.65f),
                 Position = entrance.Rect.Position,
                 Size = entrance.Rect.Size,
             };
@@ -1469,7 +1473,9 @@ public partial class GameScene : Node2D
             AddRectOutline(
                 _worldRoot ?? this,
                 entrance.Rect,
-                new Color(0.20f, 1.0f, 0.40f, 0.9f),
+                isDiagonal
+                    ? new Color(0.05f, 1.0f, 0.90f, 0.95f)
+                    : new Color(0.20f, 1.0f, 0.40f, 0.9f),
                 1.0f,
                 135);
         }
@@ -1509,6 +1515,8 @@ public partial class GameScene : Node2D
             }
 
             var screen = screenVariant.AsInt32();
+            AddDiagonalPipeEntrance(screen);
+
             PlacedMap16Tile? entranceTile = null;
             foreach (var tile in _placedTiles)
             {
@@ -1526,8 +1534,7 @@ public partial class GameScene : Node2D
             if (entranceTile != null)
             {
                 var topLeft = TileToWorld(entranceTile.Value.X, entranceTile.Value.Y);
-                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X, topLeft.Y - 32, 32, 48), screen, Horizontal: false));
-                continue;
+                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X, topLeft.Y - 32, 32, 48), screen, Horizontal: false, Kind: "vertical"));
             }
 
             PlacedMap16Tile? horizontalEntranceTile = null;
@@ -1547,9 +1554,105 @@ public partial class GameScene : Node2D
             if (horizontalEntranceTile != null)
             {
                 var topLeft = TileToWorld(horizontalEntranceTile.Value.X, horizontalEntranceTile.Value.Y);
-                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X - 24, topLeft.Y, 48, 32), screen, Horizontal: true));
+                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X - 24, topLeft.Y, 48, 32), screen, Horizontal: true, Kind: "horizontal"));
             }
         }
+    }
+
+    private void AddDiagonalPipeEntrance(int screen)
+    {
+        var diagonalTiles = new HashSet<(int X, int Y)>();
+        foreach (var tile in _placedTiles)
+        {
+            if (tile.Source == "right_diagonal_pipe")
+            {
+                diagonalTiles.Add((tile.X, tile.Y));
+            }
+        }
+
+        if (diagonalTiles.Count == 0)
+        {
+            return;
+        }
+
+        var visited = new HashSet<(int X, int Y)>();
+        List<(int X, int Y)>? bestCluster = null;
+        foreach (var tile in diagonalTiles)
+        {
+            if (visited.Contains(tile))
+            {
+                continue;
+            }
+
+            var cluster = FloodDiagonalPipeCluster(tile, diagonalTiles, visited);
+            if (!cluster.Exists(cell => cell.X / 16 == screen))
+            {
+                continue;
+            }
+
+            if (bestCluster == null || MaxTileX(cluster) > MaxTileX(bestCluster))
+            {
+                bestCluster = cluster;
+            }
+        }
+
+        if (bestCluster == null)
+        {
+            return;
+        }
+
+        var minX = bestCluster.Min(cell => cell.X);
+        var maxX = bestCluster.Max(cell => cell.X);
+        var minY = bestCluster.Min(cell => cell.Y);
+        var maxY = bestCluster.Max(cell => cell.Y);
+        var topLeft = TileToWorld(minX, minY);
+        var bottomRight = TileToWorld(maxX + 1, maxY + 1);
+        var rect = new Rect2(
+            new Vector2(topLeft.X, topLeft.Y - 12.0f),
+            new Vector2(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y + 16.0f));
+        _pipeEntrances.Add(new PipeEntrance(rect, screen, Horizontal: false, Kind: "diagonal"));
+    }
+
+    private static List<(int X, int Y)> FloodDiagonalPipeCluster(
+        (int X, int Y) start,
+        HashSet<(int X, int Y)> diagonalTiles,
+        HashSet<(int X, int Y)> visited)
+    {
+        var cluster = new List<(int X, int Y)>();
+        var queue = new Queue<(int X, int Y)>();
+        queue.Enqueue(start);
+        visited.Add(start);
+
+        while (queue.Count > 0)
+        {
+            var tile = queue.Dequeue();
+            cluster.Add(tile);
+            for (var dy = -1; dy <= 1; dy++)
+            {
+                for (var dx = -1; dx <= 1; dx++)
+                {
+                    if (dx == 0 && dy == 0)
+                    {
+                        continue;
+                    }
+
+                    var next = (tile.X + dx, tile.Y + dy);
+                    if (!diagonalTiles.Contains(next) || !visited.Add(next))
+                    {
+                        continue;
+                    }
+
+                    queue.Enqueue(next);
+                }
+            }
+        }
+
+        return cluster;
+    }
+
+    private static int MaxTileX(List<(int X, int Y)> cluster)
+    {
+        return cluster.Max(cell => cell.X);
     }
 
     private void AddScreenLine(int index)
@@ -2829,7 +2932,7 @@ public partial class GameScene : Node2D
         {
             GD.Print(
                 $"pipe-debug screen={screen:X2} target={entrance.LevelId} " +
-                $"secondary={(entrance.Secondary ? 1 : 0)} source={entrance.SourceId:X3}");
+                $"secondary={(entrance.Secondary ? 1 : 0)} source={entrance.SourceId:X3} kind={matchedEntrance.Value.Kind}");
             EnterLevel(entrance.LevelId, entrance);
         }
         else

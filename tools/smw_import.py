@@ -463,6 +463,8 @@ def parse_level_objects(raw: bytes, header: dict[str, Any], layer_index: int = 0
                 "placement": placement,
             }
         )
+        if obj_id == 0 and b2 == 0x01:
+            screen_cursor = b0 & 0x1F
         sequence += 1
     return {"objects": objects, "screen_exits": exits}
 

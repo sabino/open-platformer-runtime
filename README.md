@@ -25,7 +25,7 @@ The current first slice covers:
 - Partial object expansion for the Yoshi Island 1 direct pipe target `1CB`, including horizontal pipes and underground ceiling ledges/edges in the generated Map16 tilemap.
 - Manifest-driven runtime asset selection for the current level's tilemap, preview, and tileset atlases, rather than hardcoded generated filenames.
 - Runtime world rebuild scaffolding for loading imported level targets; headless checks currently verify both startup level `105` and direct pipe target `1CB`.
-- Runtime pipe debug triggers derived from imported screen exits and placed pipe tiles instead of a hardcoded screen position.
+- Runtime pipe debug triggers derived from imported screen exits and placed pipe tiles instead of a hardcoded screen position, including vertical, horizontal, and right-diagonal pipe clusters.
 - Runtime loading and debug rendering of imported sprite spawn records using the native `yyyyEESY / XXXXssss / id` coordinate layout, including 34 Yoshi Island 1 sprite spawns; the current direct target `1CB` has no sprite spawns.
 - A first-pass runtime actor layer that turns common imported Yoshi Island 1 enemy records into simple moving/stompable/hurting bodies, plus a temporary course-clear trigger sourced from the imported native goal-tape sprite `0x7B`.
 - Per-level sprite GFX extraction through vanilla and Lunar Magic-aware GFX slot resolution, producing raw `$6000-$7FFF` sprite VRAM atlases for Yoshi Island 1 and the direct pipe target.
