@@ -55,6 +55,7 @@ public partial class GameScene : Node2D
     private const int CoinScore = 100;
     private const int DragonCoinScore = 1000;
     private const int PowerupRewardScore = 1000;
+    private const int NativeStarPowerTimerInitial = 0xFF;
     private const int CoinLifeThreshold = 100;
     private const int DragonCoinLifeThreshold = 5;
     private static readonly int[] StompScoreByNativeGivePointsIndex = [100, 200, 400, 800, 1000, 2000, 4000, 8000];
@@ -197,6 +198,7 @@ public partial class GameScene : Node2D
     private int _oneUpCount;
     private int _score;
     private int _stompChainCounter;
+    private int _starPowerTimer;
     private int _lives = StartingLives;
     private int _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
     private int _blockBreakCount;
@@ -348,6 +350,7 @@ public partial class GameScene : Node2D
         CheckCoinPickups();
         CheckGoalTape();
         ResetStompChainIfGrounded();
+        TickStarPowerTimer();
         TickLevelTimer();
         UpdateHud();
         UpdateDebugGizmos();
@@ -437,6 +440,7 @@ public partial class GameScene : Node2D
         string LevelId,
         float CameraX,
         float CameraY,
+        int StarPowerTimer,
         int Frame);
     private readonly record struct LevelEntrance(
         string LevelId,
@@ -821,9 +825,9 @@ public partial class GameScene : Node2D
 
         if (AudioEnabled)
         {
-            _audio?.PlayMusicPreview(_currentLevelMusicPreview);
+            _audio?.PlayMusicPreview(_starPowerTimer > 0 ? "Star" : _currentLevelMusicPreview);
         }
-        GD.Print($"smw-runtime: level_music level={_currentLevelId} music_index={_currentLevelMusicIndex} bank={_currentLevelMusicPreview}");
+        GD.Print($"smw-runtime: level_music level={_currentLevelId} music_index={_currentLevelMusicIndex} bank={(_starPowerTimer > 0 ? "Star" : _currentLevelMusicPreview)}");
     }
 
     private void LoadSpriteSpawns(Godot.Collections.Dictionary levelDetails)
@@ -4080,6 +4084,11 @@ public partial class GameScene : Node2D
             return true;
         }
 
+        if (TryDefeatActorWithStar(actor))
+        {
+            return true;
+        }
+
         var playerBottom = _state.YFloat + SmwPhysics.PlayerHeightFor(_state);
         var stomped = actor.Behavior.Stompable && _state.YSpeed > 0 && playerBottom <= actorRect.Position.Y + 10.0f;
         if (stomped)
@@ -4131,6 +4140,7 @@ public partial class GameScene : Node2D
                 break;
             case 0x76:
                 AddScore(PowerupRewardScore);
+                ActivateStarPower();
                 _audio?.PlayBlockReward();
                 break;
             case 0x78:
@@ -4140,7 +4150,67 @@ public partial class GameScene : Node2D
 
         GD.Print(
             $"smw-runtime: item_collect level={_currentLevelId} sprite={actor.SpriteId:X2} " +
-            $"x={actor.X:0.00} y={actor.Y:0.00} pow={_state.Powerup} score={_score} lives={_lives} oneups={_oneUpCount}");
+            $"x={actor.X:0.00} y={actor.Y:0.00} pow={_state.Powerup} star={_starPowerTimer:X2} score={_score} lives={_lives} oneups={_oneUpCount}");
+    }
+
+    private void ActivateStarPower()
+    {
+        _starPowerTimer = NativeStarPowerTimerInitial;
+        if (AudioEnabled)
+        {
+            _audio?.PlayMusicPreview("Star");
+        }
+    }
+
+    private void TickStarPowerTimer()
+    {
+        if (_starPowerTimer <= 0)
+        {
+            return;
+        }
+
+        if ((_debugFrameCounter & 0x03) != 0)
+        {
+            return;
+        }
+
+        _starPowerTimer--;
+        if (_starPowerTimer == 0)
+        {
+            StartLevelMusic();
+        }
+    }
+
+    private bool TryDefeatActorWithStar(RuntimeSpriteActor actor)
+    {
+        if (_starPowerTimer <= 0 || !actor.Behavior.CanInteract)
+        {
+            return false;
+        }
+
+        actor.Alive = false;
+        _lastActorEvent = $"star:{actor.SpriteId:X2}:dead";
+        AwardSpriteStarReward(actor);
+        _audio?.PlayStomp(0);
+        return true;
+    }
+
+    private void AwardSpriteStarReward(RuntimeSpriteActor actor)
+    {
+        var rewardIndex = Math.Clamp(_stompChainCounter, 0, 8);
+        _stompChainCounter++;
+        if (rewardIndex >= StompScoreByNativeGivePointsIndex.Length)
+        {
+            AddOneUp(_lastActorEvent);
+        }
+        else
+        {
+            AddScore(StompScoreByNativeGivePointsIndex[rewardIndex]);
+        }
+
+        GD.Print(
+            $"smw-runtime: sprite_star level={_currentLevelId} sprite={actor.SpriteId:X2} state={actor.State} " +
+            $"star={_starPowerTimer:X2} chain={_stompChainCounter} reward_index={rewardIndex} score={_score} lives={_lives} oneups={_oneUpCount}");
     }
 
     private bool TryStompRex(RuntimeSpriteActor actor)
@@ -5327,7 +5397,7 @@ public partial class GameScene : Node2D
 
         var footTile = DescribeFootTile();
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} " +
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
             $"score={_score} lives={_lives} time={LevelTimerSecondsRemaining()} pause={(_gamePaused ? 1 : 0)} coins={_coinCount}/{_dragonCoinCount} deaths={_deathCount} " +
@@ -5605,6 +5675,24 @@ public partial class GameScene : Node2D
     {
         _debugInvincible = enabled;
         GD.Print($"smw-debug: invincible={(_debugInvincible ? 1 : 0)}");
+    }
+
+    public void DebugSetStarPower(int timer)
+    {
+        var previous = _starPowerTimer;
+        _starPowerTimer = Math.Clamp(timer, 0, NativeStarPowerTimerInitial);
+        if (_starPowerTimer > 0 && previous <= 0 && AudioEnabled)
+        {
+            _audio?.PlayMusicPreview("Star");
+        }
+        else if (_starPowerTimer <= 0 && previous > 0)
+        {
+            StartLevelMusic();
+        }
+
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print($"smw-debug: star={_starPowerTimer:X2}");
     }
 
     public string DebugSetAudioEnabled(bool enabled)
@@ -6009,6 +6097,24 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugSetInvincible(ParseDebugBool(parts[1]));
                 return BuildDebugState("invincible");
+            case "star":
+            case "starman":
+            case "star_power":
+                if (parts.Length >= 2)
+                {
+                    DebugSetStarPower(parts[1].Trim().ToLowerInvariant() switch
+                    {
+                        "on" or "true" or "yes" => NativeStarPowerTimerInitial,
+                        "off" or "false" or "no" => 0,
+                        _ => ParseHexOrDecimalDebug(parts[1]),
+                    });
+                }
+                else
+                {
+                    DebugSetStarPower(NativeStarPowerTimerInitial);
+                }
+
+                return BuildDebugState("star");
             case "audio":
                 return ExecuteDebugAudioCommand(parts);
             case "perf":
@@ -6223,7 +6329,7 @@ public partial class GameScene : Node2D
             $"frame={_debugFrameCounter} input={DescribeFrameInput(frameInput)} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
+            $"p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
@@ -6273,11 +6379,11 @@ public partial class GameScene : Node2D
     private string DebugSaveCheckpoint(string slot)
     {
         slot = NormalizeCheckpointSlot(slot);
-        _debugCheckpoints[slot] = new DebugCheckpoint(_state, _currentLevelId, _cameraX, _cameraY, _debugFrameCounter);
+        _debugCheckpoints[slot] = new DebugCheckpoint(_state, _currentLevelId, _cameraX, _cameraY, _starPowerTimer, _debugFrameCounter);
         var line =
             $"smw-debug-checkpoint: action=save slot={slot} level={_currentLevelId} frame={_debugFrameCounter} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"cam={_cameraX:0.00},{_cameraY:0.00} count={_debugCheckpoints.Count}";
+            $"star={_starPowerTimer:X2} cam={_cameraX:0.00},{_cameraY:0.00} count={_debugCheckpoints.Count}";
         GD.Print(line);
         return line;
     }
@@ -6300,6 +6406,7 @@ public partial class GameScene : Node2D
         _entranceMotionPixelsPerFrame = Vector2.Zero;
         _pipeTransitionLatch = false;
         _state = checkpoint.State;
+        _starPowerTimer = checkpoint.StarPowerTimer;
         _cameraX = checkpoint.CameraX;
         _cameraY = checkpoint.CameraY;
         _cameraInitialized = true;
@@ -6307,7 +6414,7 @@ public partial class GameScene : Node2D
         var line =
             $"smw-debug-checkpoint: action=load slot={slot} level={_currentLevelId} saved_frame={checkpoint.Frame} frame={_debugFrameCounter} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"cam={_cameraX:0.00},{_cameraY:0.00}";
+            $"star={_starPowerTimer:X2} cam={_cameraX:0.00},{_cameraY:0.00}";
         GD.Print(line);
         return line;
     }
@@ -6316,7 +6423,7 @@ public partial class GameScene : Node2D
     {
         var slots = _debugCheckpoints
             .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(pair => $"{pair.Key}:{pair.Value.LevelId}:{pair.Value.State.XFloat:0.00},{pair.Value.State.YFloat:0.00}:frame={pair.Value.Frame}");
+            .Select(pair => $"{pair.Key}:{pair.Value.LevelId}:{pair.Value.State.XFloat:0.00},{pair.Value.State.YFloat:0.00}:star={pair.Value.StarPowerTimer:X2}:frame={pair.Value.Frame}");
         var description = string.Join("|", slots);
         var line = $"smw-debug-checkpoints: count={_debugCheckpoints.Count} slots={(string.IsNullOrEmpty(description) ? "none" : description)}";
         GD.Print(line);
@@ -6935,7 +7042,7 @@ public partial class GameScene : Node2D
             $"smw-debug-state: tag={tag} frame={_debugFrameCounter} level={_currentLevelId} " +
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
+            $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
@@ -7494,6 +7601,7 @@ public partial class GameScene : Node2D
         _lastActorEvent = "none";
         _blockBreakCount = 0;
         _stompChainCounter = 0;
+        _starPowerTimer = 0;
         _state = MakeInitialPlayerState(entrance);
         ResetPlayerAnimationState();
         _cameraInitialized = false;
@@ -7554,6 +7662,7 @@ public partial class GameScene : Node2D
         _state.YSpeed = 0;
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;
+        _starPowerTimer = 0;
         _lastActorEvent = $"gameover:{cause}";
         _levelTimerFrames = 0;
         _audio?.StopMusicPreview();
@@ -7577,6 +7686,7 @@ public partial class GameScene : Node2D
         _oneUpCount = 0;
         _score = 0;
         _stompChainCounter = 0;
+        _starPowerTimer = 0;
         HideGameOverLabel();
         HidePauseLabel();
         RestartCurrentLevel(wasGameOver ? "gameover:continue" : "debug:continue");
@@ -7599,6 +7709,7 @@ public partial class GameScene : Node2D
         _lastActorEvent = actorEvent;
         _blockBreakCount = 0;
         _stompChainCounter = 0;
+        _starPowerTimer = 0;
         _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
         _pipeTransitionLatch = false;
         _entranceMotionFrames = 0;

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a first native-style starman runtime path: collecting sprite `0x76` sets the SMW `$1490`-style `0xFF` timer, switches to a star music preview, exposes `star` through HUD/RCON, and lets star contact defeat runtime enemy actors without hurting Mario.
 - Added static imported question-block underside interaction for level Map16: the importer now preserves extended-question contents such as flower/feather/star/coin in the generated source label, runtime treats those blocks as solid, underside hits swap them to the used block face, and matching coin/item rewards spawn without immediately changing Mario's state.
 - Changed flying question-block power-up rewards from immediate player upgrades into spawned native item actors for mushroom, flower, feather, and 1-up rewards; block hits now log `item_spawn`, and Mario receives the power-up/life only after collecting the item.
 - Synced vanilla extended-object projection with the current Lunar Magic Universal renderer for screen jumps, moons, invisible 1-ups, question/switch blocks, midway bars, Yoshi coins, goal markers, boss doors, and generic one-tile extended objects, removing the remaining unsupported extended objects from generated levels `105` and `1CB`.

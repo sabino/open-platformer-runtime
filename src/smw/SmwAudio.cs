@@ -270,6 +270,7 @@ public partial class SmwAudio : Node
         {
             "Overworld" => (OverworldPreviewPattern, 96),
             "Credits" => (CreditsPreviewPattern, 128),
+            "Star" => (StarPreviewPattern, 64),
             _ => (LevelPreviewPattern, 96),
         };
 
@@ -902,6 +903,22 @@ public partial class SmwAudio : Node
         new(80, 9, 0x58, 32, 0.10f, 0.18f),
         new(96, 12, 0x6C, 28, 0.18f, 0.00f),
         new(112, 12, 0x68, 24, 0.18f, -0.05f),
+    ];
+
+    private static readonly MusicEvent[] StarPreviewPattern =
+    [
+        new(0, 12, 0x70, 8, 0.20f, -0.12f),
+        new(4, 9, 0x58, 12, 0.13f, 0.12f),
+        new(8, 12, 0x74, 8, 0.20f, -0.08f),
+        new(16, 12, 0x77, 8, 0.20f, 0.00f),
+        new(20, 9, 0x5C, 12, 0.13f, 0.12f),
+        new(24, 12, 0x7C, 8, 0.20f, 0.08f),
+        new(32, 12, 0x77, 8, 0.20f, 0.00f),
+        new(36, 9, 0x60, 12, 0.13f, 0.12f),
+        new(40, 12, 0x74, 8, 0.20f, -0.08f),
+        new(48, 12, 0x70, 8, 0.20f, -0.12f),
+        new(52, 9, 0x5C, 12, 0.13f, 0.12f),
+        new(56, 12, 0x74, 8, 0.20f, -0.08f),
     ];
 
     private sealed class Voice

@@ -27,6 +27,8 @@ BREAK_COMMAND_FILE="$(mktemp)"
 WING_BLOCK_COMMAND_FILE="$(mktemp)"
 WING_BLOCK_REWARD_COMMAND_FILE="$(mktemp)"
 ITEM_COLLECT_COMMAND_FILE="$(mktemp)"
+STAR_ITEM_COMMAND_FILE="$(mktemp)"
+STAR_HIT_COMMAND_FILE="$(mktemp)"
 STATIC_QUESTION_COMMAND_FILE="$(mktemp)"
 PIRANHA_HIDDEN_COMMAND_FILE="$(mktemp)"
 PIRANHA_VISIBLE_COMMAND_FILE="$(mktemp)"
@@ -44,7 +46,7 @@ TRACE_COMMAND_FILE="$(mktemp)"
 COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$STATIC_QUESTION_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$STAR_ITEM_COMMAND_FILE" "$STAR_HIT_COMMAND_FILE" "$STATIC_QUESTION_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -119,6 +121,18 @@ cat >"$ITEM_COLLECT_COMMAND_FILE" <<'EOF'
 pause
 spawn 592 224 big
 item flower 592 224
+step 1
+EOF
+cat >"$STAR_ITEM_COMMAND_FILE" <<'EOF'
+pause
+spawn 592 224 big
+item star 592 224
+step 1
+EOF
+cat >"$STAR_HIT_COMMAND_FILE" <<'EOF'
+pause
+spawn 528 304 big
+star FF
 step 1
 EOF
 cat >"$STATIC_QUESTION_COMMAND_FILE" <<'EOF'
@@ -381,6 +395,25 @@ grep -q "pow=3" "$LOG_FILE"
 grep -q "score=1000" "$LOG_FILE"
 grep -q "actor_event=item:75:collect" "$LOG_FILE"
 
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$STAR_ITEM_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$STAR_ITEM_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug: item sprite=76 x=592.00 y=224.00" "$LOG_FILE"
+grep -q "smw-runtime: item_collect level=105 sprite=76" "$LOG_FILE"
+grep -q "star=FF score=1000" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "star=FE" "$LOG_FILE"
+grep -q "actor_event=item:76:collect" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$STAR_HIT_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$STAR_HIT_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug: star=FF" "$LOG_FILE"
+grep -q "smw-runtime: sprite_star level=105 sprite=AB" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "pow=1" "$LOG_FILE"
+grep -q "star=FE" "$LOG_FILE"
+grep -q "score=100" "$LOG_FILE"
+grep -q "actor_event=star:AB:dead" "$LOG_FILE"
+
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$STATIC_QUESTION_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$STATIC_QUESTION_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-runtime: item_spawn level=105 sprite=75 reward=flower x=3888.00 y=208.00 target_y=192.00" "$LOG_FILE"
@@ -513,7 +546,7 @@ SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh pmeter 0x70 | tee "$RCON_LOG"
 grep -q "p=70" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 880 304 small | tee "$RCON_LOG"
 grep -q "x=880.00 y=304.00" "$RCON_LOG"
-grep -q "pow=0 h=16" "$RCON_LOG"
+grep -q "pow=0 star=00 h=16" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh save pipe_start | tee "$RCON_LOG"
 grep -q "smw-debug-checkpoint: action=save slot=pipe_start" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 921 208 small | tee "$RCON_LOG"
