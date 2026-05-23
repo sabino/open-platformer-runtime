@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 public partial class SmwAudio : Node
 {
@@ -22,6 +23,9 @@ public partial class SmwAudio : Node
     private int _musicEventIndex;
     private double _musicFrameAccumulator;
     private bool _musicPlaying;
+    private int _debugMixFrames;
+    private int _debugMixCalls;
+    private double _debugMixMilliseconds;
 
     public static readonly int[] ProbeSampleIds = [9, 14, 16];
 
@@ -120,7 +124,8 @@ public partial class SmwAudio : Node
         var framesAvailable = _playback?.GetFramesAvailable() ?? -1;
         return $"loaded={(_loaded ? 1 : 0)} samples={LoadedProbeSampleCount} voices={_voices.Count} " +
             $"music={(_musicPlaying ? 1 : 0)} music_frame={_musicFrame} events={_musicPattern.Count} " +
-            $"loop_frames={_musicLoopFrames} frames_available={framesAvailable}";
+            $"loop_frames={_musicLoopFrames} frames_available={framesAvailable} " +
+            $"mix_frames={_debugMixFrames} mix_calls={_debugMixCalls} mix_ms={_debugMixMilliseconds:0.000}";
     }
 
     private void EnsureLoaded()
@@ -431,17 +436,32 @@ public partial class SmwAudio : Node
         }
 
         var frameCount = Math.Min(framesAvailable, MaxFramesPerAudioProcess);
-        if (_mixBuffer.Length != frameCount)
+        if (_mixBuffer.Length != MaxFramesPerAudioProcess)
         {
-            _mixBuffer = new Vector2[frameCount];
+            _mixBuffer = new Vector2[MaxFramesPerAudioProcess];
         }
 
+        var started = Stopwatch.GetTimestamp();
         for (var i = 0; i < frameCount; i++)
         {
             _mixBuffer[i] = RenderFrame();
         }
 
-        _playback.PushBuffer(_mixBuffer);
+        if (frameCount == _mixBuffer.Length)
+        {
+            _playback.PushBuffer(_mixBuffer);
+        }
+        else
+        {
+            for (var i = 0; i < frameCount; i++)
+            {
+                _playback.PushFrame(_mixBuffer[i]);
+            }
+        }
+
+        _debugMixFrames += frameCount;
+        _debugMixCalls++;
+        _debugMixMilliseconds += (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
     }
 
     private void AddVoice(Voice voice)
