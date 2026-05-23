@@ -727,7 +727,8 @@ public partial class GameScene : Node2D
             _autoplayStuckFrames = 0;
         }
 
-        var duck = _state.OnGround && ShouldAutoplayDuckUnderActorAhead();
+        var actorJump = _state.OnGround && ShouldAutoplayJumpForActorAhead();
+        var duck = _state.OnGround && !actorJump && ShouldAutoplayDuckUnderActorAhead();
         var actorAhead = ShouldAutoplayDeferPeriodicJumpForActorAhead();
         var airBrake = ShouldAutoplayBrakeForAirborneActorAhead();
         var periodicJump = _state.OnGround &&
@@ -737,7 +738,6 @@ public partial class GameScene : Node2D
         var stuckJump = _autoplayStuckFrames > AutoplayExploreStuckJumpThreshold &&
             !duck &&
             _autoplayFrame % AutoplayExploreStuckJumpPeriod < AutoplayExploreStuckJumpHeldFrames;
-        var actorJump = _state.OnGround && !duck && ShouldAutoplayJumpForActorAhead();
         var jump = periodicJump || stuckJump || actorJump;
         var jumpPressed = jump && !_autoplayJumpHeld;
         _autoplayJumpHeld = jump;
@@ -758,13 +758,7 @@ public partial class GameScene : Node2D
         var playerRight = playerRect.Position.X + playerRect.Size.X;
         foreach (var actor in _spriteActors)
         {
-            if (!actor.Alive ||
-                !actor.Active ||
-                !actor.Behavior.CanInteract ||
-                !actor.Behavior.Stompable ||
-                IsPowerupItemSprite(actor.SpriteId) ||
-                IsSolidBlockSprite(actor.SpriteId) ||
-                (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
+            if (!IsAutoplayAvoidanceActor(actor) || !actor.Behavior.Stompable)
             {
                 continue;
             }
@@ -796,12 +790,7 @@ public partial class GameScene : Node2D
         var playerRight = playerRect.Position.X + playerRect.Size.X;
         foreach (var actor in _spriteActors)
         {
-            if (!actor.Alive ||
-                !actor.Active ||
-                !actor.Behavior.CanInteract ||
-                IsPowerupItemSprite(actor.SpriteId) ||
-                IsSolidBlockSprite(actor.SpriteId) ||
-                (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
+            if (!IsAutoplayAvoidanceActor(actor))
             {
                 continue;
             }
@@ -840,12 +829,7 @@ public partial class GameScene : Node2D
         var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
         foreach (var actor in _spriteActors)
         {
-            if (!actor.Alive ||
-                !actor.Active ||
-                !actor.Behavior.CanInteract ||
-                IsPowerupItemSprite(actor.SpriteId) ||
-                IsSolidBlockSprite(actor.SpriteId) ||
-                (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
+            if (!IsAutoplayAvoidanceActor(actor) || actor.Behavior.Stompable)
             {
                 continue;
             }
@@ -877,13 +861,7 @@ public partial class GameScene : Node2D
         var playerRight = playerRect.Position.X + playerRect.Size.X;
         foreach (var actor in _spriteActors)
         {
-            if (!actor.Alive ||
-                !actor.Active ||
-                !actor.Behavior.CanInteract ||
-                actor.Behavior.Stompable ||
-                IsPowerupItemSprite(actor.SpriteId) ||
-                IsSolidBlockSprite(actor.SpriteId) ||
-                (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
+            if (!IsAutoplayAvoidanceActor(actor) || actor.Behavior.Stompable)
             {
                 continue;
             }
@@ -905,6 +883,17 @@ public partial class GameScene : Node2D
         }
 
         return false;
+    }
+
+    private static bool IsAutoplayAvoidanceActor(RuntimeSpriteActor actor)
+    {
+        return actor.Alive &&
+            actor.Active &&
+            actor.Behavior.CanInteract &&
+            !IsPowerupItemSprite(actor.SpriteId) &&
+            !IsSolidBlockSprite(actor.SpriteId) &&
+            actor.SpriteId != 0xC7 &&
+            (!IsJumpingPiranhaSprite(actor.SpriteId) || actor.State != 0);
     }
 
     private static bool HasAnyFrameInput(SmwPhysics.FrameInput input)

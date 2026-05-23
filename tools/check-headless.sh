@@ -418,7 +418,7 @@ grep -q "smw-runtime: sprite_stomp level=105 sprite=AB" "$LOG_FILE"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actors_on=1"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "gameover=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "deaths=1"
-grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -Eq "max_x=4[0-9]{3}\\."
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "max_x=4642.00"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2050,292 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
 ! grep -q "pipe-debug screen=07" "$LOG_FILE"
