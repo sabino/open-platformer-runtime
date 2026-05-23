@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added RCON `perf`/`fps`/`stats` inspection for long visible runs, reporting FPS, physics tick rate, node/actor/tile/collision counts, queued debug frames, and audio generator status in one line.
 - Added the first native-table-backed cape vertical physics branch: cape Mario now starts a `0x10`-frame float timer and clamps falling `YSpeed` to `0x10` while holding jump, with C# smoke coverage and RCON/HUD trace exposure for the timer.
 - Added RCON `collision [x y radius]` probing so stuck-player reports can list nearby temporary solid rectangles, slope segments, and their collision flags from the live runtime.
 - Added RCON `audio status|off|on` controls so visible Wayland playtests can stop/restart the internal APU probe and inspect voice/generator-buffer state without relaunching.

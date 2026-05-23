@@ -4741,6 +4741,10 @@ public partial class GameScene : Node2D
                 return BuildDebugState("invincible");
             case "audio":
                 return ExecuteDebugAudioCommand(parts);
+            case "perf":
+            case "fps":
+            case "stats":
+                return PrintDebugPerformance(parts.Length >= 2 ? parts[1] : "status");
             case "level":
                 RequirePartCount(parts, 2);
                 DebugEnterLevel(parts[1].ToUpperInvariant());
@@ -4885,6 +4889,30 @@ public partial class GameScene : Node2D
         var state = BuildDebugState(tag);
         GD.Print(state);
         return state;
+    }
+
+    private string PrintDebugPerformance(string tag)
+    {
+        var audioStatus = _audio?.DebugStatus() ?? "loaded=0 samples=0 voices=0 music=0 music_frame=0 events=0 loop_frames=0 frames_available=-1";
+        var perf =
+            $"smw-debug-perf: tag={tag} frame={_debugFrameCounter} fps={Engine.GetFramesPerSecond():0.00} " +
+            $"physics_tps={Engine.PhysicsTicksPerSecond} paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
+            $"nodes={CountNodes(GetTree().Root)} actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} " +
+            $"tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} player_sprites={_playerTileSprites.Count} " +
+            $"audio_enabled={(AudioEnabled ? 1 : 0)} audio_process={(_audio?.ProcessMode.ToString() ?? "none")} audio_{audioStatus}";
+        GD.Print(perf);
+        return perf;
+    }
+
+    private static int CountNodes(Node node)
+    {
+        var count = 1;
+        foreach (var child in node.GetChildren())
+        {
+            count += CountNodes(child);
+        }
+
+        return count;
     }
 
     private string PrintDebugTile(string[] parts)
