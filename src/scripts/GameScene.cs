@@ -1254,7 +1254,7 @@ public partial class GameScene : Node2D
 
     private static bool IsRuntimeEnemySprite(int spriteId)
     {
-        return spriteId is 0x4F or 0x83 or 0x8E or 0x95 or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7 or 0xDA or 0xDB or 0xDC or 0xDD or 0xDF;
+        return spriteId is 0x4F or 0x83 or 0x95 or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7 or 0xDA or 0xDB or 0xDC or 0xDD or 0xDF;
     }
 
     private static bool IsJumpingPiranhaSprite(int spriteId)
@@ -1417,9 +1417,6 @@ public partial class GameScene : Node2D
             case 0xC7:
                 AddBubbleVisual(node, visuals);
                 break;
-            case 0x8E:
-                AddWarpHoleVisual(node, visuals);
-                break;
         }
     }
 
@@ -1477,24 +1474,6 @@ public partial class GameScene : Node2D
     {
         visuals.Add(AddDebugRect(node, new Rect2(1, 2, 14, 11), new Color(0.70f, 0.90f, 1.0f, 0.38f), 2));
         visuals.Add(AddDebugRect(node, new Rect2(5, 9, 6, 8), new Color(0.70f, 0.90f, 1.0f, 0.38f), 2));
-    }
-
-    private static void AddWarpHoleVisual(Node2D node, List<Node> visuals)
-    {
-        visuals.Add(AddDebugRect(node, new Rect2(2, 2, 12, 12), new Color(1.0f, 0.76f, 0.26f, 0.92f), 2));
-        var label = new Label
-        {
-            Text = "Warp",
-            Position = new Vector2(17, -2),
-            ZIndex = 3,
-        };
-        label.AddThemeFontSizeOverride("font_size", 10);
-        label.AddThemeColorOverride("font_color", Colors.White);
-        label.AddThemeColorOverride("font_shadow_color", Colors.Black);
-        label.AddThemeConstantOverride("shadow_offset_x", 1);
-        label.AddThemeConstantOverride("shadow_offset_y", 1);
-        node.AddChild(label);
-        visuals.Add(label);
     }
 
     private static ColorRect AddDebugRect(Node parent, Rect2 rect, Color color, int zIndex)
@@ -1629,7 +1608,6 @@ public partial class GameScene : Node2D
         {
             0x4F => new Color(0.92f, 0.88f, 0.18f, 1.0f),
             0x83 => new Color(0.74f, 0.20f, 0.18f, 1.0f),
-            0x8E => new Color(0.18f, 0.76f, 0.28f, 1.0f),
             0x95 => new Color(0.74f, 0.42f, 0.18f, 1.0f),
             0x9F => new Color(0.20f, 0.38f, 0.88f, 1.0f),
             0xAB => new Color(0.76f, 0.32f, 0.16f, 1.0f),

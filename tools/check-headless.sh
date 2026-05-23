@@ -100,7 +100,7 @@ grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 m
 grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
-grep -q "sprite_actors=33" "$LOG_FILE"
+grep -q "sprite_actors=32" "$LOG_FILE"
 grep -q "goal_tapes=1" "$LOG_FILE"
 grep -q "player_sprites=8" "$LOG_FILE"
 grep -q "smw-runtime: entrance level=105 source=105 secondary=0 settings=0 spawn=16,288" "$LOG_FILE"

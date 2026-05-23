@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Stopped treating imported warp-hole sprite `0x8E` as a normal visible runtime actor; it remains inspectable through sprite/debug markers without drawing a fake gameplay block in the sloped-pipe area.
 - Added palette-aware runtime sprite rendering: Godot now builds eight OAM sprite atlases from the imported SNES 4bpp sprite VRAM plus the current level CGRAM palette, then selects the OAM palette row from each sprite property byte instead of using the single preview row.
 - Synced the offline level projection with current Lunar Magic Universal behavior for right diagonal ledge object `0x3B` and the 2x2 extended goal marker, and taught runtime slope classification to treat the generated right diagonal ledge edge tiles as slope surfaces.
 - Extended `tools/capture-wayland.sh` so compositor captures can pass additional Godot debug arguments such as `--smw-test-spawn=...`, while still forcing the safe Wayland/OpenGL path and workspace `6` by default.
