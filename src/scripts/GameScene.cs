@@ -5185,6 +5185,10 @@ public partial class GameScene : Node2D
             case "actors_near":
             case "near":
                 return PrintDebugActorsNear(parts);
+            case "actor_oam":
+            case "sprite_oam":
+            case "sprites_oam":
+                return PrintDebugActorOam(parts);
             case "quit":
                 GD.Print("smw-debug: quit");
                 GetTree().Quit();
@@ -5637,6 +5641,14 @@ public partial class GameScene : Node2D
         return line;
     }
 
+    private string PrintDebugActorOam(string[] parts)
+    {
+        var radius = parts.Length >= 2 ? ParseFloat(parts[1]) : 128.0f;
+        var line = $"smw-debug-actor-oam: radius={radius:0.00} {DescribeActorOamNear(radius)}";
+        GD.Print(line);
+        return line;
+    }
+
     private string ExecuteDebugAudioCommand(string[] parts)
     {
         if (parts.Length < 2 || parts[1].Equals("status", StringComparison.OrdinalIgnoreCase))
@@ -5836,6 +5848,54 @@ public partial class GameScene : Node2D
                 $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}:visuals={item.Actor.Visuals.Count}:visible={(item.Actor.Node.Visible ? 1 : 0)}");
         var description = string.Join(" | ", actors);
         return string.IsNullOrEmpty(description) ? "none" : description;
+    }
+
+    private string DescribeActorOamNear(float radius)
+    {
+        var maxDistanceSq = radius * radius;
+        var playerCenter = _physics.PlayerRect(_state).GetCenter();
+        var actors = _spriteActors
+            .Where(actor => actor.Alive)
+            .Select(actor => new
+            {
+                Actor = actor,
+                DistanceSq = actor.Rect.GetCenter().DistanceSquaredTo(playerCenter),
+            })
+            .Where(item => item.DistanceSq <= maxDistanceSq)
+            .OrderBy(item => item.DistanceSq)
+            .Take(6)
+            .Select(item => DescribeActorOam(item.Actor));
+        var description = string.Join(" | ", actors);
+        return string.IsNullOrEmpty(description) ? "none" : description;
+    }
+
+    private string DescribeActorOam(RuntimeSpriteActor actor)
+    {
+        var tiles = SpriteOamTilesFor(actor.SpriteId, actor.State);
+        var tileDescriptions = tiles.Count == 0
+            ? "none"
+            : string.Join(",", tiles.Select(DescribeSpriteOamTile));
+        return
+            $"{actor.SpriteId:X2}:state={actor.State}:used={(actor.Used ? 1 : 0)}:pos={actor.X:0.00},{actor.Y:0.00}:" +
+            $"visuals={actor.Visuals.Count}:visible={(actor.Node.Visible ? 1 : 0)}:tiles={tileDescriptions}";
+    }
+
+    private string DescribeSpriteOamTile(SpriteOamTile tile)
+    {
+        if (tile.Bank < 0 || tile.Bank >= SpriteAtlasTileStartByLmuBank.Length)
+        {
+            return $"badbank{tile.Bank}:tile={tile.Tile:X2}";
+        }
+
+        var size = tile.Large ? 16 : 8;
+        var oamPalette = (tile.Prop >> 1) & 0x07;
+        var tileIndex = SpriteAtlasTileStartByLmuBank[tile.Bank] + (tile.Tile & 0x7F);
+        var regionX = (tileIndex % SnesSpriteAtlasColumns) * SnesSpriteTileSize;
+        var regionY = (tileIndex / SnesSpriteAtlasColumns) * SnesSpriteTileSize;
+        return
+            $"dx={tile.Dx}:dy={tile.Dy}:tile={tile.Tile:X2}:bank={tile.Bank}:atlas={tileIndex}:" +
+            $"pal={oamPalette}:prop={tile.Prop:X2}:size={size}:flip_h={((tile.Prop & 0x40) != 0 ? 1 : 0)}:" +
+            $"flip_v={((tile.Prop & 0x80) != 0 ? 1 : 0)}:rect={regionX},{regionY},{size},{size}";
     }
 
     private string DescribeSolidsNear(Vector2 point, float radius)
