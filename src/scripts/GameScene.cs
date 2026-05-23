@@ -42,6 +42,9 @@ public partial class GameScene : Node2D
     private const int PowerupItemEmergingFrames = 32;
     private const float PowerupItemEmergingPixels = 16.0f;
     private const float PowerupItemWalkSpeed = 1.0f;
+    private const int InvisibleMushroomRevealCooldownFrames = 32;
+    private const float InvisibleMushroomRevealYOffset = -15.0f;
+    private const float InvisibleMushroomRevealYSpeed = -4.0f;
     private const int GoalTapeSpriteId = 0x7B;
     private const int GoalTapeCycleFrames = 124;
     private const float GoalTapeDownSpeed = 1.0f;
@@ -461,6 +464,7 @@ public partial class GameScene : Node2D
         public float XSpeed { get; set; }
         public float YSpeed { get; set; }
         public int MotionFrame { get; set; }
+        public int InteractionCooldownFrames { get; set; }
         public bool Used { get; set; }
         public bool Alive { get; set; } = true;
         public bool OnGround { get; set; }
@@ -1912,6 +1916,7 @@ public partial class GameScene : Node2D
             0x77 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
             0xDA or 0xDB or 0xDC or 0xDD or 0xDF => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: 0.0f),
             0x4F or 0x50 => new SpriteActorBehavior(new Rect2(8, -16, 16, 32), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
+            0xC7 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
             _ => new SpriteActorBehavior(new Rect2(0, 0, SpriteActorWidth, SpriteActorHeight), CanInteract: false, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
         };
     }
@@ -3559,6 +3564,10 @@ public partial class GameScene : Node2D
 
             actor.PreviousX = actor.X;
             actor.PreviousY = actor.Y;
+            if (actor.InteractionCooldownFrames > 0)
+            {
+                actor.InteractionCooldownFrames--;
+            }
             UpdateSpriteActorMotion(actor);
             ApplySpriteActorVisualVisibility(actor);
             if (IsSolidBlockSprite(actor.SpriteId))
@@ -3991,7 +4000,16 @@ public partial class GameScene : Node2D
             $"x={blockX:0.00} y={blockY:0.00} target_y={finalY:0.00}");
     }
 
-    private void AddPowerupItemActor(int spriteId, float x, float startY, float finalY, int state, int wakeScreen)
+    private void AddPowerupItemActor(
+        int spriteId,
+        float x,
+        float startY,
+        float finalY,
+        int state,
+        int wakeScreen,
+        float? initialXSpeed = null,
+        float initialYSpeed = 0.0f,
+        int interactionCooldownFrames = 0)
     {
         var behavior = SpriteActorBehaviorFor(spriteId);
         var node = new Node2D
@@ -4028,10 +4046,11 @@ public partial class GameScene : Node2D
             PreviousX = x,
             PreviousY = startY,
             HomeY = finalY,
-            XSpeed = spriteId is 0x74 or 0x78 ? PowerupItemWalkSpeed : 0.0f,
-            YSpeed = 0.0f,
+            XSpeed = initialXSpeed ?? (spriteId is 0x74 or 0x78 ? PowerupItemWalkSpeed : 0.0f),
+            YSpeed = initialYSpeed,
             WakeScreen = wakeScreen,
             MotionFrame = 0,
+            InteractionCooldownFrames = Math.Max(0, interactionCooldownFrames),
             Visuals = visuals,
             Behavior = behavior,
             State = state,
@@ -4072,10 +4091,17 @@ public partial class GameScene : Node2D
         if (!actor.Alive ||
             !actor.Behavior.CanInteract ||
             (IsPowerupItemSprite(actor.SpriteId) && actor.State == PowerupItemEmergingState) ||
+            (IsPowerupItemSprite(actor.SpriteId) && actor.InteractionCooldownFrames > 0) ||
             (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0) ||
             !playerRect.Intersects(actorRect))
         {
             return false;
+        }
+
+        if (actor.SpriteId == 0xC7)
+        {
+            RevealInvisibleMushroom(actor);
+            return true;
         }
 
         if (IsPowerupItemSprite(actor.SpriteId))
@@ -4109,6 +4135,29 @@ public partial class GameScene : Node2D
 
         HurtPlayerFromActor(actor);
         return true;
+    }
+
+    private void RevealInvisibleMushroom(RuntimeSpriteActor actor)
+    {
+        actor.Alive = false;
+        var revealY = actor.Y + InvisibleMushroomRevealYOffset;
+        var facingSpeed = _state.XSpeed < 0 ? -PowerupItemWalkSpeed : PowerupItemWalkSpeed;
+        AddPowerupItemActor(
+            0x74,
+            actor.X,
+            revealY,
+            revealY,
+            PowerupItemActiveState,
+            actor.WakeScreen,
+            facingSpeed,
+            InvisibleMushroomRevealYSpeed,
+            InvisibleMushroomRevealCooldownFrames);
+        _audio?.PlayOneUp();
+        _lastActorEvent = "item:C7:reveal";
+        GD.Print(
+            $"smw-runtime: invisible_mushroom level={_currentLevelId} source=C7 " +
+            $"x={actor.X:0.00} y={actor.Y:0.00} item=74 reveal_y={revealY:0.00} " +
+            $"cooldown={InvisibleMushroomRevealCooldownFrames} xs={facingSpeed:0.00} ys={InvisibleMushroomRevealYSpeed:0.00}");
     }
 
     private void CollectPowerupItem(RuntimeSpriteActor actor)
