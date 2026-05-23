@@ -64,6 +64,8 @@ public partial class GameScene : Node2D
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
+    private readonly List<bool> _solidStepUpEnabled = [];
+    private readonly List<bool> _solidVerticalEnabled = [];
     private readonly List<SmwPhysics.SlopeSurface> _slopes = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
     private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
@@ -176,7 +178,15 @@ public partial class GameScene : Node2D
         }
         else
         {
-            _physics.Step(ref _state, frameInput, _solids, _slopes, 0, (int)MathF.Round(GetLevelPixelRight()));
+            _physics.Step(
+                ref _state,
+                frameInput,
+                _solids,
+                _solidStepUpEnabled,
+                _solidVerticalEnabled,
+                _slopes,
+                0,
+                (int)MathF.Round(GetLevelPixelRight()));
         }
         UpdateCamera();
 
@@ -688,6 +698,8 @@ public partial class GameScene : Node2D
     private void BuildWorld()
     {
         _solids.Clear();
+        _solidStepUpEnabled.Clear();
+        _solidVerticalEnabled.Clear();
         _slopes.Clear();
         _spriteActors.Clear();
         _goalTapeTriggers.Clear();
@@ -1011,6 +1023,7 @@ public partial class GameScene : Node2D
     private void AddGeneratedCollision()
     {
         var solidTiles = new HashSet<(int X, int Y)>();
+        var noStepSolidTiles = new HashSet<(int X, int Y)>();
         var slopeTiles = new List<PlacedMap16Tile>();
         foreach (var tile in _placedTiles)
         {
@@ -1022,6 +1035,10 @@ public partial class GameScene : Node2D
             {
                 slopeTiles.Add(tile);
             }
+            else if (IsDiagonalPipeBodySolidTile(tile))
+            {
+                noStepSolidTiles.Add((tile.X, tile.Y));
+            }
             else if (IsSolidMap16Source(tile.Source))
             {
                 solidTiles.Add((tile.X, tile.Y));
@@ -1031,6 +1048,16 @@ public partial class GameScene : Node2D
         foreach (var rect in BuildMergedSolidRects(solidTiles))
         {
             AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), DebugOverlays);
+        }
+
+        foreach (var rect in BuildMergedSolidRects(noStepSolidTiles))
+        {
+            AddSolid(
+                rect,
+                new Color(0.05f, 0.70f, 1.0f, 0.12f),
+                DebugOverlays,
+                allowStepUp: false,
+                allowVertical: false);
         }
 
         foreach (var slope in BuildSlopeSurfaces(slopeTiles))
@@ -1219,7 +1246,7 @@ public partial class GameScene : Node2D
         return tile.Source switch
         {
             "left_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AA),
-            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB,
+            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C5 or 0x01C7 or 0x01EB,
             _ => false,
         };
     }
@@ -1227,7 +1254,7 @@ public partial class GameScene : Node2D
     private static bool IsDiagonalPipeCeilingTile(PlacedMap16Tile tile)
     {
         return tile.Source == "right_diagonal_pipe" &&
-            tile.Map16 is 0x01C5 or 0x01C6 or 0x01EF or 0x015C;
+            tile.Map16 is 0x01C6 or 0x01EF or 0x015C;
     }
 
     private static bool IsSlopeDownRightTile(PlacedMap16Tile tile)
@@ -1371,12 +1398,19 @@ public partial class GameScene : Node2D
 
         return tile.Source switch
         {
-            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C7 or 0x01EB ||
+            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C5 or 0x01C7 or 0x01EB ||
                 IsDiagonalPipeCeilingTile(tile),
             "left_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AA),
             "steep_right_slope_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AF),
             _ => false,
         };
+    }
+
+    private static bool IsDiagonalPipeBodySolidTile(PlacedMap16Tile tile)
+    {
+        return tile.Source == "right_diagonal_pipe" &&
+            tile.Map16 is 0x01C6 or 0x01EC or 0x01ED or 0x01EE or 0x01EF or
+                0x0159 or 0x015A or 0x015B or 0x015C;
     }
 
     private static bool IsCoinMarkerTile(PlacedMap16Tile tile)
@@ -1420,9 +1454,11 @@ public partial class GameScene : Node2D
             tile.Source.Contains("midway", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void AddSolid(Rect2 rect, Color color, bool debugVisible)
+    private void AddSolid(Rect2 rect, Color color, bool debugVisible, bool allowStepUp = true, bool allowVertical = true)
     {
         _solids.Add(rect);
+        _solidStepUpEnabled.Add(allowStepUp);
+        _solidVerticalEnabled.Add(allowVertical);
         if (!debugVisible)
         {
             return;

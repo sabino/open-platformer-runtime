@@ -146,16 +146,37 @@ public sealed class SmwPhysics
         IReadOnlyList<Rect2> solids,
         IReadOnlyList<SlopeSurface> slopes)
     {
+        Step(ref state, input, solids, null, slopes);
+    }
+
+    public void Step(
+        ref PlayerState state,
+        FrameInput input,
+        IReadOnlyList<Rect2> solids,
+        IReadOnlyList<bool>? solidStepUpEnabled,
+        IReadOnlyList<SlopeSurface> slopes)
+    {
+        Step(ref state, input, solids, solidStepUpEnabled, null, slopes);
+    }
+
+    public void Step(
+        ref PlayerState state,
+        FrameInput input,
+        IReadOnlyList<Rect2> solids,
+        IReadOnlyList<bool>? solidStepUpEnabled,
+        IReadOnlyList<bool>? solidVerticalEnabled,
+        IReadOnlyList<SlopeSurface> slopes)
+    {
         ApplyDucking(ref state, input);
         ApplyJumpAndGravity(ref state, input);
         ApplyHorizontal(ref state, input);
 
         IntegrateX(ref state);
-        var steppedOntoSolid = ResolveAxis(ref state, solids, horizontal: true);
+        var steppedOntoSolid = ResolveAxis(ref state, solids, solidStepUpEnabled, solidVerticalEnabled, horizontal: true);
 
         IntegrateY(ref state);
         state.OnGround = false;
-        ResolveAxis(ref state, solids, horizontal: false);
+        ResolveAxis(ref state, solids, solidStepUpEnabled, solidVerticalEnabled, horizontal: false);
         ResolveSlopes(ref state, slopes);
         if (steppedOntoSolid && state.YSpeed >= 0)
         {
@@ -172,6 +193,33 @@ public sealed class SmwPhysics
         int levelRight)
     {
         Step(ref state, input, solids, slopes);
+        ClampHorizontalLevelBounds(ref state, levelLeft, levelRight);
+    }
+
+    public void Step(
+        ref PlayerState state,
+        FrameInput input,
+        IReadOnlyList<Rect2> solids,
+        IReadOnlyList<bool> solidStepUpEnabled,
+        IReadOnlyList<SlopeSurface> slopes,
+        int levelLeft,
+        int levelRight)
+    {
+        Step(ref state, input, solids, solidStepUpEnabled, slopes);
+        ClampHorizontalLevelBounds(ref state, levelLeft, levelRight);
+    }
+
+    public void Step(
+        ref PlayerState state,
+        FrameInput input,
+        IReadOnlyList<Rect2> solids,
+        IReadOnlyList<bool> solidStepUpEnabled,
+        IReadOnlyList<bool> solidVerticalEnabled,
+        IReadOnlyList<SlopeSurface> slopes,
+        int levelLeft,
+        int levelRight)
+    {
+        Step(ref state, input, solids, solidStepUpEnabled, solidVerticalEnabled, slopes);
         ClampHorizontalLevelBounds(ref state, levelLeft, levelRight);
     }
 
@@ -426,12 +474,18 @@ public sealed class SmwPhysics
         }
     }
 
-    private bool ResolveAxis(ref PlayerState state, IReadOnlyList<Rect2> solids, bool horizontal)
+    private bool ResolveAxis(
+        ref PlayerState state,
+        IReadOnlyList<Rect2> solids,
+        IReadOnlyList<bool>? solidStepUpEnabled,
+        IReadOnlyList<bool>? solidVerticalEnabled,
+        bool horizontal)
     {
         var rect = PlayerRect(state);
         var steppedOntoSolid = false;
-        foreach (var solid in solids)
+        for (var solidIndex = 0; solidIndex < solids.Count; solidIndex++)
         {
+            var solid = solids[solidIndex];
             if (!rect.Intersects(solid))
             {
                 continue;
@@ -439,7 +493,10 @@ public sealed class SmwPhysics
 
             if (horizontal)
             {
-                if (TryStepUp(ref state, solid, rect, PlayerHeightFor(state)))
+                var allowStepUp = solidStepUpEnabled == null ||
+                    solidIndex >= solidStepUpEnabled.Count ||
+                    solidStepUpEnabled[solidIndex];
+                if (allowStepUp && TryStepUp(ref state, solid, rect, PlayerHeightFor(state)))
                 {
                     rect = PlayerRect(state);
                     steppedOntoSolid = true;
@@ -460,6 +517,14 @@ public sealed class SmwPhysics
             }
             else
             {
+                var allowVertical = solidVerticalEnabled == null ||
+                    solidIndex >= solidVerticalEnabled.Count ||
+                    solidVerticalEnabled[solidIndex];
+                if (!allowVertical)
+                {
+                    continue;
+                }
+
                 if (state.YSpeed > 0)
                 {
                     state.Y = (int)MathF.Round(solid.Position.Y - PlayerHeightFor(state));

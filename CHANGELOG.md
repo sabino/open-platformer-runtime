@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added runtime collision for diagonal-pipe body and mouth Map16 cells while preserving their outer floor/ceiling slope surfaces, so Mario can no longer walk through the sloped pipe volume and the pipe mouth has a walkable top segment.
 - Restricted diagonal-pipe ceiling slope collision to upward movement only, preventing normal walking under the sloped pipe from snapping Mario into the pipe underside and launching him across the level.
 - Tightened the diagonal pipe transition trigger to the sloped pipe mouth instead of the whole pipe body, and shifted ducking big-form rendering up with the preserved-foot hitbox so Mario no longer sinks below the ground when ducking.
 - Ported the native player walking animation speed table into generated metadata and moved Godot Mario walk/run pose cycling from wall-clock time to deterministic C# frame timers, including the native turn-around pose bridge.

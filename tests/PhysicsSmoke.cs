@@ -39,6 +39,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckHorizontalOnlySolid(physics))
+        {
+            return 1;
+        }
 
         var solids = new List<Rect2> { new(0, 128, 512, 32) };
         var state = physics.MakeState(32, 64);
@@ -455,6 +459,33 @@ public static class PhysicsSmoke
         if (state.Y == 80 || state.YSpeed == 0)
         {
             Console.Error.WriteLine($"expected walking motion to ignore slope ceiling, got y={state.Y} ys={state.YSpeed}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckHorizontalOnlySolid(SmwPhysics physics)
+    {
+        var solids = new List<Rect2> { new(24, 64, 16, 32) };
+        var noStep = new List<bool> { false };
+        var noVertical = new List<bool> { false };
+        var state = physics.MakeState(12, 64);
+        state.XSpeed = 0x40;
+
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, solids, noStep, noVertical, []);
+        if (state.X + SmwPhysics.PlayerWidth > 24 || state.Y != 64)
+        {
+            Console.Error.WriteLine($"expected horizontal-only solid to block side motion without step-up, got x={state.X} y={state.Y}");
+            return false;
+        }
+
+        state = physics.MakeState(24, 36);
+        state.YSpeed = 0x40;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), [new Rect2(24, 56, 16, 16)], noStep, noVertical, []);
+        if (state.OnGround || state.Y <= 36 || state.YSpeed <= 0)
+        {
+            Console.Error.WriteLine($"expected horizontal-only solid to ignore vertical floor resolution, got y={state.Y} ys={state.YSpeed} ground={state.OnGround}");
             return false;
         }
 
