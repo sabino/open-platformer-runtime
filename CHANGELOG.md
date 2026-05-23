@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Strengthened the deterministic autoplay regression from an 80-frame smoke probe into an actor-off end-to-end Yoshi Island 1 traversal that reaches the imported goal tape and verifies the course-clear walkout state.
 - Added native-style camera-window activation for runtime sprite actors: imported actors now skip motion, player contact, and fireball contact while outside the expanded camera wake region, spawned item actors stay always-active, and debug state/actor probes expose `actors_active`/`active` for regression checks.
 - Added post-hit Mario blink presentation for the native-style hurt timer: powered damage now hides only the rendered player OAM tiles on a 4-frame cadence while keeping collision/debug gizmos visible, and `state`/`player_oam` expose `blink`/`blink_hidden` plus slot alpha for frame-step verification.
 - Tightened runtime actor damage toward the native `DamagePlayer_Hurt` flow: powered Mario now powers down to small with a native-style `0x7F` post-hit invulnerability timer exposed as `hurt`, while small Mario takes the hurt death path instead of receiving generic knockback.

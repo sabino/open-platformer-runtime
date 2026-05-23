@@ -153,7 +153,7 @@ spawn 32 288 small
 ground on
 actors off
 autoplay explore
-step 80
+step 3000
 EOF
 cat >"$START_IDLE_HURT_COMMAND_FILE" <<'EOF'
 pause
@@ -371,13 +371,15 @@ grep -q "smw-audio: sample_preview sample=09 available=1 samples=3" "$LOG_FILE"
 grep -q "smw-input-script: loaded path=$INPUT_SCRIPT segments=4 frames=4" "$LOG_FILE"
 grep -q "smw-input-script: done name=$INPUT_SCRIPT frames=4" "$LOG_FILE"
 
-"$GODOT_BIN" --headless --path . --quit-after 120 --smw-test-autostart --smw-debug-command-file="$AUTOPLAY_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+"$GODOT_BIN" --headless --path . --quit-after 3040 --smw-test-autostart --smw-debug-command-file="$AUTOPLAY_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$AUTOPLAY_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-autoplay: mode=explore frame=0" "$LOG_FILE"
+grep -q "smw-runtime: course_clear level=105 walkout=right" "$LOG_FILE"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "autoplay=explore"
-grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "auto_frame=80"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "clear=1"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "walkout=405"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "x=5106.00"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actors_on=0"
-grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "x=185.38"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=none"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2050,292 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
