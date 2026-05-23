@@ -4771,6 +4771,10 @@ public partial class GameScene : Node2D
             case "tile":
             case "probe":
                 return PrintDebugTile(parts);
+            case "collision":
+            case "collisions":
+            case "collide":
+                return PrintDebugCollision(parts);
             case "player_oam":
             case "oam":
             case "pose":
@@ -4896,6 +4900,27 @@ public partial class GameScene : Node2D
         }
 
         var line = $"smw-debug-tile: {tile}";
+        GD.Print(line);
+        return line;
+    }
+
+    private string PrintDebugCollision(string[] parts)
+    {
+        Vector2 point;
+        float radius;
+        if (parts.Length >= 3)
+        {
+            point = new Vector2(ParseFloat(parts[1]), ParseFloat(parts[2]));
+            radius = parts.Length >= 4 ? ParseFloat(parts[3]) : 32.0f;
+        }
+        else
+        {
+            point = _physics.PlayerRect(_state).GetCenter();
+            radius = parts.Length >= 2 ? ParseFloat(parts[1]) : 32.0f;
+        }
+
+        var line = $"smw-debug-collision: point={point.X:0.00},{point.Y:0.00} radius={radius:0.00} " +
+            $"{DescribeSolidsNear(point, radius)} {DescribeSlopesNear(point, radius)}";
         GD.Print(line);
         return line;
     }
@@ -5052,6 +5077,69 @@ public partial class GameScene : Node2D
                 $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}");
         var description = string.Join(" | ", actors);
         return string.IsNullOrEmpty(description) ? "none" : description;
+    }
+
+    private string DescribeSolidsNear(Vector2 point, float radius)
+    {
+        var radiusSq = radius * radius;
+        var solids = _solids
+            .Select((solid, index) => new
+            {
+                Solid = solid,
+                Index = index,
+                DistanceSq = DistanceSquaredToRect(point, solid),
+            })
+            .Where(item => item.DistanceSq <= radiusSq)
+            .OrderBy(item => item.DistanceSq)
+            .Take(6)
+            .Select(item =>
+                $"{item.Index}:rect={item.Solid.Position.X:0.00},{item.Solid.Position.Y:0.00},{item.Solid.Size.X:0.00},{item.Solid.Size.Y:0.00}:step={BoolAt(_solidStepUpEnabled, item.Index)}:vert={BoolAt(_solidVerticalEnabled, item.Index)}");
+        var description = string.Join(" | ", solids);
+        return $"solids={(string.IsNullOrEmpty(description) ? "none" : description)}";
+    }
+
+    private string DescribeSlopesNear(Vector2 point, float radius)
+    {
+        var radiusSq = radius * radius;
+        var slopes = _slopes
+            .Select((slope, index) => new
+            {
+                Slope = slope,
+                Index = index,
+                DistanceSq = DistanceSquaredToSegment(point, new Vector2(slope.X0, slope.Y0), new Vector2(slope.X1, slope.Y1)),
+            })
+            .Where(item => item.DistanceSq <= radiusSq)
+            .OrderBy(item => item.DistanceSq)
+            .Take(8)
+            .Select(item =>
+                $"{item.Index}:line={item.Slope.X0:0.00},{item.Slope.Y0:0.00}->{item.Slope.X1:0.00},{item.Slope.Y1:0.00}:ceil={(item.Slope.Ceiling ? 1 : 0)}");
+        var description = string.Join(" | ", slopes);
+        return $"slopes={(string.IsNullOrEmpty(description) ? "none" : description)}";
+    }
+
+    private static int BoolAt(IReadOnlyList<bool> values, int index)
+    {
+        return index >= 0 && index < values.Count && values[index] ? 1 : 0;
+    }
+
+    private static float DistanceSquaredToRect(Vector2 point, Rect2 rect)
+    {
+        var closestX = Math.Clamp(point.X, rect.Position.X, rect.Position.X + rect.Size.X);
+        var closestY = Math.Clamp(point.Y, rect.Position.Y, rect.Position.Y + rect.Size.Y);
+        return point.DistanceSquaredTo(new Vector2(closestX, closestY));
+    }
+
+    private static float DistanceSquaredToSegment(Vector2 point, Vector2 a, Vector2 b)
+    {
+        var segment = b - a;
+        var lengthSq = segment.LengthSquared();
+        if (lengthSq <= 0.0001f)
+        {
+            return point.DistanceSquaredTo(a);
+        }
+
+        var t = Math.Clamp((point - a).Dot(segment) / lengthSq, 0.0f, 1.0f);
+        return point.DistanceSquaredTo(a + segment * t);
     }
 
     private static void RequirePartCount(string[] parts, int minimum)
