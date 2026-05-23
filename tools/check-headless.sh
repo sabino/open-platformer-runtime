@@ -27,10 +27,11 @@ WING_BLOCK_REWARD_COMMAND_FILE="$(mktemp)"
 PIRANHA_HIDDEN_COMMAND_FILE="$(mktemp)"
 PIRANHA_VISIBLE_COMMAND_FILE="$(mktemp)"
 SLOPE_PROBE_COMMAND_FILE="$(mktemp)"
+PIPE_UNDERSIDE_COMMAND_FILE="$(mktemp)"
 TRACE_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -104,6 +105,13 @@ pause
 spawn 921 208
 powerup small
 velocity 2 0
+step 1
+EOF
+cat >"$PIPE_UNDERSIDE_COMMAND_FILE" <<'EOF'
+pause
+spawn 2056 304
+powerup small
+velocity -3 0
 step 1
 EOF
 cat >"$TRACE_COMMAND_FILE" <<'EOF'
@@ -239,6 +247,13 @@ grep -q "smw-debug: command_file=$SLOPE_PROBE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "x=921.13 y=213.00" "$LOG_FILE"
 grep -q "g=1" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIPE_UNDERSIDE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$PIPE_UNDERSIDE_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "level=105" "$LOG_FILE"
+grep -q "x=2064.00 y=304.00" "$LOG_FILE"
+! grep -q "level=1CB" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 5 --smw-test-autostart --smw-debug-command-file="$TRACE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$TRACE_COMMAND_FILE" "$LOG_FILE"

@@ -1878,7 +1878,8 @@ public partial class GameScene : Node2D
 
     private bool ResolveDiagonalPipeCeilingIntrusion()
     {
-        if (_diagonalPipeCeilingCells.Count == 0)
+        if (_diagonalPipeCeilingCells.Count == 0 ||
+            (_state.YSpeed >= 0 && _state.XSpeed != 0))
         {
             return false;
         }
