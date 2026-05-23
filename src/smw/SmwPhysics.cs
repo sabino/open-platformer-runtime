@@ -1143,7 +1143,23 @@ public sealed class SmwPhysics
         state.SlopePlayer = NativeSlopePlayerTable[kind];
         state.SlopeType = NativeSlopeTypeTable[kind];
 
-        var stationaryYSpeed = NativeSlopePlayerStationaryYSpeedTable[kind];
+        var stationaryKind = kind;
+        if (kind < 0x1C && state.XSpeed != 0)
+        {
+            var slopeType = NativeSlopeTypeTable[kind];
+            if (slopeType != 0 && (((state.XSpeed & 0xFF) ^ (slopeType & 0xFF)) & 0x80) != 0)
+            {
+                if (Math.Abs(state.XSpeed) >= 0x28)
+                {
+                    state.YSpeed = NativeSlopePlayerTowardsPeakYSpeedTable[kind];
+                    return;
+                }
+
+                stationaryKind = 32;
+            }
+        }
+
+        var stationaryYSpeed = NativeSlopePlayerStationaryYSpeedTable[stationaryKind];
         if (state.YSpeed > stationaryYSpeed)
         {
             state.YSpeed = stationaryYSpeed;

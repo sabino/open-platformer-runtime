@@ -27,6 +27,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckNativeSlopeVerticalContact(physics))
+        {
+            return 1;
+        }
         if (!CheckDuckingState(physics))
         {
             return 1;
@@ -455,6 +459,43 @@ public static class PhysicsSmoke
         if (state.XSpeed >= 0x0C)
         {
             Console.Error.WriteLine($"expected slope-aware left input to use native slope acceleration rows, got xs={state.XSpeed} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckNativeSlopeVerticalContact(SmwPhysics physics)
+    {
+        var slope = new SmwPhysics.SlopeSurface(
+            0,
+            116,
+            16,
+            100,
+            NativeSlopeKind: 12,
+            SnapDistance: SmwPhysics.NativeSlopeSnapDistanceForKind(12));
+
+        var fastState = physics.MakeState(1, 100, SmwPhysics.SmallPowerup);
+        fastState.XSpeed = 0x28;
+        physics.Step(ref fastState, new SmwPhysics.FrameInput(), [], [slope]);
+        if (!fastState.OnGround ||
+            fastState.SlopeKind != 12 ||
+            fastState.YSpeed != SmwPhysics.NativeSlopePlayerTowardsPeakYSpeedTable[12])
+        {
+            Console.Error.WriteLine(
+                $"expected fast slope-peak contact to use native towards-peak y speed, got ground={fastState.OnGround} kind={fastState.SlopeKind} ys={fastState.YSpeed}");
+            return false;
+        }
+
+        var slowState = physics.MakeState(1, 100, SmwPhysics.SmallPowerup);
+        slowState.XSpeed = 0x20;
+        physics.Step(ref slowState, new SmwPhysics.FrameInput(), [], [slope]);
+        if (!slowState.OnGround ||
+            slowState.SlopeKind != 12 ||
+            slowState.YSpeed != SmwPhysics.NativeSlopePlayerStationaryYSpeedTable[32])
+        {
+            Console.Error.WriteLine(
+                $"expected slow slope-peak contact to use native fallback stationary row, got ground={slowState.OnGround} kind={slowState.SlopeKind} ys={slowState.YSpeed}");
             return false;
         }
 
