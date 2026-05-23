@@ -262,7 +262,7 @@ public partial class GameScene : Node2D
 
         if (_player != null)
         {
-            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+            _player.Position = PlayerRenderPosition();
         }
 
         UpdatePlayerGraphic();
@@ -270,7 +270,7 @@ public partial class GameScene : Node2D
         {
             if (_player != null)
             {
-                _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+                _player.Position = PlayerRenderPosition();
             }
             UpdatePlayerGraphic(force: true);
         }
@@ -3495,7 +3495,7 @@ public partial class GameScene : Node2D
         _player = new Node2D
         {
             Name = "MarioPlayer",
-            Position = new Vector2(_state.XFloat, _state.YFloat),
+            Position = PlayerRenderPosition(),
         };
         AddChild(_player);
 
@@ -3852,6 +3852,11 @@ public partial class GameScene : Node2D
             spriteSize,
             spriteSize);
         sprite.Visible = true;
+    }
+
+    private Vector2 PlayerRenderPosition()
+    {
+        return new Vector2(_state.X, _state.Y);
     }
 
     private SmwPhysics.PlayerState MakeInitialPlayerState(LevelEntrance? entrance = null)
@@ -4360,7 +4365,7 @@ public partial class GameScene : Node2D
         UpdateCamera();
         if (_player != null)
         {
-            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+            _player.Position = PlayerRenderPosition();
         }
         UpdateHud();
         UpdateDebugGizmos();
@@ -4373,7 +4378,7 @@ public partial class GameScene : Node2D
         _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
         if (_player != null)
         {
-            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+            _player.Position = PlayerRenderPosition();
         }
 
         UpdatePlayerGraphic(force: true);
@@ -4427,7 +4432,7 @@ public partial class GameScene : Node2D
         BuildHud();
         if (_player != null)
         {
-            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+            _player.Position = PlayerRenderPosition();
         }
         UpdatePlayerGraphic(force: true);
         UpdateHud();
@@ -5590,7 +5595,7 @@ public partial class GameScene : Node2D
         BuildHud();
         if (_player != null)
         {
-            _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+            _player.Position = PlayerRenderPosition();
         }
 
         _lastPlayerPose = -1;
