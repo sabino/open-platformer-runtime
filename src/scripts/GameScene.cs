@@ -23,6 +23,24 @@ public partial class GameScene : Node2D
     private const int PlayerHurtCooldownFrames = 90;
     private const int GoalTapeSpriteId = 0x7B;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
+    private static readonly int[] LoadLevelYLowTable =
+    [
+        0x00, 0x30, 0x60, 0x80, 0xA0, 0xB0, 0xC0, 0xE0,
+        0x10, 0x30, 0x50, 0x60, 0x70, 0x90, 0x00, 0x00,
+    ];
+    private static readonly int[] LoadLevelYHighTable =
+    [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    ];
+    private static readonly int[] LoadLevelXLowTable =
+    [
+        0x10, 0x80, 0x00, 0xE0, 0x10, 0x70, 0x00, 0xE0,
+    ];
+    private static readonly int[] LoadLevelXHighTable =
+    [
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01,
+    ];
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -60,6 +78,7 @@ public partial class GameScene : Node2D
     private Node2D? _worldRoot;
     private SmwAudio? _audio;
     private ImageTexture? _playerTexture;
+    private Godot.Collections.Dictionary? _entranceTables;
     private string _currentLevelId = "105";
     private string _levelGfxAtlasPath = "res://generated/smw/tilesets/level_105_tileset7_8x8.png";
     private string _levelMap16AtlasPath = "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png";
@@ -136,7 +155,13 @@ public partial class GameScene : Node2D
 
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
     private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
-    private readonly record struct PipeEntrance(Rect2 Rect, int Screen);
+    private readonly record struct PipeEntrance(Rect2 Rect, int Screen, bool Horizontal);
+    private readonly record struct LevelEntrance(
+        string LevelId,
+        Vector2 Position,
+        int EntranceSettings,
+        bool Secondary,
+        int SourceId);
     private sealed class RuntimeSpriteActor
     {
         public required Node2D Node { get; init; }
@@ -1356,7 +1381,28 @@ public partial class GameScene : Node2D
             if (entranceTile != null)
             {
                 var topLeft = TileToWorld(entranceTile.Value.X, entranceTile.Value.Y);
-                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X, topLeft.Y - 32, 32, 48), screen));
+                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X, topLeft.Y - 32, 32, 48), screen, Horizontal: false));
+                continue;
+            }
+
+            PlacedMap16Tile? horizontalEntranceTile = null;
+            foreach (var tile in _placedTiles)
+            {
+                if (tile.X / 16 != screen || !tile.Source.Contains("horizontal_pipe_end", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (horizontalEntranceTile == null || tile.Y < horizontalEntranceTile.Value.Y)
+                {
+                    horizontalEntranceTile = tile;
+                }
+            }
+
+            if (horizontalEntranceTile != null)
+            {
+                var topLeft = TileToWorld(horizontalEntranceTile.Value.X, horizontalEntranceTile.Value.Y);
+                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X - 24, topLeft.Y, 48, 32), screen, Horizontal: true));
             }
         }
     }
@@ -1967,7 +2013,35 @@ public partial class GameScene : Node2D
         sprite.Visible = true;
     }
 
-    private SmwPhysics.PlayerState MakeInitialPlayerState()
+    private SmwPhysics.PlayerState MakeInitialPlayerState(LevelEntrance? entrance = null)
+    {
+        if (entrance is { } resolvedEntrance)
+        {
+            return MakeEntrancePlayerState(resolvedEntrance);
+        }
+
+        if (TryResolveMainEntrance(ParseLevelId(_currentLevelId), out var mainEntrance))
+        {
+            return MakeEntrancePlayerState(mainEntrance);
+        }
+
+        return MakeFallbackInitialPlayerState();
+    }
+
+    private SmwPhysics.PlayerState MakeEntrancePlayerState(LevelEntrance entrance)
+    {
+        var state = _physics.MakeState(
+            (int)MathF.Round(entrance.Position.X),
+            (int)MathF.Round(entrance.Position.Y),
+            DefaultPlayerPowerup);
+        GD.Print(
+            $"smw-runtime: entrance level={entrance.LevelId} source={entrance.SourceId:X3} " +
+            $"secondary={(entrance.Secondary ? 1 : 0)} settings={entrance.EntranceSettings} " +
+            $"spawn={state.X},{state.Y}");
+        return state;
+    }
+
+    private SmwPhysics.PlayerState MakeFallbackInitialPlayerState()
     {
         var playerHeight = SmwPhysics.PlayerHeightForPowerup(DefaultPlayerPowerup);
         foreach (var tile in _placedTiles)
@@ -1985,6 +2059,165 @@ public partial class GameScene : Node2D
         }
 
         return _physics.MakeState(64, 64, DefaultPlayerPowerup);
+    }
+
+    private bool TryResolveScreenExit(int screen, out LevelEntrance entrance)
+    {
+        Godot.Collections.Dictionary? exitData = null;
+        foreach (var entry in _screenExits)
+        {
+            if (entry.TryGetValue("screen", out var screenVariant) && screenVariant.AsInt32() == screen)
+            {
+                exitData = entry;
+                break;
+            }
+        }
+
+        if (exitData == null)
+        {
+            entrance = default;
+            return false;
+        }
+
+        return TryResolveScreenExit(exitData, out entrance);
+    }
+
+    private bool TryResolveScreenExit(Godot.Collections.Dictionary exitData, out LevelEntrance entrance)
+    {
+        if (!exitData.TryGetValue("vanilla_destination", out var destinationVariant))
+        {
+            entrance = default;
+            return false;
+        }
+
+        var destination = destinationVariant.AsInt32();
+        var properties = exitData.TryGetValue("vanilla_properties", out var propertiesVariant)
+            ? propertiesVariant.AsInt32()
+            : 0;
+        if ((properties & 0x02) != 0)
+        {
+            return TryResolveSecondaryEntrance(destination, out entrance);
+        }
+
+        return TryResolveMainEntrance(destination, out entrance);
+    }
+
+    private bool TryResolveMainEntrance(int levelId, out LevelEntrance entrance)
+    {
+        var f000 = ReadEntranceTableByte("level_info_05f000", levelId);
+        var f200 = ReadEntranceTableByte("level_info_05f200", levelId);
+        if (f000 == null || f200 == null)
+        {
+            entrance = default;
+            return false;
+        }
+
+        var yIndex = f000.Value & 0x0F;
+        var xIndex = f200.Value & 0x07;
+        var entranceSettings = (f200.Value & 0x38) >> 3;
+        entrance = new LevelEntrance(
+            FormatLevelId(levelId),
+            new Vector2(NativeEntranceX(xIndex), NativeEntranceY(yIndex) + LevelVisualYOffset),
+            entranceSettings,
+            Secondary: false,
+            SourceId: levelId);
+        return true;
+    }
+
+    private bool TryResolveSecondaryEntrance(int secondaryId, out LevelEntrance entrance)
+    {
+        var targetLow = ReadEntranceTableByte("secondary_level_low_05f800", secondaryId);
+        var yByte = ReadEntranceTableByte("secondary_y_05fa00", secondaryId);
+        var xByte = ReadEntranceTableByte("secondary_x_05fc00", secondaryId);
+        var typeByte = ReadEntranceTableByte("secondary_entrance_type_05fe00", secondaryId);
+        if (targetLow == null || yByte == null || xByte == null || typeByte == null)
+        {
+            entrance = default;
+            return false;
+        }
+
+        var targetLevel = (secondaryId & 0x100) | targetLow.Value;
+        var yIndex = yByte.Value & 0x0F;
+        var xIndex = (xByte.Value >> 5) & 0x07;
+        entrance = new LevelEntrance(
+            FormatLevelId(targetLevel),
+            new Vector2(NativeEntranceX(xIndex), NativeEntranceY(yIndex) + LevelVisualYOffset),
+            typeByte.Value & 0x07,
+            Secondary: true,
+            SourceId: secondaryId);
+        return true;
+    }
+
+    private int? ReadEntranceTableByte(string tableName, int index)
+    {
+        if (!EnsureEntranceTablesLoaded() || _entranceTables == null)
+        {
+            return null;
+        }
+        if (!_entranceTables.TryGetValue(tableName, out var tableVariant) ||
+            tableVariant.VariantType != Variant.Type.Array)
+        {
+            return null;
+        }
+
+        var table = tableVariant.AsGodotArray();
+        if (index < 0 || index >= table.Count)
+        {
+            return null;
+        }
+
+        return table[index].AsInt32();
+    }
+
+    private bool EnsureEntranceTablesLoaded()
+    {
+        if (_entranceTables != null)
+        {
+            return true;
+        }
+
+        const string tablesPath = "res://generated/smw/levels/secondary_tables.json";
+        if (!FileAccess.FileExists(tablesPath))
+        {
+            return false;
+        }
+
+        using var file = FileAccess.Open(tablesPath, FileAccess.ModeFlags.Read);
+        if (file == null)
+        {
+            return false;
+        }
+
+        var parsed = Json.ParseString(file.GetAsText());
+        if (parsed.VariantType != Variant.Type.Dictionary)
+        {
+            return false;
+        }
+
+        _entranceTables = parsed.AsGodotDictionary();
+        return true;
+    }
+
+    private static int NativeEntranceX(int index)
+    {
+        index &= 0x07;
+        return LoadLevelXLowTable[index] | (LoadLevelXHighTable[index] << 8);
+    }
+
+    private static int NativeEntranceY(int index)
+    {
+        index &= 0x0F;
+        return LoadLevelYLowTable[index] | (LoadLevelYHighTable[index] << 8);
+    }
+
+    private static int ParseLevelId(string levelId)
+    {
+        return Convert.ToInt32(levelId, 16);
+    }
+
+    private static string FormatLevelId(int levelId)
+    {
+        return $"{levelId & 0x1FF:X3}";
     }
 
     private static Vector2 TileToWorld(int x, int y)
@@ -2139,6 +2372,18 @@ public partial class GameScene : Node2D
         EnterLevel(levelId);
     }
 
+    public void DebugEnterScreenExit(int screen)
+    {
+        if (TryResolveScreenExit(screen, out var entrance))
+        {
+            EnterLevel(entrance.LevelId, entrance);
+        }
+        else
+        {
+            GD.PrintErr($"smw-test-screen-exit: screen={screen:X2} unresolved level={_currentLevelId}");
+        }
+    }
+
     public void DebugSetPlayerPosition(Vector2 position)
     {
         _state.X = (int)MathF.Round(position.X);
@@ -2226,7 +2471,7 @@ public partial class GameScene : Node2D
         }
     }
 
-    private void EnterLevel(string levelId)
+    private void EnterLevel(string levelId, LevelEntrance? entrance = null)
     {
         if (!LoadLevelData(levelId))
         {
@@ -2236,7 +2481,7 @@ public partial class GameScene : Node2D
 
         _courseClear = false;
         _playerHurtCooldown = 0;
-        _state = MakeInitialPlayerState();
+        _state = MakeInitialPlayerState(entrance);
         _cameraInitialized = false;
         UpdateCamera();
         BuildWorld();
@@ -2254,7 +2499,9 @@ public partial class GameScene : Node2D
 
     private void CheckPipeDebug()
     {
-        if (!Input.IsActionPressed("smw_down"))
+        var downPressed = Input.IsActionPressed("smw_down");
+        var sidePressed = Input.IsActionPressed("smw_left") || Input.IsActionPressed("smw_right");
+        if (!downPressed && !sidePressed)
         {
             _pipeTransitionLatch = false;
             return;
@@ -2267,11 +2514,20 @@ public partial class GameScene : Node2D
 
         var playerRect = _physics.PlayerRect(_state);
         PipeEntrance? matchedEntrance = null;
-        foreach (var entrance in _pipeEntrances)
+        foreach (var pipeEntrance in _pipeEntrances)
         {
-            if (playerRect.Intersects(entrance.Rect))
+            if (pipeEntrance.Horizontal && !sidePressed)
             {
-                matchedEntrance = entrance;
+                continue;
+            }
+            if (!pipeEntrance.Horizontal && !downPressed)
+            {
+                continue;
+            }
+
+            if (playerRect.Intersects(pipeEntrance.Rect))
+            {
+                matchedEntrance = pipeEntrance;
                 break;
             }
         }
@@ -2281,21 +2537,16 @@ public partial class GameScene : Node2D
         }
 
         var screen = matchedEntrance.Value.Screen;
-        Godot.Collections.Dictionary? exitData = null;
-        foreach (var entry in _screenExits)
+        if (TryResolveScreenExit(screen, out var entrance))
         {
-            if (entry.TryGetValue("screen", out var screenVariant) && screenVariant.AsInt32() == screen)
-            {
-                exitData = entry;
-                break;
-            }
+            GD.Print(
+                $"pipe-debug screen={screen:X2} target={entrance.LevelId} " +
+                $"secondary={(entrance.Secondary ? 1 : 0)} source={entrance.SourceId:X3}");
+            EnterLevel(entrance.LevelId, entrance);
         }
-
-        GD.Print($"pipe-debug screen={screen:X2} exit={Json.Stringify(exitData ?? new Godot.Collections.Dictionary())}");
-        if (exitData != null &&
-            exitData.TryGetValue("vanilla_destination", out var destinationVariant))
+        else
         {
-            EnterLevel($"{destinationVariant.AsInt32():X3}");
+            GD.PrintErr($"pipe-debug screen={screen:X2} unresolved level={_currentLevelId}");
         }
     }
 

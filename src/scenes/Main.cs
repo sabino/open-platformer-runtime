@@ -34,6 +34,7 @@ public partial class Main : Node2D
         string? audioPreview = null;
         Vector2? testSpawn = null;
         int? testPowerup = null;
+        int? testScreenExit = null;
         var captureFrames = 8;
         foreach (var arg in OS.GetCmdlineArgs())
         {
@@ -68,6 +69,11 @@ public partial class Main : Node2D
                 testPowerup = ParseTestPowerup(arg["--smw-test-powerup=".Length..]);
                 autostart = true;
             }
+            else if (arg.StartsWith("--smw-test-screen-exit=", StringComparison.Ordinal))
+            {
+                testScreenExit = ParseHexOrDecimal(arg["--smw-test-screen-exit=".Length..]);
+                autostart = true;
+            }
             else if (arg.StartsWith("--smw-capture-frames=", StringComparison.Ordinal) &&
                 int.TryParse(arg["--smw-capture-frames=".Length..], out var parsedFrames))
             {
@@ -90,6 +96,10 @@ public partial class Main : Node2D
         if (testPowerup != null)
         {
             _game?.DebugSetPlayerPowerup(testPowerup.Value);
+        }
+        if (testScreenExit != null)
+        {
+            _game?.DebugEnterScreenExit(testScreenExit.Value);
         }
         if (capturePath != null)
         {
@@ -117,6 +127,24 @@ public partial class Main : Node2D
         }
 
         return new Vector2(x, y);
+    }
+
+    private static int? ParseHexOrDecimal(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[2..];
+            return int.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hex)
+                ? hex
+                : null;
+        }
+
+        return int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var dec)
+            ? dec
+            : int.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var bareHex)
+                ? bareHex
+                : null;
     }
 
     private static int? ParseTestPowerup(string value)

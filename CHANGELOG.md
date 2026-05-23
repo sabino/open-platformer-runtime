@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Routed runtime level entry through the imported vanilla entrance tables: first boot, direct screen exits, and secondary exits now spawn from `$05F000/$05F200` and `$05F800/$05FA00/$05FC00/$05FE00` instead of a generic floor-tile scan.
+- Added horizontal pipe trigger rectangles for screen exits, allowing the underground `1CB` return pipe to resolve back to `105` through the secondary-entrance table during runtime/debug play.
 - Added Map16-aware slope heights for runtime collision: gradual, normal, and steep standard-slope tiles now project 4px/8px/16px segments instead of every edge tile acting like a 45-degree ramp.
 - Ported Lunar Magic Universal's current left diagonal ledge slope/line overwrite flags into the offline importer so adjusted ledge edge tiles stay aligned with LMU's renderer.
 - Kept imported slope/diagonal-ledge fill and support tiles as runtime solids while only converting actual edge cells into slope surfaces, making slope interiors traversable instead of hollow.
