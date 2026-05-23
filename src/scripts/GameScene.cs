@@ -85,6 +85,8 @@ public partial class GameScene : Node2D
     private const float AutoplayExploreActorVerticalRangePixels = 72.0f;
     private const float AutoplayExploreActorPeriodicSuppressAheadPixels = 128.0f;
     private const float AutoplayExploreActorPeriodicSuppressBehindPixels = 16.0f;
+    private const float AutoplayExploreActorAirBrakeAheadPixels = 96.0f;
+    private const float AutoplayExploreActorAirBrakeBehindPixels = 24.0f;
     private const float AutoplayExploreActorDuckAheadPixels = 160.0f;
     private const float AutoplayExploreActorDuckBehindPixels = 24.0f;
     private static readonly int[] StompScoreByNativeGivePointsIndex = [100, 200, 400, 800, 1000, 2000, 4000, 8000];
@@ -261,6 +263,7 @@ public partial class GameScene : Node2D
     private bool _debugHeldJumpPressed;
     private bool _debugHeldSpinPressed;
     private bool _debugHeldRunPressed;
+    private float _debugMaxPlayerX;
     private DebugAutoplayMode _autoplayMode;
     private int _autoplayFrame;
     private int _autoplayLastPlayerX;
@@ -296,6 +299,7 @@ public partial class GameScene : Node2D
         }
         LoadAssetPack();
         _state = MakeInitialPlayerState();
+        ResetDebugMaxPlayerX();
         ResetPlayerAnimationState();
         BuildWorld();
         BuildPlayer();
@@ -390,6 +394,7 @@ public partial class GameScene : Node2D
             }
             UpdatePlayerGraphic(force: true);
         }
+        UpdateDebugMaxPlayerX();
         TryHandleQueuedPlayerDeath();
         UpdatePlayerFireballs();
         UpdateGoalTapes();
@@ -724,6 +729,7 @@ public partial class GameScene : Node2D
 
         var duck = _state.OnGround && ShouldAutoplayDuckUnderActorAhead();
         var actorAhead = ShouldAutoplayDeferPeriodicJumpForActorAhead();
+        var airBrake = ShouldAutoplayBrakeForAirborneActorAhead();
         var periodicJump = _state.OnGround &&
             !duck &&
             !actorAhead &&
@@ -737,11 +743,12 @@ public partial class GameScene : Node2D
         _autoplayJumpHeld = jump;
         return new SmwPhysics.FrameInput
         {
-            Right = true,
+            Right = !airBrake,
+            Left = airBrake,
             Down = duck,
             Jump = jump,
             JumpPressed = jumpPressed,
-            Run = !actorAhead || jump,
+            Run = !airBrake && (!actorAhead || jump),
         };
     }
 
@@ -809,6 +816,49 @@ public partial class GameScene : Node2D
 
             var actorBottom = actorRect.Position.Y + actorRect.Size.Y;
             var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+            if (actorBottom < playerRect.Position.Y - AutoplayExploreActorVerticalRangePixels ||
+                actorRect.Position.Y > playerBottom + AutoplayExploreActorVerticalRangePixels)
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool ShouldAutoplayBrakeForAirborneActorAhead()
+    {
+        if (_state.OnGround || _state.YSpeed >= 0)
+        {
+            return false;
+        }
+
+        var playerRect = _physics.PlayerRect(_state);
+        var playerRight = playerRect.Position.X + playerRect.Size.X;
+        var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+        foreach (var actor in _spriteActors)
+        {
+            if (!actor.Alive ||
+                !actor.Active ||
+                !actor.Behavior.CanInteract ||
+                IsPowerupItemSprite(actor.SpriteId) ||
+                IsSolidBlockSprite(actor.SpriteId) ||
+                (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
+            {
+                continue;
+            }
+
+            var actorRect = actor.Rect;
+            var ahead = actorRect.Position.X - playerRight;
+            if (ahead < -AutoplayExploreActorAirBrakeBehindPixels ||
+                ahead > AutoplayExploreActorAirBrakeAheadPixels)
+            {
+                continue;
+            }
+
+            var actorBottom = actorRect.Position.Y + actorRect.Size.Y;
             if (actorBottom < playerRect.Position.Y - AutoplayExploreActorVerticalRangePixels ||
                 actorRect.Position.Y > playerBottom + AutoplayExploreActorVerticalRangePixels)
             {
@@ -2157,7 +2207,7 @@ public partial class GameScene : Node2D
     {
         return spriteId switch
         {
-            0x9F => new SpriteActorBehavior(new Rect2(8, 4, 48, 24), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
+            0x9F => new SpriteActorBehavior(new Rect2(8, 0, 48, 24), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
             0x95 => new SpriteActorBehavior(new Rect2(0, -4, 20, 36), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
             0xAB => new SpriteActorBehavior(new Rect2(-4, -15, 20, 31), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
             0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.58f),
@@ -4639,7 +4689,8 @@ public partial class GameScene : Node2D
         var topContact = playerBottom <= actorTop + 32.0f;
         _lastActorContact =
             $"{actor.SpriteId:X2}:{actor.State}:pb={playerBottom:0.00}:ppb={previousBottom:0.00}:at={actorTop:0.00}:ys={_state.YSpeed}:down={(downwardContact ? 1 : 0)}:top={(topContact ? 1 : 0)}:cross={(crossedActorTop ? 1 : 0)}";
-        var stomped = actor.Behavior.Stompable && downwardContact && topContact && crossedActorTop;
+        var topBandStomp = crossedActorTop && !_state.OnGround;
+        var stomped = actor.Behavior.Stompable && topContact && (downwardContact || topBandStomp);
         if (stomped)
         {
             if (TryStompRex(actor))
@@ -6118,6 +6169,7 @@ public partial class GameScene : Node2D
         _state.SubYSpeed = 0;
         _state.OnGround = false;
         ClearTransientJumpState();
+        UpdateDebugMaxPlayerX();
         _cameraInitialized = false;
         UpdateCamera();
         if (_player != null)
@@ -7730,6 +7782,7 @@ public partial class GameScene : Node2D
             $"smw-debug-state: tag={tag} frame={_debugFrameCounter} level={_currentLevelId} " +
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
+            $"max_x={_debugMaxPlayerX:0.00} " +
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} hurt={_playerHurtCooldown} blink={(_lastPlayerBlinkHidden ? 1 : 0)} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
@@ -8305,6 +8358,7 @@ public partial class GameScene : Node2D
         _stompChainCounter = 0;
         _starPowerTimer = 0;
         _state = MakeInitialPlayerState(entrance);
+        ResetDebugMaxPlayerX();
         ResetPlayerAnimationState();
         _cameraInitialized = false;
         UpdateCamera();
@@ -8336,6 +8390,7 @@ public partial class GameScene : Node2D
 
     private void HandlePlayerDeath(string cause, string actorEvent)
     {
+        UpdateDebugMaxPlayerX();
         _deathCount++;
         _stompChainCounter = 0;
         _lives = Math.Max(0, _lives - 1);
@@ -8396,6 +8451,7 @@ public partial class GameScene : Node2D
         HideGameOverLabel();
         HidePauseLabel();
         RestartCurrentLevel(wasGameOver ? "gameover:continue" : "debug:continue");
+        ResetDebugMaxPlayerX();
         GD.Print($"smw-runtime: continue level={_currentLevelId} lives={_lives} score={_score}");
     }
 
@@ -8439,6 +8495,16 @@ public partial class GameScene : Node2D
         UpdatePlayerGraphic(force: true);
         PrintRuntimeState();
         StartLevelMusic();
+    }
+
+    private void ResetDebugMaxPlayerX()
+    {
+        _debugMaxPlayerX = _state.XFloat;
+    }
+
+    private void UpdateDebugMaxPlayerX()
+    {
+        _debugMaxPlayerX = MathF.Max(_debugMaxPlayerX, _state.XFloat);
     }
 
     public override void _ExitTree()

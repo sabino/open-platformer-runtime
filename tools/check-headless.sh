@@ -32,6 +32,7 @@ WING_BLOCK_REWARD_COMMAND_FILE="$(mktemp)"
 ITEM_COLLECT_COMMAND_FILE="$(mktemp)"
 FIREBALL_COMMAND_FILE="$(mktemp)"
 AUTOPLAY_COMMAND_FILE="$(mktemp)"
+ACTORS_AUTOPLAY_COMMAND_FILE="$(mktemp)"
 START_IDLE_HURT_COMMAND_FILE="$(mktemp)"
 STAR_ITEM_COMMAND_FILE="$(mktemp)"
 STAR_HIT_COMMAND_FILE="$(mktemp)"
@@ -53,7 +54,7 @@ TRACE_COMMAND_FILE="$(mktemp)"
 COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$HURT_BLINK_COMMAND_FILE" "$SMALL_HURT_COMMAND_FILE" "$REX_COMMAND_FILE" "$BANZAI_UNDER_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$FIREBALL_COMMAND_FILE" "$AUTOPLAY_COMMAND_FILE" "$START_IDLE_HURT_COMMAND_FILE" "$STAR_ITEM_COMMAND_FILE" "$STAR_HIT_COMMAND_FILE" "$STATIC_QUESTION_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$INVISIBLE_MUSHROOM_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$HURT_BLINK_COMMAND_FILE" "$SMALL_HURT_COMMAND_FILE" "$REX_COMMAND_FILE" "$BANZAI_UNDER_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$FIREBALL_COMMAND_FILE" "$AUTOPLAY_COMMAND_FILE" "$ACTORS_AUTOPLAY_COMMAND_FILE" "$START_IDLE_HURT_COMMAND_FILE" "$STAR_ITEM_COMMAND_FILE" "$STAR_HIT_COMMAND_FILE" "$STATIC_QUESTION_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$INVISIBLE_MUSHROOM_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -163,6 +164,14 @@ ground on
 actors off
 autoplay explore
 step 3000
+EOF
+cat >"$ACTORS_AUTOPLAY_COMMAND_FILE" <<'EOF'
+pause
+spawn 16 288 big
+ground on
+actors on
+autoplay explore
+step 5000
 EOF
 cat >"$START_IDLE_HURT_COMMAND_FILE" <<'EOF'
 pause
@@ -390,6 +399,16 @@ grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "walkout=405"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "x=5106.00"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actors_on=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=none"
+
+"$GODOT_BIN" --headless --path . --quit-after 5060 --smw-test-autostart --smw-debug-command-file="$ACTORS_AUTOPLAY_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$ACTORS_AUTOPLAY_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-autoplay: mode=explore frame=0" "$LOG_FILE"
+grep -q "smw-runtime: sprite_stomp level=105 sprite=BD" "$LOG_FILE"
+grep -q "smw-runtime: sprite_stomp level=105 sprite=AB" "$LOG_FILE"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actors_on=1"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "gameover=0"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "deaths=1"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -Eq "max_x=4[0-9]{3}\\."
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2050,292 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
 ! grep -q "pipe-debug screen=07" "$LOG_FILE"

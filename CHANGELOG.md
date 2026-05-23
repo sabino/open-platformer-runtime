@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improved actors-on Yoshi Island 1 traversal probes: the debug explorer now brakes away from airborne enemy contacts while rising, stomp resolution accepts airborne top-band frame crossings instead of requiring only downward velocity, Banzai Bill's provisional hitbox was tightened upward, and the headless gate now proves actors-on autoplay reaches the late level without game over. A clean actors-on course clear is still pending.
 - Tuned actors-on playability probes: debug autoplay now slows down and suppresses periodic jump pulses while interactive actors are in the lookahead window, and Banzai Bill's current gameplay hitbox was shifted upward so low jumps and underpasses better match the visible sprite. Actors-on first-level traversal still needs smarter enemy handling.
 - Tightened actors-on first-level contact behavior: stomp checks now use the previous player rectangle as a frame-crossing test, autoplay only jumps toward stompable threats and ducks/runs under overhead non-stompable actors, and Banzai Bill uses a smaller gameplay hitbox so ground-level Mario can pass beneath it.
 - Strengthened the deterministic autoplay regression from an 80-frame smoke probe into an actor-off end-to-end Yoshi Island 1 traversal that reaches the imported goal tape and verifies the course-clear walkout state.
