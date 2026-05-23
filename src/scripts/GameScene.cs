@@ -1814,10 +1814,11 @@ public partial class GameScene : Node2D
     {
         var color = SpriteActorColor(spawn.SpriteId);
         var behavior = SpriteActorBehaviorFor(spawn.SpriteId);
+        var visualTopY = spawn.Y - SpriteActorVisualHeightFor(spawn.SpriteId);
         var node = new Node2D
         {
             Name = $"Sprite_{spawn.SpriteId:X2}_{spawn.Offset:X2}",
-            Position = new Vector2(spawn.X, spawn.Y - SpriteActorHeight),
+            Position = new Vector2(spawn.X, visualTopY),
             ZIndex = 6,
             Visible = _debugActorVisualsEnabled,
         };
@@ -1848,15 +1849,24 @@ public partial class GameScene : Node2D
             Body = body,
             SpriteId = spawn.SpriteId,
             X = spawn.X,
-            Y = spawn.Y - SpriteActorHeight,
+            Y = visualTopY,
             PreviousX = spawn.X,
-            PreviousY = spawn.Y - SpriteActorHeight,
-            HomeY = spawn.Y - SpriteActorHeight,
+            PreviousY = visualTopY,
+            HomeY = visualTopY,
             XSpeed = behavior.InitialXSpeed,
             WakeScreen = spawn.Screen,
             MotionFrame = InitialSpriteMotionFrame(spawn),
             Visuals = visuals,
             Behavior = behavior,
+        };
+    }
+
+    private static int SpriteActorVisualHeightFor(int spriteId)
+    {
+        return spriteId switch
+        {
+            0x9F => 64,
+            _ => SpriteActorHeight,
         };
     }
 
@@ -6656,21 +6666,37 @@ public partial class GameScene : Node2D
                 ClearDebugHeldInput();
                 return "ok hold input=-------";
             case "trace":
-                QueueDebugTrace(parts, includeOam: false, includeSensors: false);
+                QueueDebugTrace(parts, includeOam: false, includeSensors: false, overrideInput: true);
                 return $"ok trace_queued={_debugTraceFrames}";
             case "trace_oam":
             case "traceoam":
             case "oam_trace":
-                QueueDebugTrace(parts, includeOam: true, includeSensors: false);
+                QueueDebugTrace(parts, includeOam: true, includeSensors: false, overrideInput: true);
                 return $"ok trace_queued={_debugTraceFrames}";
             case "trace_sensors":
             case "tracesensors":
             case "sensor_trace":
-                QueueDebugTrace(parts, includeOam: false, includeSensors: true);
+                QueueDebugTrace(parts, includeOam: false, includeSensors: true, overrideInput: true);
                 return $"ok trace_queued={_debugTraceFrames}";
             case "trace_full":
             case "full_trace":
-                QueueDebugTrace(parts, includeOam: true, includeSensors: true);
+                QueueDebugTrace(parts, includeOam: true, includeSensors: true, overrideInput: true);
+                return $"ok trace_queued={_debugTraceFrames}";
+            case "trace_live":
+            case "live_trace":
+                QueueDebugTrace(parts, includeOam: false, includeSensors: false, overrideInput: false);
+                return $"ok trace_queued={_debugTraceFrames}";
+            case "trace_live_oam":
+            case "live_trace_oam":
+                QueueDebugTrace(parts, includeOam: true, includeSensors: false, overrideInput: false);
+                return $"ok trace_queued={_debugTraceFrames}";
+            case "trace_live_sensors":
+            case "live_trace_sensors":
+                QueueDebugTrace(parts, includeOam: false, includeSensors: true, overrideInput: false);
+                return $"ok trace_queued={_debugTraceFrames}";
+            case "trace_live_full":
+            case "live_trace_full":
+                QueueDebugTrace(parts, includeOam: true, includeSensors: true, overrideInput: false);
                 return $"ok trace_queued={_debugTraceFrames}";
             case "spawn":
             case "pos":
@@ -7018,7 +7044,7 @@ public partial class GameScene : Node2D
         GD.Print("smw-debug: hold input=-------");
     }
 
-    private void QueueDebugTrace(string[] parts, bool includeOam, bool includeSensors)
+    private void QueueDebugTrace(string[] parts, bool includeOam, bool includeSensors, bool overrideInput)
     {
         RequirePartCount(parts, 2);
         var frames = Math.Max(1, int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture));
@@ -7032,6 +7058,11 @@ public partial class GameScene : Node2D
                 continue;
             }
 
+            if (!overrideInput)
+            {
+                throw new FormatException($"live trace does not accept input token '{parts[i]}'");
+            }
+
             ApplyScriptedInputToken("smw-debug-trace", 0, parts[i], ref input);
         }
 
@@ -7041,16 +7072,19 @@ public partial class GameScene : Node2D
         _debugTraceTag = string.IsNullOrWhiteSpace(tag) ? "trace" : tag;
         _debugTraceOam = includeOam;
         _debugTraceSensors = includeSensors;
-        _debugCommandInput = input;
-        _debugCommandInputFrames = frames;
-        _debugCommandInputFrame = 0;
+        if (overrideInput)
+        {
+            _debugCommandInput = input;
+            _debugCommandInputFrames = frames;
+            _debugCommandInputFrame = 0;
+        }
         if (_debugPaused)
         {
             _debugStepFrames += frames;
         }
 
         GD.Print(
-            $"smw-debug: trace queued={frames} tag={_debugTraceTag} input={DescribeFrameInput(input)} oam={(includeOam ? 1 : 0)} sensors={(includeSensors ? 1 : 0)}");
+            $"smw-debug: trace queued={frames} tag={_debugTraceTag} input={(overrideInput ? DescribeFrameInput(input) : "live")} oam={(includeOam ? 1 : 0)} sensors={(includeSensors ? 1 : 0)} source={(overrideInput ? "override" : "live")}");
     }
 
     private void PrintQueuedDebugTrace(SmwPhysics.FrameInput frameInput)

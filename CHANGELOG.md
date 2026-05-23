@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Corrected imported Banzai Bill actor origins to use the 64px OAM visual height instead of the default 16px sprite height, lifting the visual/hurtbox out of the terrain and making the first-level Banzai pass behave like a large sprite.
+- Added live-input debug tracing for RCON/headless probes: `trace_live`, `trace_live_oam`, `trace_live_sensors`, and `trace_live_full` now record the actual live/autoplay frame input without replacing it, making late-level actor failures debuggable frame-by-frame.
 - Improved actors-on Yoshi Island 1 traversal probes: the debug explorer now brakes away from airborne enemy contacts while rising, stomp resolution accepts airborne top-band frame crossings instead of requiring only downward velocity, Banzai Bill's provisional hitbox was tightened upward, and the headless gate now proves actors-on autoplay reaches the late level without game over. A clean actors-on course clear is still pending.
 - Tuned actors-on playability probes: debug autoplay now slows down and suppresses periodic jump pulses while interactive actors are in the lookahead window, and Banzai Bill's current gameplay hitbox was shifted upward so low jumps and underpasses better match the visible sprite. Actors-on first-level traversal still needs smarter enemy handling.
 - Tightened actors-on first-level contact behavior: stomp checks now use the previous player rectangle as a frame-crossing test, autoplay only jumps toward stompable threats and ducks/runs under overhead non-stompable actors, and Banzai Bill uses a smaller gameplay hitbox so ground-level Mario can pass beneath it.

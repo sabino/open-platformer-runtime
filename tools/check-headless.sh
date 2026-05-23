@@ -51,10 +51,11 @@ TIME_UP_COMMAND_FILE="$(mktemp)"
 GAME_OVER_COMMAND_FILE="$(mktemp)"
 PAUSE_COMMAND_FILE="$(mktemp)"
 TRACE_COMMAND_FILE="$(mktemp)"
+TRACE_LIVE_COMMAND_FILE="$(mktemp)"
 COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$HURT_BLINK_COMMAND_FILE" "$SMALL_HURT_COMMAND_FILE" "$REX_COMMAND_FILE" "$BANZAI_UNDER_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$FIREBALL_COMMAND_FILE" "$AUTOPLAY_COMMAND_FILE" "$ACTORS_AUTOPLAY_COMMAND_FILE" "$START_IDLE_HURT_COMMAND_FILE" "$STAR_ITEM_COMMAND_FILE" "$STAR_HIT_COMMAND_FILE" "$STATIC_QUESTION_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$INVISIBLE_MUSHROOM_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$HURT_BLINK_COMMAND_FILE" "$SMALL_HURT_COMMAND_FILE" "$REX_COMMAND_FILE" "$BANZAI_UNDER_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$FIREBALL_COMMAND_FILE" "$AUTOPLAY_COMMAND_FILE" "$ACTORS_AUTOPLAY_COMMAND_FILE" "$START_IDLE_HURT_COMMAND_FILE" "$STAR_ITEM_COMMAND_FILE" "$STAR_HIT_COMMAND_FILE" "$STATIC_QUESTION_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$INVISIBLE_MUSHROOM_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$TRACE_LIVE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -287,6 +288,15 @@ velocity 0 0
 ground on
 trace 3 right run jump tag=jump_probe
 EOF
+cat >"$TRACE_LIVE_COMMAND_FILE" <<'EOF'
+pause
+spawn 32 288
+velocity 0 0
+ground on
+actors off
+autoplay explore
+trace_live 3 tag=autoplay_probe
+EOF
 cat >"$COURSE_CLEAR_COMMAND_FILE" <<'EOF'
 pause
 spawn 4828 282 big
@@ -480,6 +490,7 @@ grep -q "stomp_chain=1" "$LOG_FILE"
 grep -q "smw-debug: command_file=$BANZAI_UNDER_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "smw-debug-actors-near: radius=256.00 .*9F:state=0:.*active=1" "$LOG_FILE"
+grep -q "9F:state=0:pos=496.00,176.00:rect=504.00,176.00,48.00,24.00" "$LOG_FILE"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "pow=1"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "hurt=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=none"
@@ -671,6 +682,14 @@ grep -q "smw-debug-trace: tag=jump_probe i=1/3" "$LOG_FILE"
 grep -q "ys=-77" "$LOG_FILE"
 grep -q "smw-debug-trace: tag=jump_probe i=3/3" "$LOG_FILE"
 grep -q "smw-debug-state: tag=jump_probe_done" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 5 --smw-test-autostart --smw-debug-command-file="$TRACE_LIVE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$TRACE_LIVE_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-autoplay: mode=explore frame=0" "$LOG_FILE"
+grep -q "smw-debug: trace queued=3 tag=autoplay_probe input=live" "$LOG_FILE"
+grep -q "smw-debug-trace: tag=autoplay_probe i=1/3" "$LOG_FILE"
+grep -q "input=-R-Jj-Y" "$LOG_FILE"
+grep -q "smw-debug-state: tag=autoplay_probe_done" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1800 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
 RCON_PID="$!"
