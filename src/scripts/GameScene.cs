@@ -135,6 +135,7 @@ public partial class GameScene : Node2D
     private bool _lastPlayerDucking;
     private bool _pipeTransitionLatch;
     private int _playerHurtCooldown;
+    private string _lastActorEvent = "none";
     private bool _courseClear;
     private int _entranceMotionFrames;
     private int _entranceMotionAction;
@@ -283,7 +284,9 @@ public partial class GameScene : Node2D
         public bool Alive { get; set; } = true;
         public bool OnGround { get; set; }
         public int WakeScreen { get; init; }
-        public required SpriteActorBehavior Behavior { get; init; }
+        public required List<Node> Visuals { get; init; }
+        public required SpriteActorBehavior Behavior { get; set; }
+        public int State { get; set; }
         public Rect2 Rect => new(X + Behavior.Hitbox.Position.X, Y + Behavior.Hitbox.Position.Y, Behavior.Hitbox.Size.X, Behavior.Hitbox.Size.Y);
     }
 
@@ -969,7 +972,7 @@ public partial class GameScene : Node2D
 
     private static bool IsRuntimeEnemySprite(int spriteId)
     {
-        return spriteId is 0x4F or 0x83 or 0x8E or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7 or 0xDB;
+        return spriteId is 0x4F or 0x83 or 0x8E or 0x95 or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7 or 0xDA or 0xDB or 0xDC or 0xDD or 0xDF;
     }
 
     private RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn, bool debugOverlays)
@@ -982,7 +985,8 @@ public partial class GameScene : Node2D
             Position = new Vector2(spawn.X, spawn.Y - SpriteActorHeight),
             ZIndex = 6,
         };
-        var hasVisual = AddSpriteActorVisuals(node, spawn.SpriteId);
+        var visuals = AddSpriteActorVisuals(node, spawn.SpriteId, state: 0);
+        var hasVisual = visuals.Count > 0;
         var body = new ColorRect
         {
             Name = hasVisual ? "ActorCollisionDebug" : "ActorPlaceholderDebug",
@@ -1011,23 +1015,29 @@ public partial class GameScene : Node2D
             Y = spawn.Y - SpriteActorHeight,
             XSpeed = behavior.InitialXSpeed,
             WakeScreen = spawn.Screen,
+            Visuals = visuals,
             Behavior = behavior,
         };
     }
 
-    private bool AddSpriteActorVisuals(Node2D node, int spriteId)
+    private List<Node> AddSpriteActorVisuals(Node2D node, int spriteId, int state)
     {
-        var drewAny = false;
-        foreach (var tile in SpriteOamTilesFor(spriteId))
+        var visuals = new List<Node>();
+        foreach (var tile in SpriteOamTilesFor(spriteId, state))
         {
-            drewAny = AddSpriteOamTile(node, tile) || drewAny;
+            if (AddSpriteOamTile(node, tile, out var sprite))
+            {
+                visuals.Add(sprite);
+            }
         }
 
-        return drewAny || AddSpriteCommandVisual(node, spriteId);
+        AddSpriteCommandVisual(node, spriteId, visuals);
+        return visuals;
     }
 
-    private bool AddSpriteOamTile(Node2D node, SpriteOamTile tile)
+    private bool AddSpriteOamTile(Node2D node, SpriteOamTile tile, out Sprite2D sprite)
     {
+        sprite = null!;
         if (_spriteTexture == null ||
             tile.Bank < 0 ||
             tile.Bank >= SpriteAtlasTileStartByLmuBank.Length)
@@ -1048,7 +1058,7 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var sprite = new Sprite2D
+        sprite = new Sprite2D
         {
             Texture = _spriteTexture,
             RegionEnabled = true,
@@ -1064,19 +1074,29 @@ public partial class GameScene : Node2D
         return true;
     }
 
-    private bool AddSpriteCommandVisual(Node2D node, int spriteId)
+    private void AddSpriteCommandVisual(Node2D node, int spriteId, List<Node> visuals)
     {
-        return spriteId switch
+        switch (spriteId)
         {
-            0x83 => AddMap16SpriteVisual(node, 0x0124, Vector2.Zero) | AddWingVisuals(node),
-            0xB9 => AddMap16SpriteVisual(node, 0x0125, Vector2.Zero) || AddFallbackBlockVisual(node, "!", new Color(0.92f, 0.60f, 0.18f, 1.0f)),
-            0xC7 => AddBubbleVisual(node),
-            0xDB => AddShellVisual(node, new Color(0.88f, 0.12f, 0.12f, 1.0f)),
-            _ => false,
-        };
+            case 0x83:
+                AddMap16SpriteVisual(node, 0x0124, Vector2.Zero, visuals);
+                break;
+            case 0xB9:
+                if (!AddMap16SpriteVisual(node, 0x0125, Vector2.Zero, visuals))
+                {
+                    AddFallbackBlockVisual(node, "!", new Color(0.92f, 0.60f, 0.18f, 1.0f), visuals);
+                }
+                break;
+            case 0xC7:
+                AddBubbleVisual(node, visuals);
+                break;
+            case 0x8E:
+                AddWarpHoleVisual(node, visuals);
+                break;
+        }
     }
 
-    private bool AddMap16SpriteVisual(Node2D node, int map16Tile, Vector2 position)
+    private bool AddMap16SpriteVisual(Node2D node, int map16Tile, Vector2 position, List<Node> visuals)
     {
         if (_map16Texture == null)
         {
@@ -1104,19 +1124,13 @@ public partial class GameScene : Node2D
             ZIndex = 2,
         };
         node.AddChild(sprite);
+        visuals.Add(sprite);
         return true;
     }
 
-    private static bool AddWingVisuals(Node2D node)
+    private static void AddFallbackBlockVisual(Node2D node, string labelText, Color color, List<Node> visuals)
     {
-        AddDebugRect(node, new Rect2(-8, 2, 8, 12), new Color(0.92f, 0.96f, 1.0f, 0.82f), 1);
-        AddDebugRect(node, new Rect2(16, 2, 8, 12), new Color(0.92f, 0.96f, 1.0f, 0.82f), 1);
-        return true;
-    }
-
-    private static bool AddFallbackBlockVisual(Node2D node, string labelText, Color color)
-    {
-        AddDebugRect(node, new Rect2(0, 0, 16, 16), color, 2);
+        visuals.Add(AddDebugRect(node, new Rect2(0, 0, 16, 16), color, 2));
         var label = new Label
         {
             Text = labelText,
@@ -1129,24 +1143,34 @@ public partial class GameScene : Node2D
         label.AddThemeConstantOverride("shadow_offset_x", 1);
         label.AddThemeConstantOverride("shadow_offset_y", 1);
         node.AddChild(label);
-        return true;
+        visuals.Add(label);
     }
 
-    private static bool AddBubbleVisual(Node2D node)
+    private static void AddBubbleVisual(Node2D node, List<Node> visuals)
     {
-        AddDebugRect(node, new Rect2(1, 2, 14, 11), new Color(0.70f, 0.90f, 1.0f, 0.38f), 2);
-        AddDebugRect(node, new Rect2(5, 9, 6, 8), new Color(0.70f, 0.90f, 1.0f, 0.38f), 2);
-        return true;
+        visuals.Add(AddDebugRect(node, new Rect2(1, 2, 14, 11), new Color(0.70f, 0.90f, 1.0f, 0.38f), 2));
+        visuals.Add(AddDebugRect(node, new Rect2(5, 9, 6, 8), new Color(0.70f, 0.90f, 1.0f, 0.38f), 2));
     }
 
-    private static bool AddShellVisual(Node2D node, Color color)
+    private static void AddWarpHoleVisual(Node2D node, List<Node> visuals)
     {
-        AddDebugRect(node, new Rect2(1, 5, 15, 10), color, 2);
-        AddDebugRect(node, new Rect2(4, 7, 8, 5), new Color(1.0f, 1.0f, 1.0f, 0.55f), 3);
-        return true;
+        visuals.Add(AddDebugRect(node, new Rect2(2, 2, 12, 12), new Color(1.0f, 0.76f, 0.26f, 0.92f), 2));
+        var label = new Label
+        {
+            Text = "Warp",
+            Position = new Vector2(17, -2),
+            ZIndex = 3,
+        };
+        label.AddThemeFontSizeOverride("font_size", 10);
+        label.AddThemeColorOverride("font_color", Colors.White);
+        label.AddThemeColorOverride("font_shadow_color", Colors.Black);
+        label.AddThemeConstantOverride("shadow_offset_x", 1);
+        label.AddThemeConstantOverride("shadow_offset_y", 1);
+        node.AddChild(label);
+        visuals.Add(label);
     }
 
-    private static void AddDebugRect(Node parent, Rect2 rect, Color color, int zIndex)
+    private static ColorRect AddDebugRect(Node parent, Rect2 rect, Color color, int zIndex)
     {
         var body = new ColorRect
         {
@@ -1157,15 +1181,19 @@ public partial class GameScene : Node2D
             ZIndex = zIndex,
         };
         parent.AddChild(body);
+        return body;
     }
 
-    private static IReadOnlyList<SpriteOamTile> SpriteOamTilesFor(int spriteId)
+    private static IReadOnlyList<SpriteOamTile> SpriteOamTilesFor(int spriteId, int state)
     {
         return spriteId switch
         {
             0x9F => BanzaiBillOamTiles,
-            0xAB => RexOamTiles,
+            0x95 => ClappinChuckOamTiles,
+            0xAB => state == 1 ? SquishedRexOamTiles : RexOamTiles,
             0xBD => SlidingKoopaOamTiles,
+            0x83 => WingOamTiles,
+            0xDA or 0xDB or 0xDC or 0xDD or 0xDF => ShellOamTilesFor(spriteId),
             0x4F or 0x50 => JumpingPiranhaOamTiles,
             _ => [],
         };
@@ -1197,30 +1225,72 @@ public partial class GameScene : Node2D
         new(0, 0, 0xAA, 0x07, 3, true),
     ];
 
+    private static readonly SpriteOamTile[] ClappinChuckOamTiles =
+    [
+        new(0, -4, 0x06, 0x0B, 3, true),
+        new(0, 0, 0x2D, 0x0B, 3, true),
+        new(4, 0, 0x2D, 0x4B, 3, true),
+    ];
+
+    private static readonly SpriteOamTile[] SquishedRexOamTiles =
+    [
+        new(0, 0, 0x8C, 0x07, 3, true),
+    ];
+
     private static readonly SpriteOamTile[] SlidingKoopaOamTiles =
     [
         new(0, 0, 0x86, 0x06, 1, true),
     ];
 
+    private static readonly SpriteOamTile[] WingOamTiles =
+    [
+        new(-1, -4, 0x5D, 0x46, 0, false),
+        new(-9, -12, 0xC6, 0x46, 0, true),
+        new(9, -4, 0x5D, 0x06, 0, false),
+        new(9, -12, 0xC6, 0x06, 0, true),
+    ];
+
     private static readonly SpriteOamTile[] JumpingPiranhaOamTiles =
     [
-        new(8, -16, 0x83, 0x0A, 1, true),
-        new(8, 0, 0x83, 0x0A, 1, false),
-        new(16, 0, 0x83, 0x4A, 1, false),
-        new(8, 8, 0xC4, 0x0A, 1, false),
-        new(16, 8, 0xC4, 0x4A, 1, false),
+        new(8, -1, 0xAC, 0x58, 1, true),
+        new(8, 7, 0xCE, 0x5B, 1, true),
     ];
+
+    private static IReadOnlyList<SpriteOamTile> ShellOamTilesFor(int spriteId)
+    {
+        var prop = spriteId switch
+        {
+            0xDB => 0x08,
+            0xDC => 0x06,
+            0xDD => 0x04,
+            _ => 0x0A,
+        };
+        return [new SpriteOamTile(0, 0, 0x8C, prop, 1, true)];
+    }
 
     private static SpriteActorBehavior SpriteActorBehaviorFor(int spriteId)
     {
         return spriteId switch
         {
             0x9F => new SpriteActorBehavior(new Rect2(0, 0, 64, 64), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
+            0x95 => new SpriteActorBehavior(new Rect2(0, -4, 20, 36), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
             0xAB => new SpriteActorBehavior(new Rect2(-4, -15, 20, 31), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
             0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.58f),
+            0xDA or 0xDB or 0xDC or 0xDD or 0xDF => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: 0.0f),
             0x4F or 0x50 => new SpriteActorBehavior(new Rect2(8, -16, 16, 32), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
             _ => new SpriteActorBehavior(new Rect2(0, 0, SpriteActorWidth, SpriteActorHeight), CanInteract: false, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
         };
+    }
+
+    private static SpriteActorBehavior SquishedRexBehavior(float currentXSpeed)
+    {
+        return new SpriteActorBehavior(
+            new Rect2(0, 0, 16, 16),
+            CanInteract: true,
+            Stompable: true,
+            TerrainCollision: true,
+            Gravity: true,
+            InitialXSpeed: MathF.Sign(currentXSpeed == 0.0f ? -1.0f : currentXSpeed) * 0.84f);
     }
 
     private static Color SpriteActorColor(int spriteId)
@@ -1230,6 +1300,7 @@ public partial class GameScene : Node2D
             0x4F => new Color(0.92f, 0.88f, 0.18f, 1.0f),
             0x83 => new Color(0.74f, 0.20f, 0.18f, 1.0f),
             0x8E => new Color(0.18f, 0.76f, 0.28f, 1.0f),
+            0x95 => new Color(0.74f, 0.42f, 0.18f, 1.0f),
             0x9F => new Color(0.20f, 0.38f, 0.88f, 1.0f),
             0xAB => new Color(0.76f, 0.32f, 0.16f, 1.0f),
             0xB9 => new Color(0.88f, 0.30f, 0.80f, 1.0f),
@@ -2512,7 +2583,6 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var playerRect = _physics.PlayerRect(_state);
         for (var i = _spriteActors.Count - 1; i >= 0; i--)
         {
             var actor = _spriteActors[i];
@@ -2524,8 +2594,12 @@ public partial class GameScene : Node2D
             }
 
             UpdateSpriteActorMotion(actor);
-            ResolvePlayerSpriteActorCollision(actor, playerRect);
+            var handledPlayerCollision = ResolvePlayerSpriteActorCollision(actor, _physics.PlayerRect(_state));
             actor.Node.Position = new Vector2(actor.X, actor.Y);
+            if (handledPlayerCollision)
+            {
+                break;
+            }
         }
     }
 
@@ -2620,31 +2694,81 @@ public partial class GameScene : Node2D
         }
     }
 
-    private void ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect)
+    private bool ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect)
     {
         var actorRect = actor.Rect;
         if (!actor.Alive || !actor.Behavior.CanInteract || !playerRect.Intersects(actorRect))
         {
-            return;
+            return false;
         }
 
         var playerBottom = _state.YFloat + SmwPhysics.PlayerHeightFor(_state);
         var stomped = actor.Behavior.Stompable && _state.YSpeed > 0 && playerBottom <= actorRect.Position.Y + 10.0f;
         if (stomped)
         {
+            if (TryStompRex(actor))
+            {
+                BoostPlayerAfterSpriteStomp();
+                return true;
+            }
+
             actor.Alive = false;
-            _state.YSpeed = -48;
-            _state.SubYSpeed = 0;
-            _state.OnGround = false;
-            _audio?.PlaySpinJump();
-            return;
+            _lastActorEvent = $"stomp:{actor.SpriteId:X2}:dead";
+            BoostPlayerAfterSpriteStomp();
+            return true;
         }
 
+        HurtPlayerFromActor(actor);
+        return true;
+    }
+
+    private bool TryStompRex(RuntimeSpriteActor actor)
+    {
+        if (actor.SpriteId != 0xAB || actor.State != 0)
+        {
+            return false;
+        }
+
+        var oldBottom = actor.Rect.Position.Y + actor.Rect.Size.Y;
+        actor.State = 1;
+        actor.Behavior = SquishedRexBehavior(actor.XSpeed);
+        actor.Y = oldBottom - actor.Behavior.Hitbox.Position.Y - actor.Behavior.Hitbox.Size.Y;
+        actor.XSpeed = actor.Behavior.InitialXSpeed;
+        actor.Body.Position = actor.Behavior.Hitbox.Position;
+        actor.Body.Size = actor.Behavior.Hitbox.Size;
+        ReplaceSpriteActorVisuals(actor);
+        _lastActorEvent = "stomp:AB:1";
+        return true;
+    }
+
+    private void BoostPlayerAfterSpriteStomp()
+    {
+        _state.YSpeed = -48;
+        _state.SubYSpeed = 0;
+        _state.OnGround = false;
+        _audio?.PlaySpinJump();
+    }
+
+    private void ReplaceSpriteActorVisuals(RuntimeSpriteActor actor)
+    {
+        foreach (var visual in actor.Visuals)
+        {
+            visual.QueueFree();
+        }
+
+        actor.Visuals.Clear();
+        actor.Visuals.AddRange(AddSpriteActorVisuals(actor.Node, actor.SpriteId, actor.State));
+    }
+
+    private void HurtPlayerFromActor(RuntimeSpriteActor actor)
+    {
+        var actorRect = actor.Rect;
         if (_playerHurtCooldown > 0)
         {
             return;
         }
 
+        _lastActorEvent = $"hurt:{actor.SpriteId:X2}:{actor.State}";
         _playerHurtCooldown = PlayerHurtCooldownFrames;
         if (_state.Powerup > SmwPhysics.SmallPowerup)
         {
@@ -3883,12 +4007,41 @@ public partial class GameScene : Node2D
 
     private string BuildDebugState(string tag)
     {
+        var nearestActor = DescribeNearestActor();
         return
             $"smw-debug-state: tag={tag} frame={_debugFrameCounter} level={_currentLevelId} " +
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} " +
-            $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count}";
+            $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
+            $"actors={_spriteActors.Count} near={nearestActor} actor_event={_lastActorEvent}";
+    }
+
+    private string DescribeNearestActor()
+    {
+        RuntimeSpriteActor? nearest = null;
+        var nearestDistance = float.MaxValue;
+        var playerCenter = _physics.PlayerRect(_state).GetCenter();
+        foreach (var actor in _spriteActors)
+        {
+            if (!actor.Alive)
+            {
+                continue;
+            }
+
+            var distance = actor.Rect.GetCenter().DistanceSquaredTo(playerCenter);
+            if (distance >= nearestDistance)
+            {
+                continue;
+            }
+
+            nearestDistance = distance;
+            nearest = actor;
+        }
+
+        return nearest == null
+            ? "none"
+            : $"{nearest.SpriteId:X2}:{nearest.State}:{nearest.X:0.00},{nearest.Y:0.00}";
     }
 
     private static void RequirePartCount(string[] parts, int minimum)
@@ -4126,6 +4279,7 @@ public partial class GameScene : Node2D
 
         _courseClear = false;
         _playerHurtCooldown = 0;
+        _lastActorEvent = "none";
         _state = MakeInitialPlayerState(entrance);
         ResetPlayerAnimationState();
         _cameraInitialized = false;

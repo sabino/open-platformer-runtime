@@ -20,9 +20,10 @@ INPUT_SCRIPT="$(mktemp)"
 PIPE_SCRIPT="$(mktemp)"
 DEBUG_COMMAND_FILE="$(mktemp)"
 ACTOR_COMMAND_FILE="$(mktemp)"
+REX_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 1 right run
@@ -43,12 +44,18 @@ powerup big
 step 1
 state after_actor_hit
 EOF
+cat >"$REX_COMMAND_FILE" <<'EOF'
+pause
+spawn 528 248
+powerup big
+step 1
+EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474 collision_rects=25 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
-grep -q "sprite_actors=32" "$LOG_FILE"
+grep -q "sprite_actors=33" "$LOG_FILE"
 grep -q "goal_tapes=1" "$LOG_FILE"
 grep -q "player_sprites=8" "$LOG_FILE"
 grep -q "smw-runtime: entrance level=105 source=105 secondary=0 settings=0 spawn=16,288" "$LOG_FILE"
@@ -107,6 +114,13 @@ grep -q "smw-debug-state: tag=after_actor_hit" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "pow=0" "$LOG_FILE"
 grep -q "ys=-32" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$REX_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$REX_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "pow=1" "$LOG_FILE"
+grep -q "ys=-48" "$LOG_FILE"
+grep -q "actor_event=stomp:AB:1" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 600 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
 RCON_PID="$!"

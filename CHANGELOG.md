@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Ported more Lunar Magic Universal sprite draw recipes into Godot: Clappin' Chuck now appears as an atlas-backed runtime actor, the flying question block uses real wing tiles, red shells use the native shell tile, and jumping Piranha uses LMU's two-tile OAM preview.
+- Added a first Rex-specific stomp state: the first normal jump stomp now squishes Rex into a shorter, faster actor instead of deleting it, with debug-state reporting for nearest actor ID/state and the last actor interaction.
 - Gave imported runtime sprite actors per-sprite hitboxes and behavior gates, re-enabling player interaction for atlas-backed Rex, Banzai Bill, sliding Koopa, and jumping Piranha without restoring fake filled placeholder collisions.
 - Wired the first imported runtime sprite actors to real per-level sprite VRAM atlas pieces using Lunar Magic Universal's OAM tile recipes for Rex, Banzai Bill, sliding Koopa, and jumping Piranha, with visual-only command fallbacks for block/bubble/shell sprites.
 - Made imported runtime sprite actor hitboxes debug outlines only for now: their colored placeholder bodies are hidden and no longer damage, bounce, or push Mario until native sprite behavior is ported.
