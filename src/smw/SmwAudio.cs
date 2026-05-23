@@ -12,7 +12,8 @@ public partial class SmwAudio : Node
     private const float GeneratorBufferLengthSeconds = 0.25f;
     private const int GeneratorBufferFrames = (int)(SampleRate * GeneratorBufferLengthSeconds);
     private const int TargetQueuedAudioFrames = 1536;
-    private const int MaxFramesPerAudioProcess = 2048;
+    private const int AudioMixChunkFrames = 512;
+    private const int MaxAudioMixChunksPerProcess = 4;
     private readonly Dictionary<int, DecodedSample> _samples = [];
     private readonly List<Voice> _voices = [];
     private byte[] _spcRam = new byte[0x10000];
@@ -131,6 +132,7 @@ public partial class SmwAudio : Node
         return $"loaded={(_loaded ? 1 : 0)} samples={LoadedProbeSampleCount} voices={_voices.Count} " +
             $"music={(_musicPlaying ? 1 : 0)} music_frame={_musicFrame} events={_musicPattern.Count} " +
             $"loop_frames={_musicLoopFrames} frames_available={framesAvailable} " +
+            $"mix_chunk={AudioMixChunkFrames} mix_max_chunks={MaxAudioMixChunksPerProcess} " +
             $"mix_frames={_debugMixFrames} mix_calls={_debugMixCalls} mix_ms={_debugMixMilliseconds:0.000} " +
             $"mix_last_frames={_debugLastMixFrames} mix_last_ms={_debugLastMixMilliseconds:0.000} mix_avg_ms={averageMixMilliseconds:0.000}";
     }
@@ -444,38 +446,33 @@ public partial class SmwAudio : Node
 
         var targetFreeFrames = Math.Max(0, GeneratorBufferFrames - TargetQueuedAudioFrames);
         var framesNeeded = Math.Max(0, framesAvailable - targetFreeFrames);
-        if (framesNeeded <= 0)
+        if (framesNeeded < AudioMixChunkFrames)
         {
             return;
         }
 
-        var frameCount = Math.Min(framesNeeded, MaxFramesPerAudioProcess);
-        if (_mixBuffer.Length != MaxFramesPerAudioProcess)
+        var chunkCount = Math.Min(framesNeeded / AudioMixChunkFrames, MaxAudioMixChunksPerProcess);
+        if (_mixBuffer.Length != AudioMixChunkFrames)
         {
-            _mixBuffer = new Vector2[MaxFramesPerAudioProcess];
+            _mixBuffer = new Vector2[AudioMixChunkFrames];
         }
 
         var started = Stopwatch.GetTimestamp();
-        for (var i = 0; i < frameCount; i++)
+        var mixedFrames = 0;
+        for (var chunk = 0; chunk < chunkCount; chunk++)
         {
-            _mixBuffer[i] = RenderFrame();
-        }
-
-        if (frameCount == _mixBuffer.Length)
-        {
-            _playback.PushBuffer(_mixBuffer);
-        }
-        else
-        {
-            for (var i = 0; i < frameCount; i++)
+            for (var i = 0; i < AudioMixChunkFrames; i++)
             {
-                _playback.PushFrame(_mixBuffer[i]);
+                _mixBuffer[i] = RenderFrame();
             }
+
+            _playback.PushBuffer(_mixBuffer);
+            mixedFrames += AudioMixChunkFrames;
         }
 
-        _debugMixFrames += frameCount;
+        _debugMixFrames += mixedFrames;
         _debugMixCalls++;
-        _debugLastMixFrames = frameCount;
+        _debugLastMixFrames = mixedFrames;
         _debugLastMixMilliseconds = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
         _debugMixMilliseconds += _debugLastMixMilliseconds;
     }
