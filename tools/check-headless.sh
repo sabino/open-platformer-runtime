@@ -331,7 +331,7 @@ grep -q "ys=-77" "$LOG_FILE"
 grep -q "smw-debug-trace: tag=jump_probe i=3/3" "$LOG_FILE"
 grep -q "smw-debug-state: tag=jump_probe_done" "$LOG_FILE"
 
-"$GODOT_BIN" --headless --path . --quit-after 600 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
+"$GODOT_BIN" --headless --path . --quit-after 1800 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
 RCON_PID="$!"
 for _ in $(seq 1 80); do
   if grep -q "smw-rcon: listening=127.0.0.1:$RCON_PORT" "$LOG_FILE"; then
@@ -426,6 +426,14 @@ grep -q "smw-debug-actors-near: radius=128.00" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh actor_oam 128 | tee "$RCON_LOG"
 grep -q "smw-debug-actor-oam: radius=128.00" "$RCON_LOG"
 grep -q "tiles=" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh camera status | tee "$RCON_LOG"
+grep -q "smw-debug-camera: tag=status" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh camera lock 1928 144 | tee "$RCON_LOG"
+grep -q "smw-debug-camera: tag=lock" "$RCON_LOG"
+grep -q "locked=1" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh camera unlock | tee "$RCON_LOG"
+grep -q "smw-debug-camera: tag=unlock" "$RCON_LOG"
+grep -q "locked=0" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
 grep -q "ok step_queued=1" "$RCON_LOG"
 for _ in $(seq 1 80); do

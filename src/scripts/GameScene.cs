@@ -152,6 +152,8 @@ public partial class GameScene : Node2D
     private float _cameraX;
     private float _cameraY;
     private bool _cameraInitialized;
+    private bool _debugCameraLocked;
+    private Vector2 _debugCameraLockPosition;
     private int _lastPlayerPose = -1;
     private int _lastPlayerFacing = -1;
     private int _lastPlayerPowerup = -1;
@@ -4764,6 +4766,25 @@ public partial class GameScene : Node2D
         GD.Print($"smw-debug: actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)}");
     }
 
+    public void DebugSetCameraLock(bool locked, Vector2? position = null)
+    {
+        _debugCameraLocked = locked;
+        if (position != null)
+        {
+            _debugCameraLockPosition = position.Value;
+        }
+        else if (locked)
+        {
+            _debugCameraLockPosition = new Vector2(_cameraX, _cameraY);
+        }
+
+        _cameraInitialized = true;
+        UpdateCamera();
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print(BuildDebugCamera(locked ? "lock" : "unlock"));
+    }
+
     public void DebugSetInvincible(bool enabled)
     {
         _debugInvincible = enabled;
@@ -5113,6 +5134,9 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugSetActorVisualsEnabled(ParseDebugBool(parts[1]));
                 return BuildDebugState("actor_visuals");
+            case "camera":
+            case "cam":
+                return ExecuteDebugCameraCommand(parts);
             case "god":
             case "invincible":
                 RequirePartCount(parts, 2);
@@ -5379,6 +5403,18 @@ public partial class GameScene : Node2D
             $"spin_jump_idx={spinJumpIndex} spin_jump_y={SmwPhysics.JumpYSpeedFor(_state.XSpeed, spin: true)}";
         GD.Print(line);
         return line;
+    }
+
+    private string BuildDebugCamera(string tag)
+    {
+        var maxCameraX = MathF.Max(0.0f, GetLevelPixelRight() - LogicalViewportWidth);
+        var maxCameraY = MathF.Max(0.0f, GetLevelPixelBottom() - LogicalViewportHeight);
+        return
+            $"smw-debug-camera: tag={tag} frame={_debugFrameCounter} " +
+            $"x={_cameraX:0.00} y={_cameraY:0.00} locked={(_debugCameraLocked ? 1 : 0)} " +
+            $"lock={_debugCameraLockPosition.X:0.00},{_debugCameraLockPosition.Y:0.00} " +
+            $"player_screen={_state.XFloat - _cameraX:0.00},{_state.YFloat - _cameraY:0.00} " +
+            $"bounds={maxCameraX:0.00},{maxCameraY:0.00}";
     }
 
     private static int CountNodes(Node node)
@@ -5649,6 +5685,49 @@ public partial class GameScene : Node2D
         return line;
     }
 
+    private string ExecuteDebugCameraCommand(string[] parts)
+    {
+        if (parts.Length == 1 || parts[1].Equals("status", StringComparison.OrdinalIgnoreCase))
+        {
+            var status = BuildDebugCamera("status");
+            GD.Print(status);
+            return status;
+        }
+
+        var command = parts[1].ToLowerInvariant();
+        switch (command)
+        {
+            case "lock":
+            case "freeze":
+                if (parts.Length >= 4)
+                {
+                    DebugSetCameraLock(true, new Vector2(ParseFloat(parts[2]), ParseFloat(parts[3])));
+                }
+                else
+                {
+                    DebugSetCameraLock(true);
+                }
+                return BuildDebugCamera("lock");
+            case "set":
+            case "move":
+                RequirePartCount(parts, 4);
+                DebugSetCameraLock(true, new Vector2(ParseFloat(parts[2]), ParseFloat(parts[3])));
+                return BuildDebugCamera("set");
+            case "unlock":
+            case "follow":
+            case "release":
+                DebugSetCameraLock(false);
+                return BuildDebugCamera("unlock");
+            default:
+                if (parts.Length >= 3)
+                {
+                    DebugSetCameraLock(true, new Vector2(ParseFloat(parts[1]), ParseFloat(parts[2])));
+                    return BuildDebugCamera("set");
+                }
+                throw new FormatException($"unknown camera command '{parts[1]}'");
+        }
+    }
+
     private string ExecuteDebugAudioCommand(string[] parts)
     {
         if (parts.Length < 2 || parts[1].Equals("status", StringComparison.OrdinalIgnoreCase))
@@ -5798,7 +5877,7 @@ public partial class GameScene : Node2D
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
-            $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
+            $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
     }
@@ -6415,6 +6494,16 @@ public partial class GameScene : Node2D
     {
         var maxCameraX = MathF.Max(0.0f, GetLevelPixelRight() - LogicalViewportWidth);
         var maxCameraY = MathF.Max(0.0f, GetLevelPixelBottom() - LogicalViewportHeight);
+        if (_debugCameraLocked)
+        {
+            _cameraX = Math.Clamp(_debugCameraLockPosition.X, 0.0f, maxCameraX);
+            _cameraY = Math.Clamp(_debugCameraLockPosition.Y, 0.0f, maxCameraY);
+            _debugCameraLockPosition = new Vector2(_cameraX, _cameraY);
+            _cameraInitialized = true;
+            Position = new Vector2(-MathF.Round(_cameraX), -MathF.Round(_cameraY));
+            return;
+        }
+
         if (!_cameraInitialized)
         {
             _cameraX = Math.Clamp(_state.XFloat - CameraHorizontalAnchor, 0.0f, maxCameraX);
