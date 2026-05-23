@@ -135,7 +135,8 @@ assert all(entry["tile_count"] == 128 for entry in sprite_tileset["uploads"]), s
 
 tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
 assert tilemap["status"] == "partial"
-assert tilemap["placed_tile_count"] == 1611, tilemap["placed_tile_count"]
+assert tilemap["placed_tile_count"] == 1616, tilemap["placed_tile_count"]
+assert tilemap["unsupported_object_counts"] == {}, tilemap["unsupported_object_counts"]
 assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
 assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
 assert any("Map16 tile word's palette" in note for note in tilemap["notes"]), tilemap["notes"]
@@ -156,6 +157,11 @@ tile_sources = {tile["source"] for tile in tilemap["placed_tiles"]}
 assert "right_diagonal_pipe" in tile_sources, tile_sources
 assert "left_diagonal_ledge_edge" in tile_sources, tile_sources
 assert "extended_goal_marker" in tile_sources, tile_sources
+assert "extended_midway_bar" in tile_sources, tile_sources
+assert "extended_3up_moon" in tile_sources, tile_sources
+assert "extended_invisible_1up" in tile_sources, tile_sources
+assert "extended_question_block" in tile_sources, tile_sources
+assert "extended_yellow_switch_block" in tile_sources, tile_sources
 assert "steep_right_slope_surface" in tile_sources, tile_sources
 placed_by_coord = {(tile["x"], tile["y"], tile["source"]): tile["map16"] for tile in tilemap["placed_tiles"]}
 assert placed_by_coord[(56, 18, "right_diagonal_pipe")] == 0x01C4, placed_by_coord.get((56, 18, "right_diagonal_pipe"))
@@ -171,6 +177,12 @@ assert placed_by_coord[(294, 22, "extended_goal_marker")] == 0x0066, placed_by_c
 assert placed_by_coord[(295, 22, "extended_goal_marker")] == 0x0067, placed_by_coord.get((295, 22, "extended_goal_marker"))
 assert placed_by_coord[(294, 23, "extended_goal_marker")] == 0x0068, placed_by_coord.get((294, 23, "extended_goal_marker"))
 assert placed_by_coord[(295, 23, "extended_goal_marker")] == 0x0069, placed_by_coord.get((295, 23, "extended_goal_marker"))
+assert placed_by_coord[(150, 21, "extended_midway_bar")] == 0x0035, placed_by_coord.get((150, 21, "extended_midway_bar"))
+assert placed_by_coord[(151, 21, "extended_midway_bar")] == 0x0038, placed_by_coord.get((151, 21, "extended_midway_bar"))
+assert placed_by_coord[(198, 4, "extended_3up_moon")] == 0x006E, placed_by_coord.get((198, 4, "extended_3up_moon"))
+assert placed_by_coord[(209, 15, "extended_invisible_1up")] == 0x011A, placed_by_coord.get((209, 15, "extended_invisible_1up"))
+assert placed_by_coord[(243, 17, "extended_question_block")] == 0x0124, placed_by_coord.get((243, 17, "extended_question_block"))
+assert placed_by_coord[(156, 20, "extended_yellow_switch_block")] == 0x006B, placed_by_coord.get((156, 20, "extended_yellow_switch_block"))
 assert all(tile["source"] != "right_diagonal_pipe" for tile in tilemap["placed_tiles"] if (tile["x"], tile["y"]) == (50, 24))
 
 synthetic_right_ledge = smw_import.build_partial_level_tilemap(
@@ -211,13 +223,16 @@ assert sprite_counts[0x4F] == 3, sprite_counts
 assert sprite_counts[0xB9] == 2, sprite_counts
 
 pipe_target_tilemap = json.loads((out_dir / "levels" / "level_1CB_partial_tilemap.json").read_text())
-assert pipe_target_tilemap["placed_tile_count"] == 587, pipe_target_tilemap["placed_tile_count"]
-assert pipe_target_tilemap["unsupported_object_counts"] == {"00": 1}, pipe_target_tilemap["unsupported_object_counts"]
+assert pipe_target_tilemap["placed_tile_count"] == 588, pipe_target_tilemap["placed_tile_count"]
+assert pipe_target_tilemap["unsupported_object_counts"] == {}, pipe_target_tilemap["unsupported_object_counts"]
 target_sources = {tile["source"] for tile in pipe_target_tilemap["placed_tiles"]}
 assert "horizontal_pipe_end" in target_sources, target_sources
 assert "underground_ceiling_ledge_fill" in target_sources, target_sources
 assert "underground_ceiling_edge" in target_sources, target_sources
+assert "extended_generic" in target_sources, target_sources
 target_by_coord = {(tile["x"], tile["y"]): tile for tile in pipe_target_tilemap["placed_tiles"]}
+assert target_by_coord[(31, 13)]["source"] == "extended_generic", target_by_coord[(31, 13)]
+assert target_by_coord[(31, 13)]["map16"] == 0x01EC, target_by_coord[(31, 13)]
 assert target_by_coord[(31, 22)]["source"] == "ground_edge_middle", target_by_coord[(31, 22)]
 assert target_by_coord[(31, 23)]["source"] == "ground_edge_middle", target_by_coord[(31, 23)]
 

@@ -104,6 +104,13 @@ SPRITE_GFX_LIST = [
     0x2C, 0x30, 0x2D, 0x0E,
 ]
 GENERIC_REPEATED_TILES = [0x02, 0x21, 0x23, 0x2A, 0x2B, 0x3F, 0x03, 0x13, 0x1E, 0x24, 0x2E, 0x2F, 0x30, 0x32, 0x65]
+GENERIC_EXTENDED_OBJECT_TILES = [
+    0x1F, 0x22, 0x24, 0x42, 0x43, 0x27, 0x29, 0x25, 0x6E, 0x6F, 0x70,
+    0x71, 0x72, 0x45, 0x46, 0x47, 0x48, 0x36, 0x37, 0x11, 0x12, 0x14,
+    0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x29, 0x1D, 0x1F,
+    0x20, 0x21, 0x22, 0x23, 0x25, 0x26, 0x27, 0x28, 0x2A, 0xDE, 0xE0,
+    0xE2, 0xE4, 0xEC, 0xED, 0x2C, 0x25, 0x2D,
+]
 VERTICAL_PIPE_TOP_LEFT = [0x33, 0x37, 0x39, 0x00, 0x00]
 VERTICAL_PIPE_TOP_RIGHT = [0x34, 0x38, 0x3A, 0x00, 0x00]
 VERTICAL_PIPE_BOTTOM_LEFT = [0x00, 0x00, 0x39, 0x33, 0x37]
@@ -514,9 +521,12 @@ def parse_sprite_data(raw: bytes) -> dict[str, Any]:
 
 
 def object_width_tiles(obj_id: int, size_or_type: int) -> int:
-    slope_size = (size_or_type >> 4) + 1
-    slope_type = size_or_type & 0x0F
+    slope_units = size_or_type >> 4
+    slope_size = slope_units + 1
+    slope_type = (size_or_type & 0x0F) % 10
     if obj_id == 0:
+        if size_or_type == 0x46:
+            return 2
         return 1
     if obj_id == 0x0F:
         return 2
@@ -527,12 +537,22 @@ def object_width_tiles(obj_id: int, size_or_type: int) -> int:
     if obj_id == 0x12:
         if slope_type in (1, 4):
             return slope_size
-        if slope_type in (0, 3, 6, 8):
+        if slope_type in (0, 3):
             return slope_size * 2
-        if slope_type in (2, 5, 7, 9):
+        if slope_type in (2, 5):
             return slope_size * 4
+        if slope_type in (6, 7):
+            return max(slope_units, 1) * 2
+        if slope_type in (8, 9):
+            return max(slope_units, 1)
+    if obj_id == 0x1E:
+        return 1
     if obj_id == 0x21:
         return min(size_or_type + 1, 0xFF)
+    if obj_id in (0x3A, 0x3B):
+        diagonal = (size_or_type & 0x0F) + 1
+        fill = (size_or_type >> 4) + 1
+        return min(diagonal * 2 + fill, 0xFF)
     if obj_id == 0x39:
         return min(2 + 2 * (size_or_type >> 4), 5)
     return (size_or_type & 0x0F) + 1
@@ -540,6 +560,8 @@ def object_width_tiles(obj_id: int, size_or_type: int) -> int:
 
 def object_height_tiles(obj_id: int, size_or_type: int) -> int:
     if obj_id == 0:
+        if size_or_type == 0x41:
+            return 2
         return 1
     if obj_id == 0x0F:
         pipe_type = size_or_type & 0x0F
@@ -553,13 +575,35 @@ def object_height_tiles(obj_id: int, size_or_type: int) -> int:
         return 2
     if obj_id == 0x13 and (size_or_type & 0x0F) >= 0x0B:
         return (size_or_type >> 4) + 2
+    if obj_id in (0x17, 0x20):
+        return 1
+    if obj_id == 0x1C:
+        return 2
     if obj_id == 0x12:
-        return (size_or_type >> 4) + 2
+        slope_type = (size_or_type & 0x0F) % 10
+        slope_units = size_or_type >> 4
+        if slope_type >= 6:
+            return max(slope_units, 1) + 1
+        return slope_units + 2
     if obj_id == 0x21:
         return 3
     if obj_id == 0x3F:
         return 1
+    if obj_id in (0x3A, 0x3B):
+        diagonal = (size_or_type & 0x0F) + 1
+        fill = (size_or_type >> 4) + 1
+        return min(diagonal + fill, 0xFF)
     return (size_or_type >> 4) + 1
+
+
+def generic_extended_object_tile(extended_type: int) -> int | None:
+    if extended_type < 0x10:
+        return None
+    index = extended_type - 0x10
+    if index < 0 or index >= len(GENERIC_EXTENDED_OBJECT_TILES):
+        return None
+    page = 0x0100 if index >= 19 else 0x0000
+    return page | GENERIC_EXTENDED_OBJECT_TILES[index]
 
 
 def snes_words_to_rgb(words: list[int]) -> list[list[int]]:
@@ -1721,6 +1765,73 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             place(x, y + yy, 1, top_tiles[edge_kind], "underground_ceiling_edge")
         place(x, y + rows, 1, bottom_tiles[edge_kind], "underground_ceiling_edge_bottom")
 
+    def render_extended_object(obj: dict[str, Any], x: int, y: int, size: int) -> bool:
+        if size == 0x01:
+            return True
+        if size == 0x17:
+            place_map16(x, y, 0x012D, "extended_green_star_block")
+            return True
+        if size == 0x18:
+            place_map16(x, y, 0x006E, "extended_3up_moon")
+            return True
+        if size == 0x2B:
+            place_map16(x, y, 0x011A, "extended_invisible_1up")
+            return True
+        if 0x30 <= size <= 0x38:
+            place_map16(x, y, 0x0124, "extended_question_block")
+            return True
+        if size == 0x41:
+            place_map16(x, y, 0x002D, "yoshi_coin_top")
+            place_map16(x, y + 1, 0x002E, "yoshi_coin_bottom")
+            return True
+        if size == 0x46:
+            if x > 0:
+                place_map16(x - 1, y, 0x0035, "extended_midway_bar")
+            place_map16(x, y, 0x0038, "extended_midway_bar")
+            return True
+        if size == 0x47:
+            place_map16(x, y, 0x001F, "extended_yellow_question_top")
+            place_map16(x, y + 1, 0x0020, "extended_yellow_question_bottom")
+            return True
+        if size == 0x48:
+            place_map16(x, y, 0x0027, "extended_green_question_top")
+            place_map16(x, y + 1, 0x0028, "extended_green_question_bottom")
+            return True
+        if size == 0x86:
+            place_map16(x, y, 0x0066, "extended_goal_marker")
+            place_map16(x + 1, y, 0x0067, "extended_goal_marker")
+            place_map16(x, y + 1, 0x0068, "extended_goal_marker")
+            place_map16(x + 1, y + 1, 0x0069, "extended_goal_marker")
+            return True
+        if size == 0x87:
+            place_map16(x, y, 0x006A, "extended_green_switch_block_entry")
+            return True
+        if 0x8A <= size <= 0x8D:
+            switch_tiles = [
+                [0x00EC, 0x00ED, 0x00EE, 0x00EF],
+                [0x00F0, 0x00F1, 0x00F2, 0x00F3],
+                [0x00F4, 0x00F5, 0x00F6, 0x00F7],
+                [0x00F8, 0x00F9, 0x00FA, 0x00FB],
+            ][size - 0x8A]
+            place_map16(x, y, switch_tiles[0], "extended_switch")
+            place_map16(x + 1, y, switch_tiles[1], "extended_switch")
+            place_map16(x, y + 1, switch_tiles[2], "extended_switch")
+            place_map16(x + 1, y + 1, switch_tiles[3], "extended_switch")
+            return True
+        if size == 0x8E:
+            place_map16(x, y, 0x006B, "extended_yellow_switch_block")
+            return True
+        if size == 0x90:
+            for index, map16_id in enumerate([0x0098, 0x0099, 0x009A, 0x009B, 0x009C, 0x009C]):
+                place_map16(x + index % 2, y + index // 2, map16_id, "extended_large_boss_door")
+            return True
+        if 0x19 <= size <= 0x40:
+            map16_id = generic_extended_object_tile(size)
+            if map16_id is not None:
+                place_map16(x, y, map16_id, "extended_generic")
+                return True
+        return False
+
     for obj in objects:
         placement = obj["placement"]
         x = int(placement["x_tile"])
@@ -1779,17 +1890,9 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             render_underground_ceiling_edge(obj, x, y, size)
         elif obj_id == 0x3F:
             render_small_bush(obj, x, y, size)
-        elif obj_id == 0x00 and size == 0x41:
-            place(x, y, 0, 0x2D, "yoshi_coin_top")
-            place(x, y + 1, 0, 0x2E, "yoshi_coin_bottom")
-        elif obj_id == 0x00 and size == 0x86:
-            place(x, y, 0, 0x66, "extended_goal_marker")
-            place(x + 1, y, 0, 0x67, "extended_goal_marker")
-            place(x, y + 1, 0, 0x68, "extended_goal_marker")
-            place(x + 1, y + 1, 0, 0x69, "extended_goal_marker")
-        elif obj_id == 0x00 and size == 0x8E:
-            place(x, y, 0, 0x6A, "extended_switch_or_goal_marker")
         elif obj_id == 0x00 and size == 0x00:
+            continue
+        elif obj_id == 0x00 and render_extended_object(obj, x, y, size):
             continue
         elif obj_id in (0x27, 0x29) and len(obj.get("extra", [])) >= 2:
             extra = obj["extra"]

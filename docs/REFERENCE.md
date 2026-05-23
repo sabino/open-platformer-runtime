@@ -18,6 +18,7 @@ Importer references translated into `tools/smw_import.py`:
 - Sprite GFX upload order from `kUploadGraphicsFiles_SpriteGFXList` and `UploadGraphicsFiles` in `src/smw_00.cpp`; level `105` and its direct pipe target `1CB` use sprite GFX setting `8`, which uploads GFX `20`, `13`, `01`, and `00` into the `$6000-$7FFF` sprite VRAM window.
 - Screen-exit property semantics from `src/smw_0d.cpp` and level-load destination construction from `src/smw_05.cpp`
 - Lunar Magic Universal's current screen-jump object behavior: extended object `01` updates the object stream screen cursor after the marker object is parsed, which keeps later level geometry on the intended screens.
+- Lunar Magic Universal's current vanilla extended-object projection for common one-off objects: moons, invisible 1-ups, question/switch blocks, midway bars, Yoshi coins, goal markers, boss doors, and generic one-tile extended objects are now emitted into partial Map16 layout data. The verified `105` and `1CB` imports currently report no unsupported extended objects.
 - Player graphics source data from `GFX32`/`GFX33`, player palettes, and `PlayerGFXRt` tile pointer/OAM placement tables.
 - SPC upload bank addresses from `assets/compile_resources.py`: engine `0x0E8000`, samples `0x0F8000`, level music `0x0EAED6`, overworld music `0x0E98B1`, and credits music `0x03E400`.
 - Vanilla secondary entrance tables from `0x05F800`, `0x05FA00`, `0x05FC00`, and `0x05FE00`, including the Yoshi Island 1 return-pipe entry at `0x1CB`.

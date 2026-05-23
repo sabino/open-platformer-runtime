@@ -8,5 +8,7 @@ local-rom.cfg
 *.srm
 *.log
 *.tmp
+__pycache__/
+*.pyc
 bin/
 obj/

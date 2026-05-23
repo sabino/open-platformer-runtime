@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Synced vanilla extended-object projection with the current Lunar Magic Universal renderer for screen jumps, moons, invisible 1-ups, question/switch blocks, midway bars, Yoshi coins, goal markers, boss doors, and generic one-tile extended objects, removing the remaining unsupported extended objects from generated levels `105` and `1CB`.
 - Moved vertical jump/fall physics closer to the native `HandlePlayerPhysics_InAir` path by tracking the SMW `$72` in-air states for normal jumps, running/cape takeoff, and falling, applying the max-fall cap before the frame's gravity add like the original routine, and clearing those transient jump states during RCON spawn/ground setup.
 - Moved the internal APU SFX probe closer to native SMW by decoding the SPC RAM SFX pointer streams for channel-1/channel-3 commands before falling back to hand-authored notes; RCON/audio status now reports whether the last SFX came from a native stream plus its SPC pointer and decoded note count.
 - Wired named internal APU SFX probes into gameplay events: coins, dragon coins, one-ups, sprite stomps, spin-jump block breaks, flying-block power-up rewards, hurt/death, and course clear now use explicit `SmwAudio` methods with native port/command diagnostics, and RCON can trigger the same `audio coin|stomp|1up|...` probes.
