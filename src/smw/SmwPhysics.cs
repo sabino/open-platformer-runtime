@@ -14,11 +14,6 @@ public sealed class SmwPhysics
     public const int BigPlayerHeight = 32;
     public const int PlayerHeight = BigPlayerHeight;
 
-    private const int WalkMax = 0x14;
-    private const int RunMax = 0x24;
-    private const int SprintMax = 0x30;
-    private const int WalkAccel = 0x0180;
-    private const int RunAccel = 0x0180;
     public const int NativeFlatWalkTurnAcceleration = 0x0280;
     public const int NativeFlatRunTurnAcceleration = 0x0500;
     private const int GroundFriction = 0x0020;
@@ -485,17 +480,19 @@ public sealed class SmwPhysics
             state.Facing = dir > 0 ? 1 : 0;
             var absSpeed = Math.Abs(state.XSpeed);
             var pMeterMode = UpdatePMeterEx(ref state, PMeterModeForHorizontal(state, input, absSpeed));
-            var target = HorizontalTargetForPMeterMode(pMeterMode);
-            var accel = input.Run ? RunAccel : WalkAccel;
-            if (!state.OnGround)
+            var target = Math.Abs(NativeFlatHorizontalTarget(dir, pMeterMode));
+            var turningAround = state.XSpeed != 0 && Math.Sign(state.XSpeed) != dir;
+            if (state.OnGround)
             {
-                accel = AirAccel;
+                AddXAccel(ref state, NativeFlatHorizontalAcceleration(dir, input.Run, turningAround));
             }
-            if (state.XSpeed != 0 && Math.Sign(state.XSpeed) != dir)
+            else
             {
-                accel = input.Run ? NativeFlatRunTurnAcceleration : NativeFlatWalkTurnAcceleration;
+                var accel = turningAround
+                    ? input.Run ? NativeFlatRunTurnAcceleration : NativeFlatWalkTurnAcceleration
+                    : AirAccel;
+                AddXAccel(ref state, dir * accel);
             }
-            AddXAccel(ref state, dir * accel);
             state.XSpeed = ClampSigned8(state.XSpeed);
             if ((dir > 0 && state.XSpeed > target) || (dir < 0 && state.XSpeed < -target))
             {
@@ -566,14 +563,30 @@ public sealed class SmwPhysics
         return mode;
     }
 
-    private static int HorizontalTargetForPMeterMode(int mode)
+    private static int NativeFlatHorizontalAcceleration(int dir, bool runHeld, bool turningAround)
     {
-        if (mode >= 3)
+        var k = 4 * NativeDirectionBit(dir);
+        if (turningAround)
         {
-            return SprintMax;
+            k = (k - 112) & 0xFF;
+        }
+        if (runHeld)
+        {
+            k += 2;
         }
 
-        return mode >= 1 ? RunMax : WalkMax;
+        return HorizontalAccelerationTable[(k & 0xFF) >> 1];
+    }
+
+    private static int NativeFlatHorizontalTarget(int dir, int pMeterMode)
+    {
+        var j = NativeDirectionBit(dir) | (2 * Math.Clamp(pMeterMode, 0, 3));
+        return HorizontalMaxSpeedTable[j];
+    }
+
+    private static int NativeDirectionBit(int dir)
+    {
+        return dir > 0 ? 1 : 0;
     }
 
     private static void ApplyJumpAndGravity(ref PlayerState state, FrameInput input)

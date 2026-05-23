@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Switched grounded flat left/right acceleration and speed caps to read the native horizontal acceleration/max-speed tables directly, preserving the current flat behavior while removing another constants-only shortcut.
 - Added RCON `pipe`/`pipe_probe` diagnostics for nearby right-diagonal pipe floor/body/ceiling cells so slope-pipe collision bugs can be triaged from live coordinates.
 - Exposed the full native horizontal max-speed, acceleration, friction/deceleration, and target sub-speed tables in `SmwPhysics` so the remaining horizontal movement branches can be ported against ROM-derived data.
 - Replaced the temporary flat-ground turn-around acceleration with the native `kHandlePlayerPhysics_MarioAccel` walk/run entries (`0x0280`/`0x0500`).
