@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added first-pass native-table-backed stomp scoring for runtime sprite actors: Rex's first stomp now uses the SMW 200-point reward slot, logs `smw-runtime: sprite_stomp`, and exposes `stomp_chain` through debug state.
 - Added the first fifth-dragon-coin extra-life rule and RCON/debug `dragon <n>` setup command so imported Yoshi/dragon coin state can be tested independently from normal coin rollover.
 - Added the first 100-coin extra-life rule: normal coins, dragon coins, and coin block rewards now roll `COIN 99` to `COIN 00`, increment lives/one-up diagnostics, and can be tested deterministically through RCON/debug `coins <n>`.
 - Added a first normal gameplay START-pause state: pressing Start or sending RCON `game_pause on|off` freezes Mario, actors, goal tape motion, pipe checks, and the level timer, shows `PAUSE`, stops/restarts the current music preview, and exposes `gamepause`/`timer_frames` in HUD/RCON state for headless verification.

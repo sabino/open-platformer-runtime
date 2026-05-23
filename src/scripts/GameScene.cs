@@ -52,6 +52,7 @@ public partial class GameScene : Node2D
     private const int PowerupRewardScore = 1000;
     private const int CoinLifeThreshold = 100;
     private const int DragonCoinLifeThreshold = 5;
+    private static readonly int[] StompScoreByNativeGivePointsIndex = [100, 200, 400, 800, 1000, 2000, 4000, 8000];
     private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
@@ -190,6 +191,7 @@ public partial class GameScene : Node2D
     private int _dragonCoinCount;
     private int _oneUpCount;
     private int _score;
+    private int _stompChainCounter;
     private int _lives = StartingLives;
     private int _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
     private int _blockBreakCount;
@@ -339,6 +341,7 @@ public partial class GameScene : Node2D
         UpdateGoalTapes();
         CheckCoinPickups();
         CheckGoalTape();
+        ResetStompChainIfGrounded();
         TickLevelTimer();
         UpdateHud();
         UpdateDebugGizmos();
@@ -3772,12 +3775,14 @@ public partial class GameScene : Node2D
         {
             if (TryStompRex(actor))
             {
+                AwardSpriteStompReward(actor, "stomp:AB:1");
                 BoostPlayerAfterSpriteStomp();
                 return true;
             }
 
             actor.Alive = false;
             _lastActorEvent = $"stomp:{actor.SpriteId:X2}:dead";
+            AwardSpriteStompReward(actor, _lastActorEvent);
             BoostPlayerAfterSpriteStomp();
             return true;
         }
@@ -3813,6 +3818,37 @@ public partial class GameScene : Node2D
         _audio?.PlaySpinJump();
     }
 
+    private void AwardSpriteStompReward(RuntimeSpriteActor actor, string source)
+    {
+        var rewardIndex = Math.Clamp(SpriteStompRewardBaseIndex(actor) + _stompChainCounter, 0, 8);
+        _stompChainCounter++;
+        if (rewardIndex >= StompScoreByNativeGivePointsIndex.Length)
+        {
+            AddOneUp(source);
+        }
+        else
+        {
+            AddScore(StompScoreByNativeGivePointsIndex[rewardIndex]);
+        }
+
+        GD.Print(
+            $"smw-runtime: sprite_stomp level={_currentLevelId} sprite={actor.SpriteId:X2} state={actor.State} " +
+            $"source={source} chain={_stompChainCounter} reward_index={rewardIndex} score={_score} lives={_lives} oneups={_oneUpCount}");
+    }
+
+    private static int SpriteStompRewardBaseIndex(RuntimeSpriteActor actor)
+    {
+        return actor.SpriteId == 0xAB ? 1 : 0;
+    }
+
+    private void ResetStompChainIfGrounded()
+    {
+        if (_state.OnGround)
+        {
+            _stompChainCounter = 0;
+        }
+    }
+
     private void ReplaceSpriteActorVisuals(RuntimeSpriteActor actor)
     {
         foreach (var visual in actor.Visuals)
@@ -3839,6 +3875,7 @@ public partial class GameScene : Node2D
 
         _lastActorEvent = $"hurt:{actor.SpriteId:X2}:{actor.State}";
         _playerHurtCooldown = PlayerHurtCooldownFrames;
+        _stompChainCounter = 0;
         if (_state.Powerup > SmwPhysics.SmallPowerup)
         {
             _physics.SetPowerup(ref _state, SmwPhysics.SmallPowerup);
@@ -6499,7 +6536,7 @@ public partial class GameScene : Node2D
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
-            $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
+            $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
@@ -7030,6 +7067,7 @@ public partial class GameScene : Node2D
         _playerHurtCooldown = 0;
         _lastActorEvent = "none";
         _blockBreakCount = 0;
+        _stompChainCounter = 0;
         _state = MakeInitialPlayerState(entrance);
         ResetPlayerAnimationState();
         _cameraInitialized = false;
@@ -7063,6 +7101,7 @@ public partial class GameScene : Node2D
     private void HandlePlayerDeath(string cause, string actorEvent)
     {
         _deathCount++;
+        _stompChainCounter = 0;
         _lives = Math.Max(0, _lives - 1);
         GD.Print(
             $"smw-runtime: player_death level={_currentLevelId} cause={cause} count={_deathCount} " +
@@ -7110,6 +7149,7 @@ public partial class GameScene : Node2D
         _dragonCoinCount = 0;
         _oneUpCount = 0;
         _score = 0;
+        _stompChainCounter = 0;
         HideGameOverLabel();
         HidePauseLabel();
         RestartCurrentLevel(wasGameOver ? "gameover:continue" : "debug:continue");
@@ -7131,6 +7171,7 @@ public partial class GameScene : Node2D
         _playerHurtCooldown = 0;
         _lastActorEvent = actorEvent;
         _blockBreakCount = 0;
+        _stompChainCounter = 0;
         _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
         _pipeTransitionLatch = false;
         _entranceMotionFrames = 0;
