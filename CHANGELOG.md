@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added RCON `save`/`load`/`checkpoints` commands for named player-state checkpoints, making long slope/pipe playtests restartable from exact coordinates, velocities, power-up state, and camera position.
 - Gated ceiling-slope bonks by previous-frame position and stopped the right-diagonal-pipe ceiling helper from overriding upward motion, so a controlled jump probe under the Yoshi Island 1 sloped pipe keeps native upward speed instead of snapping to the underside.
 - Restricted right-diagonal-pipe body recovery to actual horizontal intrusion, avoiding left/right cell jitter while Mario is only moving vertically inside the temporary pipe-volume solver.
 - Added optional `SMW_DEBUG_COLLISION_TRACE=1` and `SMW_DEBUG_SLOPE_TRACE=1` physics logs for exact rect/slope contact branches during RCON-driven headless repros.

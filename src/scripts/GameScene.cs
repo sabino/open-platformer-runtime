@@ -118,6 +118,7 @@ public partial class GameScene : Node2D
     private readonly HashSet<(int X, int Y)> _diagonalPipeFloorCells = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeBodyCells = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeCeilingCells = [];
+    private readonly Dictionary<string, DebugCheckpoint> _debugCheckpoints = new(StringComparer.OrdinalIgnoreCase);
 
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
@@ -335,6 +336,12 @@ public partial class GameScene : Node2D
         int SourceY,
         string Source);
     private readonly record struct ScriptedInputSegment(int Frames, SmwPhysics.FrameInput Input);
+    private readonly record struct DebugCheckpoint(
+        SmwPhysics.PlayerState State,
+        string LevelId,
+        float CameraX,
+        float CameraY,
+        int Frame);
     private readonly record struct LevelEntrance(
         string LevelId,
         Vector2 Position,
@@ -5217,6 +5224,17 @@ public partial class GameScene : Node2D
                 return $"ok capture_saved={parts[1]} error={captureError}";
             case "state":
                 return PrintDebugState(parts.Length >= 2 ? parts[1] : "manual");
+            case "save":
+            case "save_state":
+            case "checkpoint_save":
+                return DebugSaveCheckpoint(parts.Length >= 2 ? parts[1] : "default");
+            case "load":
+            case "load_state":
+            case "checkpoint_load":
+                return DebugLoadCheckpoint(parts.Length >= 2 ? parts[1] : "default");
+            case "checkpoints":
+            case "saves":
+                return PrintDebugCheckpoints();
             case "tile":
             case "probe":
                 return PrintDebugTile(parts);
@@ -5407,6 +5425,77 @@ public partial class GameScene : Node2D
         var state = BuildDebugState(tag);
         GD.Print(state);
         return state;
+    }
+
+    private string DebugSaveCheckpoint(string slot)
+    {
+        slot = NormalizeCheckpointSlot(slot);
+        _debugCheckpoints[slot] = new DebugCheckpoint(_state, _currentLevelId, _cameraX, _cameraY, _debugFrameCounter);
+        var line =
+            $"smw-debug-checkpoint: action=save slot={slot} level={_currentLevelId} frame={_debugFrameCounter} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
+            $"cam={_cameraX:0.00},{_cameraY:0.00} count={_debugCheckpoints.Count}";
+        GD.Print(line);
+        return line;
+    }
+
+    private string DebugLoadCheckpoint(string slot)
+    {
+        slot = NormalizeCheckpointSlot(slot);
+        if (!_debugCheckpoints.TryGetValue(slot, out var checkpoint))
+        {
+            return $"smw-debug-checkpoint: action=load slot={slot} missing=1 count={_debugCheckpoints.Count}";
+        }
+
+        if (!_currentLevelId.Equals(checkpoint.LevelId, StringComparison.OrdinalIgnoreCase))
+        {
+            DebugEnterLevel(checkpoint.LevelId);
+        }
+
+        _entranceMotionFrames = 0;
+        _entranceMotionAction = 0;
+        _entranceMotionPixelsPerFrame = Vector2.Zero;
+        _pipeTransitionLatch = false;
+        _state = checkpoint.State;
+        _cameraX = checkpoint.CameraX;
+        _cameraY = checkpoint.CameraY;
+        _cameraInitialized = true;
+        RefreshPlayerDebugPresentation(forceGraphic: true);
+        var line =
+            $"smw-debug-checkpoint: action=load slot={slot} level={_currentLevelId} saved_frame={checkpoint.Frame} frame={_debugFrameCounter} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
+            $"cam={_cameraX:0.00},{_cameraY:0.00}";
+        GD.Print(line);
+        return line;
+    }
+
+    private string PrintDebugCheckpoints()
+    {
+        var slots = _debugCheckpoints
+            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(pair => $"{pair.Key}:{pair.Value.LevelId}:{pair.Value.State.XFloat:0.00},{pair.Value.State.YFloat:0.00}:frame={pair.Value.Frame}");
+        var description = string.Join("|", slots);
+        var line = $"smw-debug-checkpoints: count={_debugCheckpoints.Count} slots={(string.IsNullOrEmpty(description) ? "none" : description)}";
+        GD.Print(line);
+        return line;
+    }
+
+    private static string NormalizeCheckpointSlot(string slot)
+    {
+        slot = slot.Trim();
+        return string.IsNullOrWhiteSpace(slot) ? "default" : slot;
+    }
+
+    private void RefreshPlayerDebugPresentation(bool forceGraphic)
+    {
+        if (_player != null)
+        {
+            _player.Position = PlayerRenderPosition();
+        }
+
+        UpdatePlayerGraphic(force: forceGraphic);
+        UpdateHud();
+        UpdateDebugGizmos();
     }
 
     private string PrintDebugPerformance(string tag)
