@@ -122,6 +122,7 @@ public partial class GameScene : Node2D
     private Node2D? _player;
     private Line2D? _playerHitboxGizmo;
     private ColorRect? _playerFootGizmo;
+    private readonly List<ColorRect> _playerSensorGizmos = [];
     private Label? _playerDebugLabel;
     private Line2D? _cameraGizmo;
     private Label? _hud;
@@ -1974,7 +1975,7 @@ public partial class GameScene : Node2D
 
     private bool ResolveDiagonalPipeBodyIntrusion(SmwPhysics.PlayerState previousState)
     {
-        if (_diagonalPipeBodyCells.Count == 0 && _diagonalPipeFloorCells.Count == 0)
+        if (_diagonalPipeBodyCells.Count == 0)
         {
             return false;
         }
@@ -1999,8 +2000,7 @@ public partial class GameScene : Node2D
             {
                 var tileKey = (tileX, tileY);
                 var isFullBodyCell = _diagonalPipeBodyCells.Contains(tileKey);
-                var isFloorCell = _diagonalPipeFloorCells.Contains(tileKey);
-                if (!isFullBodyCell && !isFloorCell)
+                if (!isFullBodyCell)
                 {
                     continue;
                 }
@@ -2010,10 +2010,6 @@ public partial class GameScene : Node2D
                 var y0 = tileY * Map16TileSize + LevelVisualYOffset;
                 var y1 = y0 + Map16TileSize;
                 if (right <= x0 || left >= x1 || bottom <= y0 || top >= y1)
-                {
-                    continue;
-                }
-                if (isFloorCell && !PlayerIsInsideDiagonalPipeFloorCell(left, right, top, x0, y1))
                 {
                     continue;
                 }
@@ -2039,18 +2035,6 @@ public partial class GameScene : Node2D
 
         MovePlayerX(bestTarget.Value);
         return true;
-    }
-
-    private static bool PlayerIsInsideDiagonalPipeFloorCell(
-        float playerLeft,
-        float playerRight,
-        float playerTop,
-        float tileLeft,
-        float tileBottom)
-    {
-        var probeX = Math.Clamp((playerLeft + playerRight) * 0.5f, tileLeft, tileLeft + Map16TileSize);
-        var surfaceY = tileBottom - (probeX - tileLeft);
-        return playerTop > surfaceY + 1.0f;
     }
 
     private static float NearestHorizontalEscape(float playerLeft, float playerRight, float tileLeft, float tileRight)
@@ -2965,6 +2949,15 @@ public partial class GameScene : Node2D
         {
             _playerFootGizmo.Position = new Vector2(SmwPhysics.PlayerWidth * 0.5f - 1.0f, height - 2.0f);
         }
+        if (_playerSensorGizmos.Count >= 6)
+        {
+            SetPlayerSensorGizmo(0, SmwPhysics.PlayerWidth * 0.5f, 1.0f);
+            SetPlayerSensorGizmo(1, 0.0f, height * 0.5f);
+            SetPlayerSensorGizmo(2, SmwPhysics.PlayerWidth - 1.0f, height * 0.5f);
+            SetPlayerSensorGizmo(3, 2.0f, height);
+            SetPlayerSensorGizmo(4, SmwPhysics.PlayerWidth * 0.5f, height);
+            SetPlayerSensorGizmo(5, SmwPhysics.PlayerWidth - 2.0f, height);
+        }
         if (_playerDebugLabel != null)
         {
             _playerDebugLabel.Text =
@@ -2972,6 +2965,11 @@ public partial class GameScene : Node2D
                 $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames}";
             _playerDebugLabel.Position = new Vector2(-8.0f, -18.0f);
         }
+    }
+
+    private void SetPlayerSensorGizmo(int index, float x, float y)
+    {
+        _playerSensorGizmos[index].Position = new Vector2(x - 1.0f, y - 1.0f);
     }
 
     private static void SetLineRect(Line2D line, Rect2 rect)
@@ -3544,6 +3542,7 @@ public partial class GameScene : Node2D
     {
         _playerHitboxGizmo = null;
         _playerFootGizmo = null;
+        _playerSensorGizmos.Clear();
         _playerDebugLabel = null;
         _playerTileSprites.Clear();
         _player = new Node2D
@@ -3594,6 +3593,13 @@ public partial class GameScene : Node2D
         };
         _player.AddChild(_playerFootGizmo);
 
+        AddPlayerSensorGizmo("HeadSensorDebug", new Color(1.0f, 0.92f, 0.10f, 0.95f));
+        AddPlayerSensorGizmo("LeftSideSensorDebug", new Color(1.0f, 0.45f, 0.05f, 0.95f));
+        AddPlayerSensorGizmo("RightSideSensorDebug", new Color(1.0f, 0.45f, 0.05f, 0.95f));
+        AddPlayerSensorGizmo("LeftFootSensorDebug", new Color(0.0f, 0.80f, 1.0f, 0.95f));
+        AddPlayerSensorGizmo("CenterFootSensorDebug", new Color(0.0f, 1.0f, 0.35f, 0.95f));
+        AddPlayerSensorGizmo("RightFootSensorDebug", new Color(0.0f, 0.80f, 1.0f, 0.95f));
+
         _playerDebugLabel = new Label
         {
             Name = "PlayerStateDebug",
@@ -3608,6 +3614,25 @@ public partial class GameScene : Node2D
         _player.AddChild(_playerDebugLabel);
 
         UpdatePlayerDebugGizmos();
+    }
+
+    private void AddPlayerSensorGizmo(string name, Color color)
+    {
+        if (_player == null)
+        {
+            return;
+        }
+
+        var sensor = new ColorRect
+        {
+            Name = name,
+            Color = color,
+            Size = new Vector2(2, 2),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            ZIndex = 226,
+        };
+        _player.AddChild(sensor);
+        _playerSensorGizmos.Add(sensor);
     }
 
     private bool TryBuildPlayerSprites()
@@ -4921,6 +4946,10 @@ public partial class GameScene : Node2D
             case "tile":
             case "probe":
                 return PrintDebugTile(parts);
+            case "sensors":
+            case "sensor":
+            case "player_sensors":
+                return PrintDebugPlayerSensors(parts.Length >= 2 ? parts[1] : "manual");
             case "collision":
             case "collisions":
             case "collide":
@@ -5133,6 +5162,54 @@ public partial class GameScene : Node2D
         var line = $"smw-debug-tile: {tile}";
         GD.Print(line);
         return line;
+    }
+
+    private string PrintDebugPlayerSensors(string tag)
+    {
+        var height = SmwPhysics.PlayerHeightFor(_state);
+        var left = _state.XFloat;
+        var right = left + SmwPhysics.PlayerWidth;
+        var top = _state.YFloat;
+        var bottom = top + height;
+        var centerX = left + SmwPhysics.PlayerWidth * 0.5f;
+        var middleY = top + height * 0.5f;
+        var footLeftX = left + 2.0f;
+        var footRightX = right - 2.0f;
+        var footY = bottom + 1.0f;
+
+        var slope = "none";
+        if (SmwPhysics.TryResolveFloorSlope(
+            centerX,
+            bottom,
+            _state.YSpeed,
+            _slopes,
+            6.0f,
+            16.0f,
+            out var slopeY))
+        {
+            slope = $"{slopeY:0.00}";
+        }
+
+        var line =
+            $"smw-debug-sensors: tag={tag} frame={_debugFrameCounter} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} h={height} xs={_state.XSpeed} ys={_state.YSpeed} " +
+            $"head={DescribeSensorPoint(centerX, top + 1.0f)} " +
+            $"side_l={DescribeSensorPoint(left, middleY)} side_r={DescribeSensorPoint(right - 1.0f, middleY)} " +
+            $"foot_l={DescribeSensorPoint(footLeftX, footY)} foot_c={DescribeSensorPoint(centerX, footY)} foot_r={DescribeSensorPoint(footRightX, footY)} " +
+            $"floor_slope={slope}";
+        GD.Print(line);
+        return line;
+    }
+
+    private string DescribeSensorPoint(float x, float y)
+    {
+        var cell = (WorldToTileX(x), WorldToTileY(y));
+        var pipeRole =
+            _diagonalPipeFloorCells.Contains(cell) ? "floor" :
+            _diagonalPipeBodyCells.Contains(cell) ? "body" :
+            _diagonalPipeCeilingCells.Contains(cell) ? "ceiling" :
+            "none";
+        return $"{x:0.00},{y:0.00}:{DescribeTileAt(cell.Item1, cell.Item2)}:pipe={pipeRole}";
     }
 
     private string PrintDebugCollision(string[] parts)
