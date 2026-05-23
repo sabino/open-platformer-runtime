@@ -5126,6 +5126,10 @@ public partial class GameScene : Node2D
         var audioStatus = _audio?.DebugStatus() ?? "loaded=0 samples=0 voices=0 music=0 music_frame=0 events=0 loop_frames=0 frames_available=-1";
         var perf =
             $"smw-debug-perf: tag={tag} frame={_debugFrameCounter} fps={Engine.GetFramesPerSecond():0.00} " +
+            $"process_ms={Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000.0:0.000} " +
+            $"physics_ms={Performance.GetMonitor(Performance.Monitor.TimePhysicsProcess) * 1000.0:0.000} " +
+            $"draw_calls={Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0} " +
+            $"render_objects={Performance.GetMonitor(Performance.Monitor.RenderTotalObjectsInFrame):0} " +
             $"physics_tps={Engine.PhysicsTicksPerSecond} paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"nodes={CountNodes(GetTree().Root)} actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} " +
             $"tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} player_sprites={_playerTileSprites.Count} " +

@@ -8,6 +8,7 @@
 - Applied the native one-pixel OAM Y bias to Mario's rendered pose bridge so big, small, and ducking sprites line up with the hitbox bottom instead of drawing one pixel into the floor.
 - Added an RCON `trace_oam` command that records per-frame player OAM slot metadata alongside scripted input traces for diagnosing intermittent stray Mario pixels and pose mapping errors.
 - Made `tools/smw-rcon.sh` drain multi-chunk responses so long diagnostics such as OAM traces are not truncated at the first socket read.
+- Extended RCON `perf` output with Godot process/physics frame time and render draw-call/object counters, making visible-run slowdown triage less dependent on guesswork.
 - Ported the native spin-jump pose/facing cycle from `DATA_00CE99/00CEA1` for Mario's runtime OAM bridge and added trace output/regression coverage for pose/facing changes during spin jumps.
 - Replaced the remaining flat horizontal speed-cap hard clamp with native-style `00D742/00D76B` table drag, so held walk/run motion oscillates around the SMW caps through friction/deceleration tables instead of pinning subspeed to zero.
 - Added a live RCON headless regression that settles Mario on the actual level-105 diagonal-pipe slope at `x=921,y=208`, traces a jump, and asserts he leaves the slope with the native jump speed.
