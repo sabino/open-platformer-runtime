@@ -16,6 +16,7 @@ Examples:
   $0 input 12 left run
   $0 spawn 2025 256
   $0 state
+  $0 oam
 EOF
   exit 2
 fi

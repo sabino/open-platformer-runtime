@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added RCON `player_oam`/`oam`/`pose` inspection so visual Mario glitches can be traced to the exact native pose, palette variant, descriptor bytes, dynamic GFX32 source tiles, sprite positions, and atlas regions active at that frame.
 - Generated `GFX32/GFX33` player atlases for all four native player palette variants and switched the runtime fire power-up render path to the Fire Mario palette instead of reusing normal Mario colors.
 - Added RCON `ground on|off` and `trace` commands so unattended playtest debugging can force a grounded state, queue fixed-frame input, and log per-frame native-unit state, camera, foot-tile, and nearest-actor data.
 - Changed grounded vertical physics to match the native in-air gravity branch more closely: standing frames pin vertical speed at zero, preserve floor contact through an explicit top-of-solid probe, and only start gravity after Mario actually leaves support.

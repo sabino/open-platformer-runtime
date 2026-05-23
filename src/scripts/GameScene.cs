@@ -4736,6 +4736,10 @@ public partial class GameScene : Node2D
             case "tile":
             case "probe":
                 return PrintDebugTile(parts);
+            case "player_oam":
+            case "oam":
+            case "pose":
+                return PrintDebugPlayerOam(parts.Length >= 2 ? parts[1] : "manual");
             case "actors_near":
             case "near":
                 return PrintDebugActorsNear(parts);
@@ -4867,6 +4871,74 @@ public partial class GameScene : Node2D
         var line = $"smw-debug-actors-near: radius={radius:0.00} {DescribeActorsNear(radius)}";
         GD.Print(line);
         return line;
+    }
+
+    private string PrintDebugPlayerOam(string tag)
+    {
+        var line = BuildDebugPlayerOam(tag);
+        GD.Print(line);
+        return line;
+    }
+
+    private string BuildDebugPlayerOam(string tag)
+    {
+        if (!HasPlayerOamMetadata())
+        {
+            return $"smw-debug-player-oam: tag={tag} metadata=0 sprites={_playerTileSprites.Count}";
+        }
+
+        var pose = _lastPlayerPose >= 0 ? _lastPlayerPose : 0;
+        var nativeFacing = _lastPlayerFacing >= 0 ? _lastPlayerFacing : (_state.Facing == 0 ? 0 : 1);
+        var powerup = _state.Powerup;
+        var tablePose = pose;
+        if (pose < 0x3D)
+        {
+            tablePose += _playerPowerupTilesetIndex[Math.Clamp(powerup, 0, _playerPowerupTilesetIndex.Count - 1)];
+        }
+
+        tablePose = Math.Clamp(tablePose, 0, _playerTilesIndex.Count - 1);
+        var xyIndexOffset = _playerXYDispIndexIndex[Math.Clamp(pose, 0, _playerXYDispIndexIndex.Count - 1)] | nativeFacing;
+        xyIndexOffset = Math.Clamp(xyIndexOffset, 0, _playerXYDispIndex.Count - 1);
+        var dispBase = _playerXYDispIndex[xyIndexOffset] / 2;
+        var descriptorBase = _playerTilesIndex[tablePose];
+        var headBase = _headTilePointers[tablePose];
+        var bodyBase = _bodyTilePointers[tablePose];
+        var flipH = (_playerTileXFlip[Math.Clamp(nativeFacing, 0, _playerTileXFlip.Count - 1)] & 0x40) != 0;
+        var palette = PlayerPaletteVariantForPowerup(powerup);
+        const int normalSizeMask = 0xC8;
+        var slotMasks = new[] { 0x80, 0x40, 0x20, 0x10 };
+
+        var builder = new StringBuilder();
+        builder.Append(
+            $"smw-debug-player-oam: tag={tag} metadata=1 frame={_debugFrameCounter} pose={pose} table_pose={tablePose} " +
+            $"powerup={powerup} palette={palette} facing={nativeFacing} flip_h={(flipH ? 1 : 0)} " +
+            $"walk_frame={_playerWalkingFrame} anim_timer={_playerAnimTimer} render_y={PlayerRenderYOffsetForState(powerup, _state.Ducking)} " +
+            $"descriptor_base={descriptorBase} disp_base={dispBase} head_ptr=0x{headBase:X2} body_ptr=0x{bodyBase:X2} sprites={_playerTileSprites.Count}");
+
+        for (var slot = 0; slot < 4; slot++)
+        {
+            var descriptorIndex = descriptorBase + slot;
+            var dispIndex = dispBase + slot;
+            var hasDescriptor = descriptorIndex >= 0 && descriptorIndex < _playerTileDescriptors.Count;
+            var hasDisp = dispIndex >= 0 && dispIndex < _playerXDisp.Count && dispIndex < _playerYDisp.Count;
+            var descriptor = hasDescriptor ? _playerTileDescriptors[descriptorIndex] : -1;
+            var tile = -1;
+            var resolved = hasDescriptor && TryResolvePlayerDynamicTile(descriptor, headBase, bodyBase, out tile);
+            var large = (normalSizeMask & slotMasks[slot]) != 0;
+            var visible = slot < _playerTileSprites.Count && _playerTileSprites[slot].Visible;
+            var sprite = slot < _playerTileSprites.Count ? _playerTileSprites[slot] : null;
+            var rect = sprite?.RegionRect ?? default;
+            var pos = sprite?.Position ?? default;
+
+            builder.Append(
+                $" slot{slot}:desc_idx={descriptorIndex}:disp_idx={dispIndex}:desc={(descriptor >= 0 ? descriptor.ToString("X2", CultureInfo.InvariantCulture) : "--")}:" +
+                $"dyn={(resolved ? 1 : 0)}:tile={(resolved ? tile.ToString(CultureInfo.InvariantCulture) : "--")}:" +
+                $"disp={(hasDisp ? _playerXDisp[dispIndex].ToString(CultureInfo.InvariantCulture) : "--")},{(hasDisp ? _playerYDisp[dispIndex].ToString(CultureInfo.InvariantCulture) : "--")}:" +
+                $"size={(large ? 16 : 8)}:visible={(visible ? 1 : 0)}:" +
+                $"pos={pos.X:0.00},{pos.Y:0.00}:rect={rect.Position.X:0.00},{rect.Position.Y:0.00},{rect.Size.X:0.00},{rect.Size.Y:0.00}");
+        }
+
+        return builder.ToString();
     }
 
     private string BuildDebugState(string tag)
