@@ -142,6 +142,7 @@ public partial class GameScene : Node2D
     private Vector2 _entranceMotionPixelsPerFrame;
     private int _coinCount;
     private int _dragonCoinCount;
+    private int _blockBreakCount;
     private int _inputScriptIndex;
     private int _inputScriptFrame;
     private int _inputScriptElapsedFrames;
@@ -224,6 +225,7 @@ public partial class GameScene : Node2D
                 0,
                 (int)MathF.Round(GetLevelPixelRight()));
             ResolveDiagonalPipeTileContacts(previousState);
+            TryBreakSpinJumpTurnBlocks(previousState);
         }
         UpdateCamera();
 
@@ -863,7 +865,7 @@ public partial class GameScene : Node2D
 
         if (AddGeneratedMap16Tiles())
         {
-            AddGeneratedCollision();
+            AddGeneratedCollision(DebugOverlays);
         }
         else
         {
@@ -1459,8 +1461,15 @@ public partial class GameScene : Node2D
         }
     }
 
-    private void AddGeneratedCollision()
+    private void AddGeneratedCollision(bool debugVisible)
     {
+        _solids.Clear();
+        _solidStepUpEnabled.Clear();
+        _solidVerticalEnabled.Clear();
+        _slopes.Clear();
+        _diagonalPipeBodyCells.Clear();
+        _diagonalPipeCeilingCells.Clear();
+
         var solidTiles = new HashSet<(int X, int Y)>();
         var slopeTileKeys = new HashSet<(int X, int Y, int Map16, bool Ceiling)>();
         var slopeTiles = new List<PlacedMap16Tile>();
@@ -1503,13 +1512,75 @@ public partial class GameScene : Node2D
 
         foreach (var rect in BuildMergedSolidRects(solidTiles))
         {
-            AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), DebugOverlays);
+            AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), debugVisible);
         }
 
         foreach (var slope in BuildSlopeSurfaces(slopeTiles))
         {
-            AddSlope(slope, DebugOverlays);
+            AddSlope(slope, debugVisible);
         }
+    }
+
+    private bool TryBreakSpinJumpTurnBlocks(SmwPhysics.PlayerState previousState)
+    {
+        if (!_state.SpinJump ||
+            _state.Powerup == SmwPhysics.SmallPowerup ||
+            !_state.OnGround ||
+            previousState.YSpeed < 0)
+        {
+            return false;
+        }
+
+        var playerLeft = _state.XFloat + 1.0f;
+        var playerRight = _state.XFloat + SmwPhysics.PlayerWidth - 1.0f;
+        var probeY = _state.YFloat + SmwPhysics.PlayerHeightFor(_state) + 1.0f;
+        var tileY = WorldToTileY(probeY);
+        var minTileX = WorldToTileX(playerLeft);
+        var maxTileX = WorldToTileX(playerRight);
+        var broken = 0;
+        for (var tileX = minTileX; tileX <= maxTileX; tileX++)
+        {
+            if (!_map16TilesByCoord.TryGetValue((tileX, tileY), out var tile) ||
+                !IsSpinJumpBreakableTurnBlock(tile))
+            {
+                continue;
+            }
+
+            BreakMap16Tile(tile);
+            broken++;
+        }
+
+        if (broken == 0)
+        {
+            return false;
+        }
+
+        _state.OnGround = false;
+        _state.YSpeed = 8;
+        _state.SubYSpeed = 0;
+        _blockBreakCount += broken;
+        AddGeneratedCollision(debugVisible: false);
+        _audio?.PlaySpinJump();
+        GD.Print(
+            $"smw-runtime: block_break level={_currentLevelId} count={broken} total={_blockBreakCount} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} tile_y={tileY}");
+        return true;
+    }
+
+    private void BreakMap16Tile(PlacedMap16Tile tile)
+    {
+        _placedTiles.RemoveAll(candidate => candidate.X == tile.X && candidate.Y == tile.Y);
+        _map16TilesByCoord.Remove((tile.X, tile.Y));
+        if (_map16TileSprites.Remove((tile.X, tile.Y), out var sprite))
+        {
+            sprite.Visible = false;
+            sprite.QueueFree();
+        }
+    }
+
+    private static bool IsSpinJumpBreakableTurnBlock(PlacedMap16Tile tile)
+    {
+        return tile.Source == "std_generic_08" || tile.Map16 == 0x011E;
     }
 
     private void ResolveDiagonalPipeTileContacts(SmwPhysics.PlayerState previousState)
@@ -3706,6 +3777,21 @@ public partial class GameScene : Node2D
         GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} render_y={PlayerRenderYOffsetForState(_state.Powerup, _state.Ducking)}");
     }
 
+    public void DebugSetPlayerVelocity(int xSpeed, int ySpeed)
+    {
+        _state.XSpeed = xSpeed;
+        _state.YSpeed = ySpeed;
+        _state.SubXSpeed = 0;
+        _state.SubYSpeed = 0;
+        GD.Print($"smw-test-velocity: xs={_state.XSpeed} ys={_state.YSpeed}");
+    }
+
+    public void DebugSetPlayerSpinJump(bool spinJump)
+    {
+        _state.SpinJump = spinJump;
+        GD.Print($"smw-test-spinjump: spin={(spinJump ? 1 : 0)}");
+    }
+
     public void DebugUseCommandFile(string path)
     {
         _debugCommandPath = path.StartsWith("res://", StringComparison.Ordinal) ||
@@ -3947,6 +4033,18 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugSetPlayerPowerup(ParseDebugPowerup(parts[1]));
                 return BuildDebugState("powerup");
+            case "velocity":
+            case "vel":
+                RequirePartCount(parts, 3);
+                DebugSetPlayerVelocity(
+                    int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture),
+                    int.Parse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture));
+                return BuildDebugState("velocity");
+            case "spinjump":
+            case "spinstate":
+                RequirePartCount(parts, 2);
+                DebugSetPlayerSpinJump(ParseDebugBool(parts[1]));
+                return BuildDebugState("spinjump");
             case "level":
                 RequirePartCount(parts, 2);
                 DebugEnterLevel(parts[1].ToUpperInvariant());
@@ -4014,7 +4112,7 @@ public partial class GameScene : Node2D
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"actors={_spriteActors.Count} near={nearestActor} actor_event={_lastActorEvent}";
+            $"actors={_spriteActors.Count} near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount}";
     }
 
     private string DescribeNearestActor()
@@ -4072,6 +4170,16 @@ public partial class GameScene : Node2D
             "cape" => SmwPhysics.CapePowerup,
             "fire" => SmwPhysics.FirePowerup,
             _ => throw new FormatException($"unknown powerup '{value}'"),
+        };
+    }
+
+    private static bool ParseDebugBool(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "1" or "true" or "on" or "yes" => true,
+            "0" or "false" or "off" or "no" => false,
+            _ => throw new FormatException($"unknown boolean '{value}'"),
         };
     }
 
@@ -4280,6 +4388,7 @@ public partial class GameScene : Node2D
         _courseClear = false;
         _playerHurtCooldown = 0;
         _lastActorEvent = "none";
+        _blockBreakCount = 0;
         _state = MakeInitialPlayerState(entrance);
         ResetPlayerAnimationState();
         _cameraInitialized = false;

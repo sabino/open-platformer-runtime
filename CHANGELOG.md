@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a first imported-block interaction: non-small spin-jumping onto Yoshi Island 1 `std_generic_08`/Map16 `0x11E` turn blocks now removes the tile sprite, rebuilds runtime collision, logs `smw-runtime: block_break`, and is covered by headless debug-command regression.
 - Ported more Lunar Magic Universal sprite draw recipes into Godot: Clappin' Chuck now appears as an atlas-backed runtime actor, the flying question block uses real wing tiles, red shells use the native shell tile, and jumping Piranha uses LMU's two-tile OAM preview.
 - Added a first Rex-specific stomp state: the first normal jump stomp now squishes Rex into a shorter, faster actor instead of deleting it, with debug-state reporting for nearest actor ID/state and the last actor interaction.
 - Gave imported runtime sprite actors per-sprite hitboxes and behavior gates, re-enabling player interaction for atlas-backed Rex, Banzai Bill, sliding Koopa, and jumping Piranha without restoring fake filled placeholder collisions.

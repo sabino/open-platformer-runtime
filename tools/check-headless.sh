@@ -21,9 +21,10 @@ PIPE_SCRIPT="$(mktemp)"
 DEBUG_COMMAND_FILE="$(mktemp)"
 ACTOR_COMMAND_FILE="$(mktemp)"
 REX_COMMAND_FILE="$(mktemp)"
+BREAK_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 1 right run
@@ -48,6 +49,14 @@ cat >"$REX_COMMAND_FILE" <<'EOF'
 pause
 spawn 528 248
 powerup big
+step 1
+EOF
+cat >"$BREAK_COMMAND_FILE" <<'EOF'
+pause
+spawn 1928 224
+powerup big
+velocity 0 24
+spinjump on
 step 1
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
@@ -121,6 +130,14 @@ grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "pow=1" "$LOG_FILE"
 grep -q "ys=-48" "$LOG_FILE"
 grep -q "actor_event=stomp:AB:1" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$BREAK_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$BREAK_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-runtime: block_break level=105 count=2 total=2" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "blocks=2" "$LOG_FILE"
+grep -q "tile=120,20:----" "$LOG_FILE"
+grep -q "solids=24" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 600 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
 RCON_PID="$!"
