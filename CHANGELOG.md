@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Mirrored Lunar Magic Universal's latest left diagonal ledge notch behavior, removing the extra first fill-row dirt tile from generated Yoshi Island 1 layouts.
 - Ported Lunar Magic Universal's screen-jump object cursor behavior into the importer, fixing later object placement after extended object `01`.
 - Added runtime diagonal-pipe entrance rectangles for imported screen exits, so the sloped pipe can trigger the existing pipe transition path with `Down`.
 - Added runtime normal-coin and dragon-coin pickups from imported Map16 coin markers, including HUD counters, collection logs, sprite hiding, and headless pickup checks.

@@ -1657,8 +1657,6 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         for yy in range(1, fill_rows):
             fill_y = bottom_y + yy
             fill_left = bottom_left + yy
-            if yy == 1:
-                place_relative(x, y, fill_left - 1, fill_y, 0x003F, "left_diagonal_ledge_fill")
             place_relative(x, y, fill_left, fill_y, 0x00A3, "left_diagonal_ledge_fill", diagonal_line=True)
             for xx in range(1, lower_row_width):
                 place_relative(x, y, fill_left + xx, fill_y, 0x003F, "left_diagonal_ledge_fill")
