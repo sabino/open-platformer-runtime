@@ -1931,6 +1931,22 @@ public partial class GameScene : Node2D
             rect = actor.Rect;
         }
 
+        var probeX = actor.X + SpriteActorWidth * 0.5f;
+        var bottom = actor.Y + SpriteActorHeight;
+        if (SmwPhysics.TryResolveFloorSlope(
+            probeX,
+            bottom,
+            actor.YSpeed,
+            _slopes,
+            aboveTolerance: 8.0f,
+            belowTolerance: 16.0f,
+            out var slopeY))
+        {
+            actor.Y = slopeY - SpriteActorHeight;
+            actor.YSpeed = 0.0f;
+            actor.OnGround = true;
+        }
+
         if (actor.Y > GetLevelPixelBottom() + 128.0f)
         {
             actor.Alive = false;

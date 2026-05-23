@@ -222,6 +222,48 @@ public sealed class SmwPhysics
         return powerup == SmallPowerup ? SmallPlayerHeight : BigPlayerHeight;
     }
 
+    public static bool TryResolveFloorSlope(
+        float probeX,
+        float bottom,
+        float ySpeed,
+        IReadOnlyList<SlopeSurface> slopes,
+        float aboveTolerance,
+        float belowTolerance,
+        out float surfaceY)
+    {
+        foreach (var slope in slopes)
+        {
+            if (slope.Ceiling)
+            {
+                continue;
+            }
+
+            var minX = MathF.Min(slope.X0, slope.X1);
+            var maxX = MathF.Max(slope.X0, slope.X1);
+            if (probeX < minX || probeX > maxX)
+            {
+                continue;
+            }
+
+            var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+            if (t < 0.0f || t > 1.0f)
+            {
+                continue;
+            }
+
+            surfaceY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
+            if (ySpeed < 0 || bottom < surfaceY - aboveTolerance || bottom > surfaceY + belowTolerance)
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        surfaceY = 0.0f;
+        return false;
+    }
+
     private static void ApplyDucking(ref PlayerState state, FrameInput input)
     {
         var shouldDuck = state.OnGround && input.Down && state.Powerup != SmallPowerup;
@@ -503,28 +545,22 @@ public sealed class SmwPhysics
                 }
                 return;
             }
+        }
 
-            if (state.YSpeed < 0)
-            {
-                continue;
-            }
-
-            if (bottom < surfaceY - 6.0f || bottom > surfaceY + 16.0f)
-            {
-                continue;
-            }
-
-            state.Y = (int)MathF.Round(surfaceY - playerHeight);
-            state.SubY = 0;
-            state.SubYSpeed = 0;
-            if (state.YSpeed > 0)
-            {
-                state.YSpeed = 0;
-            }
-            state.OnGround = true;
-            state.RunningTakeoff = false;
+        if (!TryResolveFloorSlope(probeX, bottom, state.YSpeed, slopes, 6.0f, 16.0f, out var floorY))
+        {
             return;
         }
+
+        state.Y = (int)MathF.Round(floorY - playerHeight);
+        state.SubY = 0;
+        state.SubYSpeed = 0;
+        if (state.YSpeed > 0)
+        {
+            state.YSpeed = 0;
+        }
+        state.OnGround = true;
+        state.RunningTakeoff = false;
     }
 
     private static void AddXAccel(ref PlayerState state, int accel)

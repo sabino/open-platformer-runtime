@@ -27,6 +27,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckReusableSlopeProbe())
+        {
+            return 1;
+        }
         if (!CheckSlopeCeiling(physics))
         {
             return 1;
@@ -339,6 +343,57 @@ public static class PhysicsSmoke
         if (!state.OnGround)
         {
             Console.Error.WriteLine("expected falling player to land on slope");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckReusableSlopeProbe()
+    {
+        var slopes = new List<SmwPhysics.SlopeSurface>
+        {
+            new(0, 128, 128, 96),
+            new(0, 96, 64, 64, Ceiling: true),
+        };
+
+        if (!SmwPhysics.TryResolveFloorSlope(
+            probeX: 64.0f,
+            bottom: 112.0f,
+            ySpeed: 2.0f,
+            slopes,
+            aboveTolerance: 8.0f,
+            belowTolerance: 16.0f,
+            out var surfaceY) ||
+            Math.Abs(surfaceY - 112.0f) > 0.01f)
+        {
+            Console.Error.WriteLine($"expected reusable slope probe to resolve floor at 112, got {surfaceY}");
+            return false;
+        }
+
+        if (SmwPhysics.TryResolveFloorSlope(
+            probeX: 64.0f,
+            bottom: 112.0f,
+            ySpeed: -1.0f,
+            slopes,
+            aboveTolerance: 8.0f,
+            belowTolerance: 16.0f,
+            out _))
+        {
+            Console.Error.WriteLine("expected reusable slope probe to ignore upward motion");
+            return false;
+        }
+
+        if (SmwPhysics.TryResolveFloorSlope(
+            probeX: 64.0f,
+            bottom: 80.0f,
+            ySpeed: 2.0f,
+            slopes,
+            aboveTolerance: 8.0f,
+            belowTolerance: 16.0f,
+            out _))
+        {
+            Console.Error.WriteLine("expected reusable slope probe to ignore distant floor");
             return false;
         }
 
