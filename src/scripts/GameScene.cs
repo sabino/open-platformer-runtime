@@ -326,7 +326,14 @@ public partial class GameScene : Node2D
         bool TerrainCollision,
         bool Gravity,
         float InitialXSpeed);
-    private readonly record struct PipeEntrance(Rect2 Rect, int Screen, bool Horizontal, string Kind);
+    private readonly record struct PipeEntrance(
+        Rect2 Rect,
+        int Screen,
+        bool Horizontal,
+        string Kind,
+        int SourceX,
+        int SourceY,
+        string Source);
     private readonly record struct ScriptedInputSegment(int Frames, SmwPhysics.FrameInput Input);
     private readonly record struct LevelEntrance(
         string LevelId,
@@ -2836,7 +2843,14 @@ public partial class GameScene : Node2D
             if (entranceTile != null)
             {
                 var topLeft = TileToWorld(entranceTile.Value.X, entranceTile.Value.Y);
-                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X, topLeft.Y - 32, 32, 48), screen, Horizontal: false, Kind: "vertical"));
+                _pipeEntrances.Add(new PipeEntrance(
+                    new Rect2(topLeft.X, topLeft.Y - 32, 32, 48),
+                    screen,
+                    Horizontal: false,
+                    Kind: "vertical",
+                    entranceTile.Value.X,
+                    entranceTile.Value.Y,
+                    entranceTile.Value.Source));
             }
 
             PlacedMap16Tile? horizontalEntranceTile = null;
@@ -2856,7 +2870,14 @@ public partial class GameScene : Node2D
             if (horizontalEntranceTile != null)
             {
                 var topLeft = TileToWorld(horizontalEntranceTile.Value.X, horizontalEntranceTile.Value.Y);
-                _pipeEntrances.Add(new PipeEntrance(new Rect2(topLeft.X - 24, topLeft.Y, 48, 32), screen, Horizontal: true, Kind: "horizontal"));
+                _pipeEntrances.Add(new PipeEntrance(
+                    new Rect2(topLeft.X - 24, topLeft.Y, 48, 32),
+                    screen,
+                    Horizontal: true,
+                    Kind: "horizontal",
+                    horizontalEntranceTile.Value.X,
+                    horizontalEntranceTile.Value.Y,
+                    horizontalEntranceTile.Value.Source));
             }
         }
     }
@@ -2909,7 +2930,14 @@ public partial class GameScene : Node2D
         var rect = new Rect2(
             topLeft,
             new Vector2(Map16TileSize * 3.0f, Map16TileSize * 3.0f));
-        _pipeEntrances.Add(new PipeEntrance(rect, screen, Horizontal: false, Kind: "diagonal"));
+        _pipeEntrances.Add(new PipeEntrance(
+            rect,
+            screen,
+            Horizontal: false,
+            Kind: "diagonal",
+            maxX,
+            minY,
+            "right_diagonal_pipe"));
     }
 
     private static List<(int X, int Y)> FloodDiagonalPipeCluster(
@@ -5202,6 +5230,10 @@ public partial class GameScene : Node2D
             case "pipe_probe":
             case "pipe_cells":
                 return PrintDebugPipeCells(parts);
+            case "pipe_entrances":
+            case "pipes":
+            case "entrances":
+                return PrintDebugPipeEntrances();
             case "player_oam":
             case "oam":
             case "pose":
@@ -5665,6 +5697,22 @@ public partial class GameScene : Node2D
             $"floor={DescribePipeCellsNear(_diagonalPipeFloorCells, point, radius)} " +
             $"body={DescribePipeCellsNear(_diagonalPipeBodyCells, point, radius)} " +
             $"ceiling={DescribePipeCellsNear(_diagonalPipeCeilingCells, point, radius)}";
+        GD.Print(line);
+        return line;
+    }
+
+    private string PrintDebugPipeEntrances()
+    {
+        var entries = _pipeEntrances
+            .Select((entrance, index) =>
+            {
+                var direction = entrance.Horizontal ? "side" : "down";
+                return
+                    $"#{index}:screen={entrance.Screen:X2}:kind={entrance.Kind}:dir={direction}:" +
+                    $"rect={entrance.Rect.Position.X:0.00},{entrance.Rect.Position.Y:0.00},{entrance.Rect.Size.X:0.00},{entrance.Rect.Size.Y:0.00}:" +
+                    $"source={entrance.SourceX},{entrance.SourceY}:{entrance.Source}";
+            });
+        var line = $"smw-debug-pipe-entrances: count={_pipeEntrances.Count} {string.Join(" ", entries)}";
         GD.Print(line);
         return line;
     }
@@ -6481,7 +6529,10 @@ public partial class GameScene : Node2D
         {
             GD.Print(
                 $"pipe-debug screen={screen:X2} target={entrance.LevelId} " +
-                $"secondary={(entrance.Secondary ? 1 : 0)} source={entrance.SourceId:X3} kind={matchedEntrance.Value.Kind}");
+                $"secondary={(entrance.Secondary ? 1 : 0)} source={entrance.SourceId:X3} kind={matchedEntrance.Value.Kind} " +
+                $"rect={matchedEntrance.Value.Rect.Position.X:0.00},{matchedEntrance.Value.Rect.Position.Y:0.00},{matchedEntrance.Value.Rect.Size.X:0.00},{matchedEntrance.Value.Rect.Size.Y:0.00} " +
+                $"tile={matchedEntrance.Value.SourceX},{matchedEntrance.Value.SourceY}:{matchedEntrance.Value.Source} " +
+                $"player={playerRect.Position.X:0.00},{playerRect.Position.Y:0.00},{playerRect.Size.X:0.00},{playerRect.Size.Y:0.00}");
             EnterLevel(entrance.LevelId, entrance);
         }
         else

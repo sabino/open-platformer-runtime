@@ -7,6 +7,7 @@
 - Guarded Mario's OAM pose bridge against out-of-atlas dynamic tile regions so any still-unported pose descriptor fails hidden instead of drawing stray texture fragments.
 - Added an `actor_oam`/`sprite_oam` RCON probe that reports nearby actor OAM recipes, palettes, atlas regions, flips, and visibility for isolating stray sprite pixels from Mario rendering.
 - Added RCON camera `status`, `lock`, `set`, and `unlock` controls so bad tile/slope/sprite areas can be held in view while stepping Mario frame-by-frame.
+- Added an RCON `pipe_entrances` probe and expanded pipe transition logs with the matched activation rectangle and source tile, making accidental pipe warps diagnosable from unattended traces.
 - Changed the internal APU probe to target a small queued audio buffer instead of pushing a fixed 512 frames per process tick, reducing visible Wayland underruns while keeping RCON perf diagnostics for last/average mix cost.
 - Added more Lunar Magic Universal-derived sprite OAM previews, including Pipe Lakitu, moving ledge holes, goal tape, Lakitu clouds, scale platforms, green gas bubbles, and Volcano Lotus.
 - Ported the native fast-toward-slope-peak Y-speed branch so steep/normal slope contact can pull Mario upward from `kSlopeDataTables_Player_TowardsPeakYSpeed` instead of only applying stationary slope caps.
