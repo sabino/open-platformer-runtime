@@ -44,11 +44,13 @@ public partial class GameScene : Node2D
     private const int CourseClearWalkoutMaxFrames = 420;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
     private const int StartingLives = 5;
+    private const int MaxLives = 99;
     private const int DefaultLevelTimerSeconds = 300;
     private const int NativeFramesPerSecond = 60;
     private const int CoinScore = 100;
     private const int DragonCoinScore = 1000;
     private const int PowerupRewardScore = 1000;
+    private const int CoinLifeThreshold = 100;
     private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
@@ -3705,8 +3707,8 @@ public partial class GameScene : Node2D
         switch (contentIndex)
         {
             case 0:
-                _coinCount++;
                 AddScore(CoinScore);
+                AddCoin("block:83");
                 break;
             case 1:
                 AddScore(PowerupRewardScore);
@@ -3723,7 +3725,7 @@ public partial class GameScene : Node2D
                 UpdatePlayerGraphic(force: true);
                 break;
             case 3:
-                _oneUpCount++;
+                AddOneUp("block:83");
                 break;
         }
 
@@ -3732,7 +3734,7 @@ public partial class GameScene : Node2D
         _lastActorEvent = $"block:{actor.SpriteId:X2}:reward:{reward}";
         GD.Print(
             $"smw-runtime: block_reward level={_currentLevelId} sprite={actor.SpriteId:X2} reward={reward} " +
-            $"x={actor.X:0.00} y={actor.Y:0.00} coins={_coinCount} oneups={_oneUpCount} pow={_state.Powerup} score={_score}");
+            $"x={actor.X:0.00} y={actor.Y:0.00} coins={_coinCount} lives={_lives} oneups={_oneUpCount} pow={_state.Powerup} score={_score}");
         return true;
     }
 
@@ -3877,18 +3879,41 @@ public partial class GameScene : Node2D
             _map16TilesByCoord.Remove((tile.X, tile.Y));
         }
 
-        _coinCount++;
         if (pickup.DragonCoin)
         {
             _dragonCoinCount++;
         }
         AddScore(pickup.DragonCoin ? DragonCoinScore : CoinScore);
+        AddCoin(pickup.DragonCoin ? "dragon_coin" : "coin");
 
         _audio?.PlaySample(9);
         GD.Print(
             $"smw-runtime: coin_pickup level={_currentLevelId} " +
             $"dragon={(pickup.DragonCoin ? 1 : 0)} coins={_coinCount} dragon_coins={_dragonCoinCount} score={_score} " +
             $"x={pickup.Rect.Position.X:0.00} y={pickup.Rect.Position.Y:0.00}");
+    }
+
+    private void AddCoin(string source)
+    {
+        _coinCount++;
+        while (_coinCount >= CoinLifeThreshold)
+        {
+            _coinCount -= CoinLifeThreshold;
+            AddOneUp(source);
+        }
+    }
+
+    private void AddOneUp(string source)
+    {
+        _oneUpCount++;
+        if (_lives < MaxLives)
+        {
+            _lives++;
+        }
+
+        GD.Print(
+            $"smw-runtime: one_up level={_currentLevelId} source={source} " +
+            $"lives={_lives} oneups={_oneUpCount} coins={_coinCount} score={_score}");
     }
 
     private void AddScore(int amount)
@@ -5042,7 +5067,7 @@ public partial class GameScene : Node2D
 
     public void DebugSetLives(int lives)
     {
-        _lives = Math.Clamp(lives, 0, 99);
+        _lives = Math.Clamp(lives, 0, MaxLives);
         if (_lives > 0 && _gameOver)
         {
             _gameOver = false;
@@ -5053,6 +5078,14 @@ public partial class GameScene : Node2D
         UpdateHud();
         UpdateDebugGizmos();
         GD.Print($"smw-test-lives: lives={_lives} gameover={(_gameOver ? 1 : 0)}");
+    }
+
+    public void DebugSetCoins(int coins)
+    {
+        _coinCount = Math.Clamp(coins, 0, CoinLifeThreshold - 1);
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print($"smw-test-coins: coins={_coinCount} lives={_lives} oneups={_oneUpCount}");
     }
 
     public void DebugSetPlayerGrounded(bool grounded)
@@ -5464,6 +5497,15 @@ public partial class GameScene : Node2D
                 }
 
                 return PrintDebugLives("status");
+            case "coins":
+            case "coin":
+                if (parts.Length >= 2)
+                {
+                    DebugSetCoins(ParseHexOrDecimalDebug(parts[1]));
+                    return BuildDebugState("coins");
+                }
+
+                return PrintDebugStatusHud();
             case "game_pause":
             case "gamepause":
             case "start_pause":
@@ -6162,7 +6204,7 @@ public partial class GameScene : Node2D
     {
         var line =
             $"smw-debug-status: score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} " +
-            $"time={LevelTimerSecondsRemaining()} clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} text=\"{BuildStatusHudText()}\"";
+            $"oneups={_oneUpCount} time={LevelTimerSecondsRemaining()} clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} text=\"{BuildStatusHudText()}\"";
         GD.Print(line);
         return line;
     }
@@ -6434,7 +6476,7 @@ public partial class GameScene : Node2D
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
-            $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
+            $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added the first 100-coin extra-life rule: normal coins, dragon coins, and coin block rewards now roll `COIN 99` to `COIN 00`, increment lives/one-up diagnostics, and can be tested deterministically through RCON/debug `coins <n>`.
 - Added a first normal gameplay START-pause state: pressing Start or sending RCON `game_pause on|off` freezes Mario, actors, goal tape motion, pipe checks, and the level timer, shows `PAUSE`, stops/restarts the current music preview, and exposes `gamepause`/`timer_frames` in HUD/RCON state for headless verification.
 - Added a first game-over flow: when the temporary life counter reaches zero, gameplay freezes on a visible `GAME OVER` prompt, music stops, HUD/RCON state reports `gameover=1`, and pressing Start or RCON `continue` restarts the first-level slice with fresh lives.
 - Made the visible level timer affect gameplay: when it reaches zero, the runtime logs a `time_up` player death, decrements the temporary life counter, restarts the current level, and exposes RCON `timer`/`time` controls for deterministic clock probes.

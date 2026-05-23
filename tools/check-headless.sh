@@ -19,6 +19,7 @@ LOG_FILE="$(mktemp)"
 INPUT_SCRIPT="$(mktemp)"
 PIPE_SCRIPT="$(mktemp)"
 DEBUG_COMMAND_FILE="$(mktemp)"
+COIN_LIFE_COMMAND_FILE="$(mktemp)"
 ACTOR_COMMAND_FILE="$(mktemp)"
 REX_COMMAND_FILE="$(mktemp)"
 BREAK_COMMAND_FILE="$(mktemp)"
@@ -40,7 +41,7 @@ TRACE_COMMAND_FILE="$(mktemp)"
 COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -61,6 +62,13 @@ pause
 spawn 880 304
 powerup small
 state before
+step 1
+EOF
+cat >"$COIN_LIFE_COMMAND_FILE" <<'EOF'
+pause
+level 1CB
+spawn 112 240
+coins 99
 step 1
 EOF
 cat >"$ACTOR_COMMAND_FILE" <<'EOF'
@@ -231,6 +239,15 @@ grep -q "score=1000" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-level=1CB --smw-test-spawn=112,240 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: coin_pickup level=1CB dragon=0 coins=1 dragon_coins=0" "$LOG_FILE"
 grep -q "score=100" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$COIN_LIFE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$COIN_LIFE_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-test-coins: coins=99 lives=5 oneups=0" "$LOG_FILE"
+grep -q "smw-runtime: one_up level=1CB source=coin lives=6 oneups=1 coins=0 score=100" "$LOG_FILE"
+grep -q "smw-runtime: coin_pickup level=1CB dragon=0 coins=0 dragon_coins=0 score=100" "$LOG_FILE"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "coins=0"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "lives=6"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "oneups=1"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=4828,282 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: course_clear level=105" "$LOG_FILE"
