@@ -3579,7 +3579,11 @@ public partial class GameScene : Node2D
                 continue;
             }
 
-            var tile = ResolvePlayerDynamicTile(descriptor, headBase, bodyBase);
+            if (!TryResolvePlayerDynamicTile(descriptor, headBase, bodyBase, out var tile))
+            {
+                continue;
+            }
+
             var large = (normalSizeMask & slotMasks[slot]) != 0;
             SetPlayerOamSprite(
                 slot,
@@ -3598,16 +3602,17 @@ public partial class GameScene : Node2D
             : 0;
     }
 
-    private static int ResolvePlayerDynamicTile(int descriptor, int headPointer, int bodyPointer)
+    private static bool TryResolvePlayerDynamicTile(int descriptor, int headPointer, int bodyPointer, out int tile)
     {
-        return descriptor switch
+        tile = descriptor switch
         {
             0 => PlayerPointerToSourceTile(headPointer),
             1 => PlayerPointerToSourceTile(headPointer) + 1,
             2 => PlayerPointerToSourceTile(bodyPointer),
             3 => PlayerPointerToSourceTile(bodyPointer) + 1,
-            _ => descriptor,
+            _ => -1,
         };
+        return tile >= 0;
     }
 
     private static int PlayerPointerToSourceTile(int pointer)

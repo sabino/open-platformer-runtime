@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Suppressed currently-unmapped static `PlayerGFXRt` tile descriptors in the Godot Mario renderer, removing stray colored pixel fragments from poses that previously treated those OAM char numbers as raw GFX32 atlas tiles.
 - Batched runtime Map16 terrain rendering into a single custom draw layer instead of spawning one `Sprite2D` per placed tile, preserving coin/block tile hiding while reducing visible-run node and draw overhead.
 - Added an audio performance guard: the internal BRR generator now prunes inactive voices, caps active voices and per-frame mix work, and supports `--smw-no-audio` / `SMW_AUDIO=0` for fast A/B testing.
 - Added the first flying question-block reward branch: underside hits on imported sprite `0x83` mark the block used, swap its Map16 face, resolve the LMU `X&3` content index, and apply the level `105` flower reward case in headless coverage.
