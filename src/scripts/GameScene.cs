@@ -172,6 +172,10 @@ public partial class GameScene : Node2D
     private int _debugCommandInputFrames;
     private int _debugCommandInputFrame;
     private SmwPhysics.FrameInput _debugCommandInput;
+    private SmwPhysics.FrameInput _debugHeldInput;
+    private bool _debugHeldInputActive;
+    private bool _debugHeldJumpPressed;
+    private bool _debugHeldSpinPressed;
     private int _debugTraceFrames;
     private int _debugTraceTotalFrames;
     private int _debugTraceFrame;
@@ -414,6 +418,16 @@ public partial class GameScene : Node2D
                 _debugCommandInput = default;
             }
 
+            return input;
+        }
+
+        if (_debugHeldInputActive)
+        {
+            var input = _debugHeldInput;
+            input.JumpPressed = _debugHeldJumpPressed;
+            input.SpinPressed = _debugHeldSpinPressed;
+            _debugHeldJumpPressed = false;
+            _debugHeldSpinPressed = false;
             return input;
         }
 
@@ -4693,6 +4707,18 @@ public partial class GameScene : Node2D
             case "press":
                 QueueDebugInput(parts);
                 return $"ok input_frames={_debugCommandInputFrames}";
+            case "tap":
+                QueueDebugTap(parts);
+                return $"ok tap_frames={_debugCommandInputFrames}";
+            case "hold":
+            case "controller":
+                SetDebugHeldInput(parts);
+                return $"ok hold input={DescribeFrameInput(_debugHeldInput)}";
+            case "release":
+            case "clear_input":
+            case "neutral":
+                ClearDebugHeldInput();
+                return "ok hold input=-------";
             case "trace":
                 QueueDebugTrace(parts);
                 return $"ok trace_queued={_debugTraceFrames}";
@@ -4813,6 +4839,41 @@ public partial class GameScene : Node2D
             _debugStepFrames += frames;
         }
         GD.Print($"smw-debug: input frames={frames} left={(input.Left ? 1 : 0)} right={(input.Right ? 1 : 0)} down={(input.Down ? 1 : 0)} jump={(input.Jump ? 1 : 0)} spin={(input.Spin ? 1 : 0)} run={(input.Run ? 1 : 0)}");
+    }
+
+    private void QueueDebugTap(string[] parts)
+    {
+        RequirePartCount(parts, 2);
+        var tapParts = new string[parts.Length + 1];
+        tapParts[0] = "input";
+        tapParts[1] = "1";
+        Array.Copy(parts, 1, tapParts, 2, parts.Length - 1);
+        QueueDebugInput(tapParts);
+    }
+
+    private void SetDebugHeldInput(string[] parts)
+    {
+        RequirePartCount(parts, 2);
+        var input = new SmwPhysics.FrameInput();
+        for (var i = 1; i < parts.Length; i++)
+        {
+            ApplyScriptedInputToken("smw-debug-hold", 0, parts[i], ref input);
+        }
+
+        _debugHeldJumpPressed = input.Jump && !_debugHeldInput.Jump;
+        _debugHeldSpinPressed = input.Spin && !_debugHeldInput.Spin;
+        _debugHeldInput = input;
+        _debugHeldInputActive = true;
+        GD.Print($"smw-debug: hold input={DescribeFrameInput(_debugHeldInput)}");
+    }
+
+    private void ClearDebugHeldInput()
+    {
+        _debugHeldInput = default;
+        _debugHeldInputActive = false;
+        _debugHeldJumpPressed = false;
+        _debugHeldSpinPressed = false;
+        GD.Print("smw-debug: hold input=-------");
     }
 
     private void QueueDebugTrace(string[] parts)

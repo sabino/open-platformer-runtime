@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added RCON controller-latch commands for unattended debugging: `hold ...`, `tap ...`, and `release` let a live run be driven without keyboard focus while preserving first-frame jump/spin pressed-edge semantics.
 - Expanded the internal APU tester: the menu now exposes all decoded BRR probe samples, `--smw-audio-sample=ID` can trigger a sample from the CLI, and RCON `audio sample|jump|spin|music|stop` can exercise SFX/music probes during live runs.
 - Made viewport capture fail cleanly under Godot's headless dummy renderer, logging `headless_viewport_texture_unavailable` instead of throwing a C# exception when `--smw-capture` is used without a real Wayland/OpenGL viewport.
 - Added RCON `perf`/`fps`/`stats` inspection for long visible runs, reporting FPS, physics tick rate, node/actor/tile/collision counts, queued debug frames, and audio generator status in one line.
