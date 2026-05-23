@@ -5267,6 +5267,7 @@ public partial class GameScene : Node2D
             $"xs={_state.XSpeed} ys={_state.YSpeed} subspd={_state.SubXSpeed:X2},{_state.SubYSpeed:X2} " +
             $"p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} " +
             $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
+            $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"jump_idx={normalJumpIndex} jump_y={SmwPhysics.JumpYSpeedFor(_state.XSpeed, spin: false)} " +
             $"spin_jump_idx={spinJumpIndex} spin_jump_y={SmwPhysics.JumpYSpeedFor(_state.XSpeed, spin: true)}";
         GD.Print(line);

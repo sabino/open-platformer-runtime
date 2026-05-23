@@ -23,6 +23,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckNativeSlopeHorizontalPhysics(physics))
+        {
+            return 1;
+        }
         if (!CheckDuckingState(physics))
         {
             return 1;
@@ -415,6 +419,42 @@ public static class PhysicsSmoke
         if (state.XSpeed != 0x0B || state.SubXSpeed != 0x00)
         {
             Console.Error.WriteLine($"expected native flat run turn acceleration 0x0500, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckNativeSlopeHorizontalPhysics(SmwPhysics physics)
+    {
+        var state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.SlopePlayer = 0x28;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.XSpeed != -1 || state.SubXSpeed != 0x80)
+        {
+            Console.Error.WriteLine($"expected no-input steep-left slope to apply native downslope drag, got xs={state.XSpeed} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.SlopePlayer = 0x30;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.XSpeed != 0 || state.SubXSpeed != 0x80)
+        {
+            Console.Error.WriteLine($"expected no-input steep-right slope to apply native downslope drag, got xs={state.XSpeed} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.SlopePlayer = 0x28;
+        state.XSpeed = 0x0C;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Left = true }, []);
+        if (state.XSpeed >= 0x0C)
+        {
+            Console.Error.WriteLine($"expected slope-aware left input to use native slope acceleration rows, got xs={state.XSpeed} sub=0x{state.SubXSpeed:X2}");
             return false;
         }
 

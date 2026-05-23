@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fed native slope contact metadata back into horizontal physics so held movement and no-input slope sliding read the SMW `player_slope_player_is_on1` acceleration, cap, friction, and target sub-speed table rows instead of falling back to flat-ground rows.
 - Ported the native SMW slope metadata tables into `SmwPhysics`, attaching decoded slope kind and snap distance to generated Map16 slope surfaces, exposing current slope contact through HUD/RCON state, and extending collision probes with `kind`/`snap` diagnostics.
 - Added visible Mario collision sensor gizmos and an RCON `sensors` command that reports head/side/foot Map16 probes, pipe-cell roles, and current floor-slope contact for frame-by-frame collision debugging.
 - Limited right-diagonal-pipe horizontal intrusion recovery to body cells only, leaving floor cells to the slope-floor solver instead of treating them as pipe-volume blockers.

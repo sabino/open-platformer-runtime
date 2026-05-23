@@ -628,8 +628,7 @@ public sealed class SmwPhysics
             state.Facing = dir > 0 ? 1 : 0;
             var absSpeed = Math.Abs(state.XSpeed);
             var pMeterMode = UpdatePMeterEx(ref state, PMeterModeForHorizontal(state, input, absSpeed));
-            var turningAround = state.XSpeed != 0 && Math.Sign(state.XSpeed) != dir;
-            ApplyNativeFlatHorizontal(ref state, dir, input.Run, turningAround, pMeterMode);
+            ApplyNativeHorizontal(ref state, dir, input.Run, pMeterMode, HorizontalSlopePlayerForState(state));
         }
         else
         {
@@ -641,7 +640,7 @@ public sealed class SmwPhysics
 
             if (state.XSpeed > 0)
             {
-                AddXAccel(ref state, NativeFlatNoInputGroundFriction(state.XSpeed));
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), inAir: false);
                 if (state.XSpeed < 0)
                 {
                     state.XSpeed = 0;
@@ -650,12 +649,16 @@ public sealed class SmwPhysics
             }
             else if (state.XSpeed < 0)
             {
-                AddXAccel(ref state, NativeFlatNoInputGroundFriction(state.XSpeed));
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), inAir: false);
                 if (state.XSpeed > 0)
                 {
                     state.XSpeed = 0;
                     state.SubXSpeed = 0;
                 }
+            }
+            else if (state.OnGround && HorizontalSlopePlayerForState(state) != 0)
+            {
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), inAir: false);
             }
         }
     }
@@ -694,57 +697,33 @@ public sealed class SmwPhysics
         return mode;
     }
 
-    private static int NativeFlatHorizontalAcceleration(int dir, bool runHeld, bool turningAround)
-    {
-        return HorizontalAccelerationTable[NativeFlatHorizontalAccelerationIndex(dir, runHeld, turningAround)];
-    }
-
-    private static int NativeFlatHorizontalAccelerationIndex(int dir, bool runHeld, bool turningAround)
-    {
-        var k = 4 * NativeDirectionBit(dir);
-        if (turningAround)
-        {
-            k = (k - 112) & 0xFF;
-        }
-        if (runHeld)
-        {
-            k += 2;
-        }
-
-        return (k & 0xFF) >> 1;
-    }
-
-    private static int NativeFlatHorizontalTarget(int dir, int pMeterMode)
-    {
-        return HorizontalMaxSpeedTable[NativeFlatHorizontalTargetIndex(dir, pMeterMode)];
-    }
-
-    private static int NativeFlatHorizontalTargetIndex(int dir, int pMeterMode)
-    {
-        var j = NativeDirectionBit(dir) | (2 * Math.Clamp(pMeterMode, 0, 3));
-        return j;
-    }
-
-    private static int NativeFlatNoInputGroundFriction(int xSpeed)
-    {
-        return HorizontalGroundFrictionTable[xSpeed < 0 ? 1 : 0];
-    }
-
-    private static void ApplyNativeFlatHorizontal(
+    private static void ApplyNativeHorizontal(
         ref PlayerState state,
         int dir,
         bool runHeld,
-        bool turningAround,
-        int pMeterMode)
+        int pMeterMode,
+        int slopePlayer)
     {
-        var target = NativeFlatHorizontalTarget(dir, pMeterMode);
+        var directionBit = NativeDirectionBit(dir);
+        var targetIndex = directionBit | (slopePlayer & 0xFF) | (2 * Math.Clamp(pMeterMode, 0, 3));
+        var target = HorizontalMaxSpeedTable[Math.Clamp(targetIndex, 0, HorizontalMaxSpeedTable.Length - 1)];
         if (ShouldApplyNativeFlatDrag(state.XSpeed, target))
         {
-            ApplyNativeFlatDrag(ref state, inAir: !state.OnGround);
+            ApplyNativeHorizontalDrag(ref state, slopePlayer, inAir: !state.OnGround);
             return;
         }
 
-        AddXAccel(ref state, NativeFlatHorizontalAcceleration(dir, runHeld, turningAround));
+        var accelIndexByte = (slopePlayer & 0xFF) | (4 * directionBit);
+        if (IsNativeHorizontalTurningAround(state.XSpeed, accelIndexByte))
+        {
+            accelIndexByte = (accelIndexByte - 112) & 0xFF;
+        }
+        if (runHeld)
+        {
+            accelIndexByte += 2;
+        }
+
+        AddXAccel(ref state, HorizontalAccelerationTable[Math.Clamp(accelIndexByte >> 1, 0, HorizontalAccelerationTable.Length - 1)]);
     }
 
     private static bool ShouldApplyNativeFlatDrag(int xSpeed, int target)
@@ -754,22 +733,54 @@ public sealed class SmwPhysics
         return x == t || ((t ^ ((x - t) & 0xFF)) & 0x80) == 0;
     }
 
-    private static void ApplyNativeFlatDrag(ref PlayerState state, bool inAir)
+    private static void ApplyNativeHorizontalDrag(ref PlayerState state, int slopePlayer, bool inAir)
     {
-        var j = state.XSpeed < 0 ? 2 : 0;
-        var tableIndex = j >> 1;
+        var k = (slopePlayer & 0xFF) >> 2;
+        var j = (slopePlayer & 0xFF) >> 1;
+        if (ToS8(state.XSpeed - NativeHorizontalSubspeedTableByte(k + 1)) < 0)
+        {
+            j += 2;
+        }
+
+        var tableIndex = Math.Clamp(j >> 1, 0, HorizontalDecelerationTable.Length - 1);
         AddXAccel(ref state, inAir ? HorizontalDecelerationTable[tableIndex] : HorizontalGroundFrictionTable[tableIndex]);
-        ClampNativeFlatDragToTarget(ref state, tableIndex);
+        ClampNativeHorizontalDragToTarget(ref state, tableIndex, k >> 1);
     }
 
-    private static void ClampNativeFlatDragToTarget(ref PlayerState state, int tableIndex)
+    private static void ClampNativeHorizontalDragToTarget(ref PlayerState state, int tableIndex, int targetIndex)
     {
         var combined = CombinedXSpeed16(state);
-        var target = HorizontalTargetSubSpeedTable[0];
+        var target = HorizontalTargetSubSpeedTable[Math.Clamp(targetIndex, 0, HorizontalTargetSubSpeedTable.Length - 1)];
         if (((ToU16(HorizontalDecelerationTable[tableIndex]) ^ ToU16(combined - target)) & 0x8000) == 0)
         {
             SetCombinedXSpeed16(ref state, target);
         }
+    }
+
+    private static bool IsNativeHorizontalTurningAround(int xSpeed, int accelIndexByte)
+    {
+        return xSpeed != 0 && ((NativeHorizontalAccelerationByte(accelIndexByte + 1) ^ (xSpeed & 0xFF)) & 0x80) != 0;
+    }
+
+    private static int NativeHorizontalAccelerationByte(int byteIndex)
+    {
+        var word = HorizontalAccelerationTable[Math.Clamp(byteIndex >> 1, 0, HorizontalAccelerationTable.Length - 1)];
+        return byteIndex % 2 == 0
+            ? word & 0xFF
+            : (word >> 8) & 0xFF;
+    }
+
+    private static int NativeHorizontalSubspeedTableByte(int byteIndex)
+    {
+        var word = HorizontalTargetSubSpeedTable[Math.Clamp(byteIndex >> 1, 0, HorizontalTargetSubSpeedTable.Length - 1)];
+        return byteIndex % 2 == 0
+            ? ToS8(word & 0xFF)
+            : ToS8((word >> 8) & 0xFF);
+    }
+
+    private static int HorizontalSlopePlayerForState(PlayerState state)
+    {
+        return state.OnGround ? state.SlopePlayer : 0;
     }
 
     private static int NativeDirectionBit(int dir)
