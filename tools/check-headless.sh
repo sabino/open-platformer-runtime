@@ -96,7 +96,7 @@ step 1
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474 collision_rects=25 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1477 collision_rects=25 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
 grep -q "sprite_actors=33" "$LOG_FILE"
@@ -108,7 +108,7 @@ grep -q "smw-runtime: level_music level=105 music_index=0 bank=Level" "$LOG_FILE
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: disabled=1" "$LOG_FILE"
 ! grep -q "smw-audio: internal_apu=1" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1477" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-test-screen-exit=7 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: entrance_motion action=4 frames=28 dx=0.00 dy=1.00" "$LOG_FILE"
@@ -127,7 +127,7 @@ grep -q "smw-runtime: level_music level=1CB music_index=1 bank=Level" "$LOG_FILE
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-level=1CB --smw-test-screen-exit=1 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: entrance_motion action=6 frames=32 dx=4.00 dy=-4.00" "$LOG_FILE"
 grep -q "smw-runtime: entrance level=105 source=1CB secondary=1 settings=6 spawn=24,242" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474 collision_rects=25 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1477 collision_rects=25 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=272,176 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=1 dragon_coins=1" "$LOG_FILE"
@@ -234,6 +234,10 @@ SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh actors off | tee "$RCON_LOG"
 grep -q "actors_on=0" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh god on | tee "$RCON_LOG"
 grep -q "god=1" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh tile | tee "$RCON_LOG"
+grep -q "smw-debug-tile:" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh near 128 | tee "$RCON_LOG"
+grep -q "smw-debug-actors-near: radius=128.00" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
 grep -q "ok step_queued=1" "$RCON_LOG"
 for _ in $(seq 1 80); do

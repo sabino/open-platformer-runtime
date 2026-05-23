@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Synced the offline level projection with current Lunar Magic Universal behavior for right diagonal ledge object `0x3B` and the 2x2 extended goal marker, and taught runtime slope classification to treat the generated right diagonal ledge edge tiles as slope surfaces.
+- Extended `tools/capture-wayland.sh` so compositor captures can pass additional Godot debug arguments such as `--smw-test-spawn=...`, while still forcing the safe Wayland/OpenGL path and workspace `6` by default.
+- Added RCON inspection commands for unattended playtest debugging: `tile`/`probe` reports the Map16/collision role at Mario's feet or an explicit world point, and `near`/`actors_near` lists nearby runtime sprite actors with state, position, and hitbox.
 - Upgraded the initial Godot menu from a placeholder panel into an asset-backed SMW start surface: it now uses the generated Yoshi Island 1 preview as a backdrop, shows a generated Mario/player preview when available, exposes audio and debug-gizmo toggles before launch, and logs a `smw-menu` smoke line covered by headless checks.
 - Added `docs/PHYSICS-REFERENCE.md`, recording the current SMW-unit runtime constants, Hamaluik walk/run/jump regression sanity checks, and the next native-table porting priorities for Mario movement.
 - Added live RCON debug toggles for long Wayland playtest sessions: `overlays/gizmos on|off` rebuilds collision and HUD gizmos without relaunching, `actors on|off` freezes runtime sprite actors, and `god on|off` suppresses actor damage while preserving interaction logs.

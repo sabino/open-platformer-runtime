@@ -1662,6 +1662,37 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
                 place_relative(x, y, fill_left + xx, fill_y, 0x003F, "left_diagonal_ledge_fill")
             place_relative(x, y, fill_left + lower_row_width, fill_y, 0x00A6, "left_diagonal_ledge_edge", diagonal_line=True)
 
+    def render_right_diagonal_ledge(obj: dict[str, Any], x: int, y: int, size: int) -> None:
+        diagonal_rows = (size & 0x0F) + 1
+        fill_rows = (size >> 4) + 1
+        place_relative(x, y, 0, 0, 0x00AF, "right_diagonal_ledge_edge", diagonal_line=True)
+        place_relative(x, y, 1, 0, 0x01AF, "right_diagonal_ledge_edge", slope_actual=True)
+
+        for yy in range(1, diagonal_rows):
+            row_left = -yy
+            place_relative(x, y, row_left, yy, 0x00A9, "right_diagonal_ledge_edge", diagonal_line=True)
+            for rel_x in range(row_left + 1, yy):
+                place_relative(x, y, rel_x, yy, 0x003F, "right_diagonal_ledge_fill")
+            place_relative(x, y, yy, yy, 0x01E4, "right_diagonal_ledge_assist")
+            place_relative(x, y, yy + 1, yy, 0x01AF, "right_diagonal_ledge_edge", slope_actual=True)
+
+        bottom_y = diagonal_rows
+        bottom_left = -diagonal_rows
+        bottom_right = diagonal_rows
+        place_relative(x, y, bottom_left, bottom_y, 0x00A9, "right_diagonal_ledge_edge", diagonal_line=True)
+        for rel_x in range(bottom_left + 1, bottom_right):
+            place_relative(x, y, rel_x, bottom_y, 0x003F, "right_diagonal_ledge_fill")
+        place_relative(x, y, bottom_right, bottom_y, 0x01F9, "right_diagonal_ledge_bottom", diagonal_line=True)
+
+        for yy in range(1, fill_rows):
+            fill_y = bottom_y + yy
+            fill_left = bottom_left - yy
+            fill_right = bottom_right - yy
+            place_relative(x, y, fill_left, fill_y, 0x00A9, "right_diagonal_ledge_edge", diagonal_line=True)
+            for rel_x in range(fill_left + 1, fill_right):
+                place_relative(x, y, rel_x, fill_y, 0x003F, "right_diagonal_ledge_fill")
+            place_relative(x, y, fill_right, fill_y, 0x00AC, "right_diagonal_ledge_edge", diagonal_line=True)
+
     def render_rope_mushroom_top(obj: dict[str, Any], x: int, y: int, size: int) -> None:
         width = (size & 0x0F) + 1
         place(x, y, 1, 0x07, "rope_mushroom_top_left")
@@ -1745,7 +1776,7 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         elif obj_id == 0x3A:
             render_left_diagonal_ledge(obj, x, y, size)
         elif obj_id == 0x3B:
-            unsupported[f"{obj_id:02X}"] = unsupported.get(f"{obj_id:02X}", 0) + 1
+            render_right_diagonal_ledge(obj, x, y, size)
         elif obj_id == 0x3C and tileset in ROPE_TILESETS:
             render_rope_mushroom_top(obj, x, y, size)
         elif obj_id == 0x3D and tileset in ROPE_TILESETS:
@@ -1759,7 +1790,12 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         elif obj_id == 0x00 and size == 0x41:
             place(x, y, 0, 0x2D, "yoshi_coin_top")
             place(x, y + 1, 0, 0x2E, "yoshi_coin_bottom")
-        elif obj_id == 0x00 and size in (0x86, 0x8E):
+        elif obj_id == 0x00 and size == 0x86:
+            place(x, y, 0, 0x66, "extended_goal_marker")
+            place(x + 1, y, 0, 0x67, "extended_goal_marker")
+            place(x, y + 1, 0, 0x68, "extended_goal_marker")
+            place(x + 1, y + 1, 0, 0x69, "extended_goal_marker")
+        elif obj_id == 0x00 and size == 0x8E:
             place(x, y, 0, 0x6A, "extended_switch_or_goal_marker")
         elif obj_id == 0x00 and size == 0x00:
             continue

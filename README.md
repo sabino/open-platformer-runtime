@@ -68,13 +68,14 @@ Capture the current level through Sway/Wayland:
 
 ```bash
 tools/capture-wayland.sh generated/smw/captures/level_105_compositor.png 105
+tools/capture-wayland.sh generated/smw/captures/level_105_pipe_probe.png 105 --smw-test-spawn=2224,240 --smw-debug-overlays --smw-no-audio
 ```
 
 The visible wrappers default to Sway workspace `6`; override with `SMW_SWAY_WORKSPACE=<number>` if needed.
 
 For reproducible lower-route captures, the runtime also accepts `--smw-test-spawn=x,y` alongside `--smw-capture=...`. Use `--smw-test-powerup=small|big|cape|fire` to force the debug player form for hitbox checks.
 
-During a debug RCON run, `tools/smw-rcon.sh snapshot res://generated/smw/captures/name.png` saves the current Godot viewport immediately, while `capture <path> <frames>` schedules a capture after one or more process frames. The same RCON channel can toggle inspection helpers live: `overlays on`, `actors off`, and `god on` are useful before positioning Mario for a screenshot or frame-step probe.
+During a debug RCON run, `tools/smw-rcon.sh snapshot res://generated/smw/captures/name.png` saves the current Godot viewport immediately in visible runs, while `capture <path> <frames>` schedules a capture after one or more process frames. The same RCON channel can toggle inspection helpers live: `overlays on`, `actors off`, and `god on` are useful before positioning Mario for a screenshot or frame-step probe. Use `tile` or `tile <world-x> <world-y>` to query the Map16/collision role under a point, and `near <radius>` to list nearby runtime sprite actors.
 
 For deterministic autoplay checks, pass `--smw-input-script=/path/to/script`. Each non-comment line starts with a frame count followed by held inputs separated by spaces, commas, colons, or semicolons, for example `8 right run` or `4 right run jump`. Supported tokens are `left`, `right`, `down`, `jump`, `spin`, and `run`; `jump` and `spin` emit a pressed edge on the first frame of that line.
 

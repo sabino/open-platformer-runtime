@@ -2092,6 +2092,7 @@ public partial class GameScene : Node2D
         return tile.Source switch
         {
             "steep_right_slope_edge" => tile.Map16 == 0x01AF,
+            "right_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AF),
             _ => false,
         };
     }
@@ -2221,6 +2222,7 @@ public partial class GameScene : Node2D
             "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C5 or 0x01C7 or 0x01EB ||
                 IsDiagonalPipeCeilingTile(tile),
             "left_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AA),
+            "right_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AF),
             "steep_right_slope_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AF),
             _ => false,
         };
@@ -4106,16 +4108,28 @@ public partial class GameScene : Node2D
     {
         var footX = (int)MathF.Floor((_state.XFloat + SmwPhysics.PlayerWidth * 0.5f) / Map16TileSize);
         var footY = (int)MathF.Floor((_state.YFloat + SmwPhysics.PlayerHeightFor(_state) - LevelVisualYOffset + 1.0f) / Map16TileSize);
-        if (!_map16TilesByCoord.TryGetValue((footX, footY), out var tile))
+        return DescribeTileAt(footX, footY);
+    }
+
+    private string DescribeWorldTile(float x, float y)
+    {
+        var tileX = (int)MathF.Floor(x / Map16TileSize);
+        var tileY = (int)MathF.Floor((y - LevelVisualYOffset) / Map16TileSize);
+        return DescribeTileAt(tileX, tileY);
+    }
+
+    private string DescribeTileAt(int tileX, int tileY)
+    {
+        if (!_map16TilesByCoord.TryGetValue((tileX, tileY), out var tile))
         {
-            return $"{footX},{footY}:----";
+            return $"{tileX},{tileY}:----";
         }
 
         var role = IsSlopeSurfaceTile(tile) ? "slope" :
             IsCoinMarkerTile(tile) ? "coin" :
             IsSolidMap16Source(tile.Source) ? "solid" :
             "pass";
-        return $"{footX},{footY}:{tile.Map16:X3}:{role}:{tile.Source}";
+        return $"{tileX},{tileY}:{tile.Map16:X3}:{role}:{tile.Source}";
     }
 
     private void PrintRuntimeState()
@@ -4529,6 +4543,12 @@ public partial class GameScene : Node2D
                 return $"ok capture_saved={parts[1]} error={captureError}";
             case "state":
                 return PrintDebugState(parts.Length >= 2 ? parts[1] : "manual");
+            case "tile":
+            case "probe":
+                return PrintDebugTile(parts);
+            case "actors_near":
+            case "near":
+                return PrintDebugActorsNear(parts);
             case "quit":
                 GD.Print("smw-debug: quit");
                 GetTree().Quit();
@@ -4563,6 +4583,31 @@ public partial class GameScene : Node2D
         var state = BuildDebugState(tag);
         GD.Print(state);
         return state;
+    }
+
+    private string PrintDebugTile(string[] parts)
+    {
+        string tile;
+        if (parts.Length >= 3)
+        {
+            tile = DescribeWorldTile(ParseFloat(parts[1]), ParseFloat(parts[2]));
+        }
+        else
+        {
+            tile = DescribeFootTile();
+        }
+
+        var line = $"smw-debug-tile: {tile}";
+        GD.Print(line);
+        return line;
+    }
+
+    private string PrintDebugActorsNear(string[] parts)
+    {
+        var radius = parts.Length >= 2 ? ParseFloat(parts[1]) : 96.0f;
+        var line = $"smw-debug-actors-near: radius={radius:0.00} {DescribeActorsNear(radius)}";
+        GD.Print(line);
+        return line;
     }
 
     private string BuildDebugState(string tag)
@@ -4603,6 +4648,26 @@ public partial class GameScene : Node2D
         return nearest == null
             ? "none"
             : $"{nearest.SpriteId:X2}:{nearest.State}:{nearest.X:0.00},{nearest.Y:0.00}";
+    }
+
+    private string DescribeActorsNear(float radius)
+    {
+        var maxDistanceSq = radius * radius;
+        var playerCenter = _physics.PlayerRect(_state).GetCenter();
+        var actors = _spriteActors
+            .Where(actor => actor.Alive)
+            .Select(actor => new
+            {
+                Actor = actor,
+                DistanceSq = actor.Rect.GetCenter().DistanceSquaredTo(playerCenter),
+            })
+            .Where(item => item.DistanceSq <= maxDistanceSq)
+            .OrderBy(item => item.DistanceSq)
+            .Take(8)
+            .Select(item =>
+                $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}");
+        var description = string.Join(" | ", actors);
+        return string.IsNullOrEmpty(description) ? "none" : description;
     }
 
     private static void RequirePartCount(string[] parts, int minimum)

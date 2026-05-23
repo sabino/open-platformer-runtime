@@ -5,8 +5,20 @@ GODOT_BIN="${GODOT_BIN:-godot4-mono}"
 CAPTURE_PATH="${1:-generated/smw/captures/level_105_viewport.png}"
 LEVEL_ID="${2:-105}"
 SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}"
+CAPTURE_DELAY="${SMW_CAPTURE_DELAY:-1.0}"
 LOG_FILE="$(mktemp)"
 PID_FILE="$(mktemp)"
+EXTRA_GODOT_ARGS=()
+
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+if [[ $# -gt 0 ]]; then
+  EXTRA_GODOT_ARGS=("$@")
+fi
 
 cleanup() {
   if [[ -s "$PID_FILE" ]]; then
@@ -48,7 +60,8 @@ export QT_QPA_PLATFORM=wayland
   --rendering-driver opengl3 \
   --audio-driver Dummy \
   --path . \
-  --smw-test-level="$LEVEL_ID" >"$LOG_FILE" 2>&1 &
+  --smw-test-level="$LEVEL_ID" \
+  "${EXTRA_GODOT_ARGS[@]}" >"$LOG_FILE" 2>&1 &
 echo "$!" >"$PID_FILE"
 godot_pid="$(cat "$PID_FILE")"
 
@@ -111,7 +124,7 @@ if ! grep -q "smw-runtime: level=$LEVEL_ID" "$LOG_FILE"; then
   exit 1
 fi
 
-sleep 0.3
+sleep "$CAPTURE_DELAY"
 rect="$(find_godot_rect)"
 if [[ -z "$rect" ]]; then
   cat "$LOG_FILE" >&2

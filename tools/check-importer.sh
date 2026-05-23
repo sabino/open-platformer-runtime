@@ -129,7 +129,7 @@ assert all(entry["tile_count"] == 128 for entry in sprite_tileset["uploads"]), s
 
 tilemap = json.loads((out_dir / "levels" / "level_105_partial_tilemap.json").read_text())
 assert tilemap["status"] == "partial"
-assert tilemap["placed_tile_count"] == 1608, tilemap["placed_tile_count"]
+assert tilemap["placed_tile_count"] == 1611, tilemap["placed_tile_count"]
 assert tilemap["preview_png"]["file"] == "levels/level_105_partial_layout.png"
 assert tilemap["preview_png"]["rendered_tile_count"] == tilemap["placed_tile_count"]
 assert any("Map16 tile word's palette" in note for note in tilemap["notes"]), tilemap["notes"]
@@ -149,6 +149,7 @@ assert post_jump_object["placement"]["x_tile"] == 0x0B2, post_jump_object["place
 tile_sources = {tile["source"] for tile in tilemap["placed_tiles"]}
 assert "right_diagonal_pipe" in tile_sources, tile_sources
 assert "left_diagonal_ledge_edge" in tile_sources, tile_sources
+assert "extended_goal_marker" in tile_sources, tile_sources
 assert "steep_right_slope_surface" in tile_sources, tile_sources
 placed_by_coord = {(tile["x"], tile["y"], tile["source"]): tile["map16"] for tile in tilemap["placed_tiles"]}
 assert placed_by_coord[(56, 18, "right_diagonal_pipe")] == 0x01C4, placed_by_coord.get((56, 18, "right_diagonal_pipe"))
@@ -160,7 +161,28 @@ assert placed_by_coord[(17, 21, "left_diagonal_ledge_edge")] == 0x00A6, placed_b
 assert all(tile["x"] != 11 or tile["y"] != 22 for tile in tilemap["placed_tiles"]), placed_by_coord.get((11, 22, "left_diagonal_ledge_fill"))
 assert placed_by_coord[(12, 22, "left_diagonal_ledge_fill")] == 0x00A3, placed_by_coord.get((12, 22, "left_diagonal_ledge_fill"))
 assert placed_by_coord[(18, 22, "left_diagonal_ledge_edge")] == 0x00A6, placed_by_coord.get((18, 22, "left_diagonal_ledge_edge"))
+assert placed_by_coord[(294, 22, "extended_goal_marker")] == 0x0066, placed_by_coord.get((294, 22, "extended_goal_marker"))
+assert placed_by_coord[(295, 22, "extended_goal_marker")] == 0x0067, placed_by_coord.get((295, 22, "extended_goal_marker"))
+assert placed_by_coord[(294, 23, "extended_goal_marker")] == 0x0068, placed_by_coord.get((294, 23, "extended_goal_marker"))
+assert placed_by_coord[(295, 23, "extended_goal_marker")] == 0x0069, placed_by_coord.get((295, 23, "extended_goal_marker"))
 assert all(tile["source"] != "right_diagonal_pipe" for tile in tilemap["placed_tiles"] if (tile["x"], tile["y"]) == (50, 24))
+
+synthetic_right_ledge = smw_import.build_partial_level_tilemap(
+    {"width_tiles": 32, "height_tiles": 32, "tileset": 7},
+    [{
+        "object_id": 0x3B,
+        "size_or_type": 0x22,
+        "placement": {"x_tile": 8, "y_tile": 8},
+    }],
+)
+right_ledge_by_coord = {(tile["x"], tile["y"], tile["source"]): tile["map16"] for tile in synthetic_right_ledge["placed_tiles"]}
+assert right_ledge_by_coord[(8, 8, "right_diagonal_ledge_edge")] == 0x00AF, right_ledge_by_coord
+assert right_ledge_by_coord[(9, 8, "right_diagonal_ledge_edge")] == 0x01AF, right_ledge_by_coord
+assert right_ledge_by_coord[(7, 9, "right_diagonal_ledge_edge")] == 0x00A9, right_ledge_by_coord
+assert right_ledge_by_coord[(10, 9, "right_diagonal_ledge_edge")] == 0x01AF, right_ledge_by_coord
+assert right_ledge_by_coord[(11, 11, "right_diagonal_ledge_bottom")] == 0x01F9, right_ledge_by_coord
+assert right_ledge_by_coord[(4, 12, "right_diagonal_ledge_edge")] == 0x00A9, right_ledge_by_coord
+assert right_ledge_by_coord[(10, 12, "right_diagonal_ledge_edge")] == 0x00AC, right_ledge_by_coord
 
 layer2_bg = json.loads((out_dir / "levels" / "level_105_layer2_background.json").read_text())
 assert layer2_bg["kind"] == "rle_background", layer2_bg
