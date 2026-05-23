@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added RCON `ground on|off` and `trace` commands so unattended playtest debugging can force a grounded state, queue fixed-frame input, and log per-frame native-unit state, camera, foot-tile, and nearest-actor data.
+- Changed grounded vertical physics to match the native in-air gravity branch more closely: standing frames pin vertical speed at zero, preserve floor contact through an explicit top-of-solid probe, and only start gravity after Mario actually leaves support.
 - Made Godot input scripts tolerate the native `smw/` `.input` format more closely by ignoring `@` directives and accepting `Start`, `Select`, `Up`, `L`, and `R` as no-op tokens while preserving `B` jump, `A` spin, and `X/Y` run.
 - Changed Mario floor-slope resolution from a single center probe to center/left/right foot probes biased by movement direction, with a headless diagonal-pipe slope regression around `x=921,y=208`.
 - Stopped treating imported warp-hole sprite `0x8E` as a normal visible runtime actor; it remains inspectable through sprite/debug markers without drawing a fake gameplay block in the sloped-pipe area.

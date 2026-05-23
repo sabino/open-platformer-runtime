@@ -180,6 +180,13 @@ public sealed class SmwPhysics
         state.OnGround = false;
         ResolveAxis(ref state, solids, solidStepUpEnabled, solidVerticalEnabled, horizontal: false);
         ResolveSlopes(ref state, slopes, previousBottom);
+        if (!state.OnGround &&
+            state.YSpeed >= 0 &&
+            IsStandingOnSolid(state, solids, solidVerticalEnabled))
+        {
+            state.OnGround = true;
+            state.RunningTakeoff = false;
+        }
         if (steppedOntoSolid && state.YSpeed >= 0)
         {
             state.OnGround = true;
@@ -484,6 +491,10 @@ public sealed class SmwPhysics
         {
             state.RunningTakeoff = false;
             state.SpinJump = false;
+            state.JumpHeldFrames = 0;
+            state.YSpeed = 0;
+            state.SubYSpeed = 0;
+            return;
         }
 
         if (state.YSpeed < 0 && (input.Jump || input.Spin))
@@ -618,6 +629,44 @@ public sealed class SmwPhysics
         state.SubYSpeed = 0;
         state.RunningTakeoff = false;
         return true;
+    }
+
+    private static bool IsStandingOnSolid(
+        PlayerState state,
+        IReadOnlyList<Rect2> solids,
+        IReadOnlyList<bool>? solidVerticalEnabled)
+    {
+        var rect = new Rect2(
+            new Vector2(state.XFloat, state.YFloat),
+            new Vector2(PlayerWidth, PlayerHeightFor(state)));
+        var bottom = rect.Position.Y + rect.Size.Y;
+        for (var solidIndex = 0; solidIndex < solids.Count; solidIndex++)
+        {
+            var allowVertical = solidVerticalEnabled == null ||
+                solidIndex >= solidVerticalEnabled.Count ||
+                solidVerticalEnabled[solidIndex];
+            if (!allowVertical)
+            {
+                continue;
+            }
+
+            var solid = solids[solidIndex];
+            if (bottom < solid.Position.Y - 1.0f || bottom > solid.Position.Y + 1.0f)
+            {
+                continue;
+            }
+
+            var rectRight = rect.Position.X + rect.Size.X;
+            var solidRight = solid.Position.X + solid.Size.X;
+            if (rectRight <= solid.Position.X || rect.Position.X >= solidRight)
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes, float previousBottom)

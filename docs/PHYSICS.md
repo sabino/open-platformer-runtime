@@ -12,6 +12,7 @@ Current implementation details:
 - Normal jump speeds use the 16-entry `kHandlePlayerPhysics_JumpHeightTable`.
 - The fixed-step order now starts jump/gravity before horizontal acceleration/P-meter selection, matching the native `HandlePlayerPhysics()` branch where jump can set the running-takeoff air flag before horizontal speed mode is resolved.
 - Gravity uses the native non-cape constants visible around `HandlePlayerPhysics_D930`: `0x06` when jump is not held and `0x03` while jump is held during rising motion.
+- Grounded frames now pin vertical speed to zero and skip `HandlePlayerPhysics_D930`-style gravity. A one-pixel top-of-solid contact probe preserves grounded state when Mario is exactly standing on a floor, while walking beyond that support clears `OnGround` before gravity starts on the next frame.
 - Maximum normal fall speed is currently `0x40`, matching the common non-cape clamp in the same table.
 - Big/cape/fire forms now track a `Ducking` state when grounded and holding down. The temporary duck hitbox uses the 16px small-height footprint and preserves Mario's feet when entering or leaving the state; grounded ducking suppresses horizontal acceleration like the native early ducking branch.
 - Horizontal movement is clamped to the generated level bounds so Mario cannot leave the level to the left or right during the playable slice.

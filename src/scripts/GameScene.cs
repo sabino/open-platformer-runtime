@@ -172,6 +172,10 @@ public partial class GameScene : Node2D
     private int _debugCommandInputFrames;
     private int _debugCommandInputFrame;
     private SmwPhysics.FrameInput _debugCommandInput;
+    private int _debugTraceFrames;
+    private int _debugTraceTotalFrames;
+    private int _debugTraceFrame;
+    private string _debugTraceTag = "trace";
     private bool _debugActorsEnabled = true;
     private bool _debugInvincible;
     private TcpListener? _debugRconListener;
@@ -274,6 +278,7 @@ public partial class GameScene : Node2D
         {
             CheckPipeDebug(frameInput);
         }
+        PrintQueuedDebugTrace(frameInput);
 
         _debugFrameCounter++;
         if (isDebugStep)
@@ -4343,6 +4348,18 @@ public partial class GameScene : Node2D
         GD.Print($"smw-test-velocity: xs={_state.XSpeed} ys={_state.YSpeed}");
     }
 
+    public void DebugSetPlayerGrounded(bool grounded)
+    {
+        _state.OnGround = grounded;
+        if (grounded)
+        {
+            _state.YSpeed = 0;
+            _state.SubYSpeed = 0;
+        }
+
+        GD.Print($"smw-test-ground: grounded={(grounded ? 1 : 0)}");
+    }
+
     public void DebugSetPlayerSpinJump(bool spinJump)
     {
         _state.SpinJump = spinJump;
@@ -4616,6 +4633,9 @@ public partial class GameScene : Node2D
             case "press":
                 QueueDebugInput(parts);
                 return $"ok input_frames={_debugCommandInputFrames}";
+            case "trace":
+                QueueDebugTrace(parts);
+                return $"ok trace_queued={_debugTraceFrames}";
             case "spawn":
             case "pos":
                 RequirePartCount(parts, 3);
@@ -4633,6 +4653,11 @@ public partial class GameScene : Node2D
                     int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture),
                     int.Parse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture));
                 return BuildDebugState("velocity");
+            case "ground":
+            case "onground":
+                RequirePartCount(parts, 2);
+                DebugSetPlayerGrounded(ParseDebugBool(parts[1]));
+                return BuildDebugState("ground");
             case "spinjump":
             case "spinstate":
                 RequirePartCount(parts, 2);
@@ -4714,6 +4739,75 @@ public partial class GameScene : Node2D
             _debugStepFrames += frames;
         }
         GD.Print($"smw-debug: input frames={frames} left={(input.Left ? 1 : 0)} right={(input.Right ? 1 : 0)} down={(input.Down ? 1 : 0)} jump={(input.Jump ? 1 : 0)} spin={(input.Spin ? 1 : 0)} run={(input.Run ? 1 : 0)}");
+    }
+
+    private void QueueDebugTrace(string[] parts)
+    {
+        RequirePartCount(parts, 2);
+        var frames = Math.Max(1, int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture));
+        var input = new SmwPhysics.FrameInput();
+        var tag = "trace";
+        for (var i = 2; i < parts.Length; i++)
+        {
+            if (parts[i].StartsWith("tag=", StringComparison.OrdinalIgnoreCase))
+            {
+                tag = parts[i][4..];
+                continue;
+            }
+
+            ApplyScriptedInputToken("smw-debug-trace", 0, parts[i], ref input);
+        }
+
+        _debugTraceFrames = frames;
+        _debugTraceTotalFrames = frames;
+        _debugTraceFrame = 0;
+        _debugTraceTag = string.IsNullOrWhiteSpace(tag) ? "trace" : tag;
+        _debugCommandInput = input;
+        _debugCommandInputFrames = frames;
+        _debugCommandInputFrame = 0;
+        if (_debugPaused)
+        {
+            _debugStepFrames += frames;
+        }
+
+        GD.Print(
+            $"smw-debug: trace queued={frames} tag={_debugTraceTag} input={DescribeFrameInput(input)}");
+    }
+
+    private void PrintQueuedDebugTrace(SmwPhysics.FrameInput frameInput)
+    {
+        if (_debugTraceFrames <= 0)
+        {
+            return;
+        }
+
+        _debugTraceFrame++;
+        GD.Print(
+            $"smw-debug-trace: tag={_debugTraceTag} i={_debugTraceFrame}/{_debugTraceTotalFrames} " +
+            $"frame={_debugFrameCounter} input={DescribeFrameInput(frameInput)} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} " +
+            $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} " +
+            $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
+
+        _debugTraceFrames--;
+        if (_debugTraceFrames <= 0)
+        {
+            PrintDebugState($"{_debugTraceTag}_done");
+        }
+    }
+
+    private static string DescribeFrameInput(SmwPhysics.FrameInput input)
+    {
+        Span<char> mask = stackalloc char[7];
+        mask[0] = input.Left ? 'L' : '-';
+        mask[1] = input.Right ? 'R' : '-';
+        mask[2] = input.Down ? 'D' : '-';
+        mask[3] = input.Jump ? 'J' : '-';
+        mask[4] = input.JumpPressed ? 'j' : '-';
+        mask[5] = input.Spin ? 'A' : '-';
+        mask[6] = input.Run ? 'Y' : '-';
+        return new string(mask);
     }
 
     private string PrintDebugState(string tag)

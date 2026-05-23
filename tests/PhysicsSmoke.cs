@@ -19,6 +19,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckGroundedVerticalPhysics(physics))
+        {
+            return 1;
+        }
         if (!CheckLevelHorizontalBounds(physics))
         {
             return 1;
@@ -276,6 +280,38 @@ public static class PhysicsSmoke
         if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.SmallPlayerHeight || state.Y != 84)
         {
             Console.Error.WriteLine($"expected power-down to clear ducking while preserving feet, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)} y={state.Y}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckGroundedVerticalPhysics(SmwPhysics physics)
+    {
+        var floor = new List<Rect2> { new(0, 100, 256, 16) };
+        var state = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        state.OnGround = true;
+        state.YSpeed = 24;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), floor);
+        if (!state.OnGround || state.Y != 68 || state.YSpeed != 0)
+        {
+            Console.Error.WriteLine($"expected grounded vertical speed to stay pinned, got g={state.OnGround} y={state.Y} ys={state.YSpeed}");
+            return false;
+        }
+
+        state = physics.MakeState(280, 68, SmwPhysics.BigPowerup);
+        state.OnGround = true;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), floor);
+        if (state.OnGround || state.Y != 68 || state.YSpeed != 0)
+        {
+            Console.Error.WriteLine($"expected first ledge frame to clear grounded state without gravity, got g={state.OnGround} y={state.Y} ys={state.YSpeed}");
+            return false;
+        }
+
+        physics.Step(ref state, new SmwPhysics.FrameInput(), floor);
+        if (state.YSpeed != 6)
+        {
+            Console.Error.WriteLine($"expected gravity one frame after ledge clear, got ys={state.YSpeed}");
             return false;
         }
 

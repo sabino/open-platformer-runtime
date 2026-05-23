@@ -27,9 +27,10 @@ WING_BLOCK_REWARD_COMMAND_FILE="$(mktemp)"
 PIRANHA_HIDDEN_COMMAND_FILE="$(mktemp)"
 PIRANHA_VISIBLE_COMMAND_FILE="$(mktemp)"
 SLOPE_PROBE_COMMAND_FILE="$(mktemp)"
+TRACE_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -104,6 +105,13 @@ spawn 921 208
 powerup small
 velocity 2 0
 step 1
+EOF
+cat >"$TRACE_COMMAND_FILE" <<'EOF'
+pause
+spawn 32 288
+velocity 0 0
+ground on
+trace 3 right run jump tag=jump_probe
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
@@ -229,6 +237,15 @@ grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "x=921.13 y=213.00" "$LOG_FILE"
 grep -q "g=1" "$LOG_FILE"
 
+"$GODOT_BIN" --headless --path . --quit-after 5 --smw-test-autostart --smw-debug-command-file="$TRACE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$TRACE_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-test-ground: grounded=1" "$LOG_FILE"
+grep -q "smw-debug: trace queued=3 tag=jump_probe input=-R-Jj-Y" "$LOG_FILE"
+grep -q "smw-debug-trace: tag=jump_probe i=1/3" "$LOG_FILE"
+grep -q "ys=-77" "$LOG_FILE"
+grep -q "smw-debug-trace: tag=jump_probe i=3/3" "$LOG_FILE"
+grep -q "smw-debug-state: tag=jump_probe_done" "$LOG_FILE"
+
 "$GODOT_BIN" --headless --path . --quit-after 600 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
 RCON_PID="$!"
 for _ in $(seq 1 80); do
@@ -267,6 +284,18 @@ for _ in $(seq 1 80); do
 done
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "x=896.00 y=304.00" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh ground on | tee "$RCON_LOG"
+grep -q "g=1" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh trace 2 right run tag=rcon_probe | tee "$RCON_LOG"
+grep -q "ok trace_queued=2" "$RCON_LOG"
+for _ in $(seq 1 80); do
+  if grep -q "smw-debug-state: tag=rcon_probe_done" "$LOG_FILE"; then
+    break
+  fi
+  sleep 0.05
+done
+grep -q "smw-debug-trace: tag=rcon_probe i=2/2" "$LOG_FILE"
+grep -q "smw-debug-state: tag=rcon_probe_done" "$LOG_FILE"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh quit >/dev/null || true
 wait "$RCON_PID" || true
 
