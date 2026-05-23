@@ -23,6 +23,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckCapeFloatFallCap(physics))
+        {
+            return 1;
+        }
         if (!CheckLevelHorizontalBounds(physics))
         {
             return 1;
@@ -134,6 +138,36 @@ public static class PhysicsSmoke
             if (SmwPhysics.PMeterDeltaTable[i] != expectedPMeterDeltas[i])
             {
                 Console.Error.WriteLine($"P-meter delta table mismatch at {i}");
+                return false;
+            }
+        }
+
+        int[] expectedGravity = [0x06, 0x03, 0x04, 0x10, -0x0C, 0x01, 0x03, 0x04, 0x05, 0x06];
+        for (var i = 0; i < expectedGravity.Length; i++)
+        {
+            if (SmwPhysics.VerticalGravityTable[i] != expectedGravity[i])
+            {
+                Console.Error.WriteLine($"vertical gravity table mismatch at {i}");
+                return false;
+            }
+        }
+
+        int[] expectedMaxFall = [0x40, 0x40, 0x20, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40];
+        for (var i = 0; i < expectedMaxFall.Length; i++)
+        {
+            if (SmwPhysics.VerticalMaxFallTable[i] != expectedMaxFall[i])
+            {
+                Console.Error.WriteLine($"vertical max fall table mismatch at {i}");
+                return false;
+            }
+        }
+
+        int[] expectedCapeFloat = [0x10, -0x38, -0x20, 0x02];
+        for (var i = 0; i < expectedCapeFloat.Length; i++)
+        {
+            if (SmwPhysics.CapeFloatYSpeedTable[i] != expectedCapeFloat[i])
+            {
+                Console.Error.WriteLine($"cape float y-speed table mismatch at {i}");
                 return false;
             }
         }
@@ -312,6 +346,56 @@ public static class PhysicsSmoke
         if (state.YSpeed != 6)
         {
             Console.Error.WriteLine($"expected gravity one frame after ledge clear, got ys={state.YSpeed}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckCapeFloatFallCap(SmwPhysics physics)
+    {
+        var state = physics.MakeState(0, 0, SmwPhysics.CapePowerup);
+        state.YSpeed = 0x30;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Jump = true }, []);
+        if (state.YSpeed != 0x10 || state.CapeFloatFrames != 0x0F)
+        {
+            Console.Error.WriteLine($"expected cape jump-hold fall cap, got ys=0x{state.YSpeed:X2} cape_float={state.CapeFloatFrames}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0, SmwPhysics.CapePowerup);
+        state.YSpeed = 0x30;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.YSpeed == 0x10 || state.CapeFloatFrames != 0)
+        {
+            Console.Error.WriteLine($"expected cape fall without jump hold to skip float cap, got ys=0x{state.YSpeed:X2} cape_float={state.CapeFloatFrames}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0, SmwPhysics.BigPowerup);
+        state.YSpeed = 0x30;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Jump = true }, []);
+        if (state.YSpeed == 0x10 || state.CapeFloatFrames != 0)
+        {
+            Console.Error.WriteLine($"expected non-cape jump hold to skip cape cap, got ys=0x{state.YSpeed:X2} cape_float={state.CapeFloatFrames}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0, SmwPhysics.CapePowerup);
+        state.YSpeed = -0x20;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Jump = true }, []);
+        if (state.YSpeed >= 0 || state.CapeFloatFrames != 0)
+        {
+            Console.Error.WriteLine($"expected rising cape jump to use normal jump-hold gravity, got ys=0x{state.YSpeed:X2} cape_float={state.CapeFloatFrames}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0, SmwPhysics.CapePowerup);
+        state.CapeFloatFrames = 7;
+        physics.SetPowerup(ref state, SmwPhysics.BigPowerup);
+        if (state.CapeFloatFrames != 0)
+        {
+            Console.Error.WriteLine($"expected power-down away from cape to clear float timer, got cape_float={state.CapeFloatFrames}");
             return false;
         }
 

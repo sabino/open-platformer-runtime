@@ -4271,7 +4271,7 @@ public partial class GameScene : Node2D
 
         var footTile = DescribeFootTile();
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} cf={_state.CapeFloatFrames} " +
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
             $"coins={_coinCount}/{_dragonCoinCount} tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
     }
@@ -4857,7 +4857,7 @@ public partial class GameScene : Node2D
             $"frame={_debugFrameCounter} input={DescribeFrameInput(frameInput)} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} " +
+            $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} cf={_state.CapeFloatFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
 
         _debugTraceFrames--;
@@ -5026,7 +5026,7 @@ public partial class GameScene : Node2D
             $"smw-debug-state: tag={tag} frame={_debugFrameCounter} level={_currentLevelId} " +
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} " +
+            $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} cf={_state.CapeFloatFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount}";

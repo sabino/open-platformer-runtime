@@ -29,9 +29,12 @@ These are the values currently implemented in `SmwPhysics.cs`:
 | Ground friction | `0x0020` |
 | Air acceleration | `0x0100` |
 | P-meter max | `0x70` |
-| Max fall speed | `0x40` |
+| Normal gravity | `0x06` |
+| Jump-held gravity | `0x03` |
+| Normal max fall speed | `0x40` |
+| Cape float/fall cap while holding jump | `0x10` |
 
-The current jump table is a temporary native-shaped bridge indexed from horizontal speed and spin state. It must be replaced with a fuller port of the native jump velocity selection, jump-hold gravity, flying/cape branches, and player-state-specific tables.
+The current jump table is a temporary native-shaped bridge indexed from horizontal speed and spin state. Vertical gravity/max-fall tables and the first cape hold-jump falling cap are now exposed in `SmwPhysics.cs`, but the full cape flight/diving state machine, native jump velocity selection, and player-state-specific branch conditions still need to be ported directly.
 
 ## Hamaluik Regression Sanity Checks
 
@@ -49,7 +52,7 @@ Those curves explain why a plain "realistic" platformer controller feels wrong h
 
 ## Porting Priorities
 
-1. Replace temporary jump velocities with the native vertical-speed tables and branch conditions for normal jump, spin jump, running jump, cape, flight, underwater, climbing, riding Yoshi, and damage/knockback states.
+1. Replace temporary jump velocities and the remaining simplified branch conditions with the native vertical-speed path for normal jump, spin jump, running jump, cape flight/diving, underwater, climbing, riding Yoshi, and damage/knockback states.
 2. Keep all player-motion tests in native units (`XSpeed`, `YSpeed`, subpixel position), then add pixel-trajectory golden tests for short scripted input sequences.
 3. Treat the Hamaluik curves as visual sanity checks only after native-unit tests pass.
 4. Move slope handling toward native Map16 act-as and block interaction code instead of treating modern collision lines as authoritative.

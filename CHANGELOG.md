@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added the first native-table-backed cape vertical physics branch: cape Mario now starts a `0x10`-frame float timer and clamps falling `YSpeed` to `0x10` while holding jump, with C# smoke coverage and RCON/HUD trace exposure for the timer.
 - Added RCON `collision [x y radius]` probing so stuck-player reports can list nearby temporary solid rectangles, slope segments, and their collision flags from the live runtime.
 - Added RCON `audio status|off|on` controls so visible Wayland playtests can stop/restart the internal APU probe and inspect voice/generator-buffer state without relaunching.
 - Restricted right-diagonal pipe underside correction during active horizontal walking and added a headless regression at the reported sloped-pipe underside coordinate so walking under it stays in level `105` instead of taking the pipe transition path, while stationary embedded-pipe recovery still resolves to the known `x=896` boundary.

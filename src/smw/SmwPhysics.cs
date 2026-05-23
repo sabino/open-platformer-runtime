@@ -24,7 +24,7 @@ public sealed class SmwPhysics
     private const int AirAccel = 0x0100;
     private const int PMeterMax = 0x70;
     private const int PMeterSprintThreshold = 0x23;
-    private const int MaxFall = 0x40;
+    private const int CapeFloatFrameCount = 0x10;
     private const float StepUpTolerance = 12.0f;
     private const float MaxHorizontalCollisionCorrection = 64.0f;
 
@@ -37,6 +37,25 @@ public sealed class SmwPhysics
     [
         unchecked((sbyte)0xec), 0x14, unchecked((sbyte)0xdc), 0x24,
         unchecked((sbyte)0xdc), 0x24, unchecked((sbyte)0xd0), 0x30,
+    ];
+
+    public static readonly int[] VerticalGravityTable =
+    [
+        0x06, 0x03, 0x04, 0x10, -0x0C,
+        0x01, 0x03, 0x04, 0x05, 0x06,
+    ];
+
+    public static readonly int[] VerticalMaxFallTable =
+    [
+        0x40, 0x40, 0x20, 0x40, 0x40,
+        0x40, 0x40, 0x40, 0x40, 0x40,
+    ];
+
+    public static readonly int[] CapeFloatYSpeedTable =
+    [
+        0x10, -0x38, -0x20, 0x02, 0x03,
+        0x03, 0x04, 0x03, 0x02, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x00,
     ];
 
     private static readonly int[] JumpHeightTable =
@@ -65,6 +84,7 @@ public sealed class SmwPhysics
         public bool SpinJump;
         public bool RunningTakeoff;
         public bool Ducking;
+        public int CapeFloatFrames;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -84,6 +104,7 @@ public sealed class SmwPhysics
             SubYSpeed = state.SubYSpeed;
             OnGround = state.OnGround;
             Ducking = state.Ducking;
+            CapeFloatFrames = state.CapeFloatFrames;
         }
 
         public readonly int X;
@@ -96,6 +117,7 @@ public sealed class SmwPhysics
         public readonly int SubYSpeed;
         public readonly bool OnGround;
         public readonly bool Ducking;
+        public readonly int CapeFloatFrames;
     }
 
     public struct FrameInput
@@ -131,6 +153,10 @@ public sealed class SmwPhysics
         if (state.Powerup == SmallPowerup)
         {
             state.Ducking = false;
+        }
+        if (state.Powerup != CapePowerup)
+        {
+            state.CapeFloatFrames = 0;
         }
         var newHeight = PlayerHeightFor(state);
         state.Y += oldHeight - newHeight;
@@ -486,30 +512,67 @@ public sealed class SmwPhysics
             state.RunningTakeoff = state.PMeter >= PMeterMax;
             state.SpinJump = input.SpinPressed;
             state.JumpHeldFrames = 0;
+            state.CapeFloatFrames = 0;
         }
         else if (state.OnGround)
         {
             state.RunningTakeoff = false;
             state.SpinJump = false;
             state.JumpHeldFrames = 0;
+            state.CapeFloatFrames = 0;
             state.YSpeed = 0;
             state.SubYSpeed = 0;
             return;
         }
 
-        if (state.YSpeed < 0 && (input.Jump || input.Spin))
+        if (TryApplyCapeFloatFallCap(ref state, input))
         {
-            state.YSpeed += 3;
+            return;
+        }
+
+        if (input.Jump || input.Spin)
+        {
+            ApplyVerticalGravity(ref state, 1);
             state.JumpHeldFrames++;
         }
         else
         {
-            state.YSpeed += 6;
+            ApplyVerticalGravity(ref state, 0);
+        }
+    }
+
+    private static bool TryApplyCapeFloatFallCap(ref PlayerState state, FrameInput input)
+    {
+        if (state.Powerup != CapePowerup || !input.Jump || state.YSpeed < 0)
+        {
+            state.CapeFloatFrames = 0;
+            return false;
         }
 
-        if (state.YSpeed > MaxFall)
+        if (state.CapeFloatFrames <= 0)
         {
-            state.YSpeed = MaxFall;
+            state.CapeFloatFrames = CapeFloatFrameCount;
+        }
+
+        state.CapeFloatFrames--;
+        var cap = CapeFloatYSpeedTable[0];
+        if (state.YSpeed < cap)
+        {
+            return false;
+        }
+
+        state.YSpeed = cap;
+        state.SubYSpeed = 0;
+        return true;
+    }
+
+    private static void ApplyVerticalGravity(ref PlayerState state, int tableIndex)
+    {
+        tableIndex = Math.Clamp(tableIndex, 0, VerticalGravityTable.Length - 1);
+        state.YSpeed += VerticalGravityTable[tableIndex];
+        if (state.YSpeed > VerticalMaxFallTable[tableIndex])
+        {
+            state.YSpeed = VerticalMaxFallTable[tableIndex];
         }
     }
 
