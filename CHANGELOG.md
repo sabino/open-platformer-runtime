@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Tightened runtime actor damage toward the native `DamagePlayer_Hurt` flow: powered Mario now powers down to small with a native-style `0x7F` post-hit invulnerability timer exposed as `hurt`, while small Mario takes the hurt death path instead of receiving generic knockback.
 - Added deterministic Godot runtime autoplay for repeatable playability probes: `--smw-autoplay=explore` and RCON `autoplay explore|off|status` now hold right/run and inject jump pulses using the same simple native-reference exploration policy, with headless coverage through 80 stepped frames in level `105`.
 - Added the first Fire Mario extended-sprite attack path: a native-style run/Y press now spawns up to two player fireballs using the SMW `SpawnPlayerFireball` offsets/speeds, applies the shoot pose timer/SFX probe, bounces against temporary level collision, and can defeat runtime sprite actors with headless coverage against a Yoshi Island 1 Rex.
 - Added a first native-style starman runtime path: collecting sprite `0x76` sets the SMW `$1490`-style `0xFF` timer, switches to a star music preview, exposes `star` through HUD/RCON, and lets star contact defeat runtime enemy actors without hurting Mario.

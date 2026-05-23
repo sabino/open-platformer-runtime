@@ -29,7 +29,8 @@ public partial class GameScene : Node2D
     private const int SpriteActorHeight = 16;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
-    private const int PlayerHurtCooldownFrames = 90;
+    private const int NativePlayerHurtAnimationFrames = 0x2F;
+    private const int NativePlayerPostPowerdownInvulnerabilityFrames = 0x7F;
     private const int JumpingPiranhaCycleFrames = 192;
     private const int JumpingPiranhaHiddenFrames = 48;
     private const int JumpingPiranhaRiseFrames = 24;
@@ -207,6 +208,8 @@ public partial class GameScene : Node2D
     private bool _courseClear;
     private bool _gamePaused;
     private bool _gameOver;
+    private string? _queuedPlayerDeathCause;
+    private string _queuedPlayerDeathEvent = "death:hurt";
     private int _courseClearWalkoutFrames;
     private int _entranceMotionFrames;
     private int _entranceMotionAction;
@@ -373,6 +376,7 @@ public partial class GameScene : Node2D
             }
             UpdatePlayerGraphic(force: true);
         }
+        TryHandleQueuedPlayerDeath();
         UpdatePlayerFireballs();
         UpdateGoalTapes();
         CheckCoinPickups();
@@ -3622,7 +3626,7 @@ public partial class GameScene : Node2D
         {
             _playerDebugLabel.Text =
                 $"p={_state.PMeter:X2} pow={_state.Powerup} h={height} g={(_state.OnGround ? 1 : 0)} " +
-                $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} air={_state.InAirState:X2}";
+                $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} air={_state.InAirState:X2} hurt={_playerHurtCooldown}";
             _playerDebugLabel.Position = new Vector2(-8.0f, -18.0f);
         }
     }
@@ -4700,19 +4704,45 @@ public partial class GameScene : Node2D
         }
 
         _lastActorEvent = $"hurt:{actor.SpriteId:X2}:{actor.State}";
-        _playerHurtCooldown = PlayerHurtCooldownFrames;
         _stompChainCounter = 0;
-        if (_state.Powerup > SmwPhysics.SmallPowerup)
+        if (_state.Powerup <= SmwPhysics.SmallPowerup)
         {
-            _physics.SetPowerup(ref _state, SmwPhysics.SmallPowerup);
-            UpdatePlayerGraphic(force: true);
+            QueuePlayerDeath("hurt", $"death:hurt:{actor.SpriteId:X2}:{actor.State}");
+            return;
         }
+
+        _playerHurtCooldown = NativePlayerPostPowerdownInvulnerabilityFrames;
+        _playerAnimTimer = Math.Max(_playerAnimTimer, NativePlayerHurtAnimationFrames);
+        _physics.SetPowerup(ref _state, SmwPhysics.SmallPowerup);
+        _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
+        UpdatePlayerGraphic(force: true);
         _state.XSpeed = _state.XFloat < actorRect.GetCenter().X ? -24 : 24;
         _state.YSpeed = -32;
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;
         _state.OnGround = false;
         _audio?.PlayPlayerHurt();
+    }
+
+    private void QueuePlayerDeath(string cause, string actorEvent)
+    {
+        _queuedPlayerDeathCause ??= cause;
+        _queuedPlayerDeathEvent = actorEvent;
+    }
+
+    private bool TryHandleQueuedPlayerDeath()
+    {
+        if (_queuedPlayerDeathCause == null)
+        {
+            return false;
+        }
+
+        var cause = _queuedPlayerDeathCause;
+        var actorEvent = _queuedPlayerDeathEvent;
+        _queuedPlayerDeathCause = null;
+        _queuedPlayerDeathEvent = "death:hurt";
+        HandlePlayerDeath(cause, actorEvent);
+        return true;
     }
 
     private void CheckCoinPickups()
@@ -7508,7 +7538,7 @@ public partial class GameScene : Node2D
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
-            $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} " +
+            $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} hurt={_playerHurtCooldown} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
@@ -8062,6 +8092,8 @@ public partial class GameScene : Node2D
         _courseClear = false;
         _gamePaused = false;
         _gameOver = false;
+        _queuedPlayerDeathCause = null;
+        _queuedPlayerDeathEvent = "death:hurt";
         _courseClearWalkoutFrames = 0;
         _playerHurtCooldown = 0;
         _lastActorEvent = "none";
@@ -8121,6 +8153,8 @@ public partial class GameScene : Node2D
         _gamePaused = false;
         _gameOver = true;
         _courseClear = false;
+        _queuedPlayerDeathCause = null;
+        _queuedPlayerDeathEvent = "death:hurt";
         _courseClearWalkoutFrames = 0;
         _entranceMotionFrames = 0;
         _pipeTransitionLatch = false;
@@ -8146,6 +8180,8 @@ public partial class GameScene : Node2D
         var wasGameOver = _gameOver;
         _gameOver = false;
         _gamePaused = false;
+        _queuedPlayerDeathCause = null;
+        _queuedPlayerDeathEvent = "death:hurt";
         _lives = StartingLives;
         _coinCount = 0;
         _dragonCoinCount = 0;
@@ -8170,6 +8206,8 @@ public partial class GameScene : Node2D
         _courseClear = false;
         _gamePaused = false;
         _gameOver = false;
+        _queuedPlayerDeathCause = null;
+        _queuedPlayerDeathEvent = "death:hurt";
         _courseClearWalkoutFrames = 0;
         _playerHurtCooldown = 0;
         _lastActorEvent = actorEvent;
