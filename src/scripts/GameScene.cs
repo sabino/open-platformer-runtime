@@ -69,6 +69,11 @@ public partial class GameScene : Node2D
     private const int FireballBounceLimit = 2;
     private const float FireballXSpeed = 3.0f;
     private const float FireballLevelCollisionProbe = 4.0f;
+    private const int AutoplayExploreJumpPeriod = 48;
+    private const int AutoplayExploreJumpHeldFrames = 8;
+    private const int AutoplayExploreStuckJumpThreshold = 75;
+    private const int AutoplayExploreStuckJumpPeriod = 40;
+    private const int AutoplayExploreStuckJumpHeldFrames = 12;
     private static readonly int[] StompScoreByNativeGivePointsIndex = [100, 200, 400, 800, 1000, 2000, 4000, 8000];
     private static readonly int[] FireballBounceYSpeedBySlopeType = [0, -72, -64, -56, -48, -40, -32, -24, -16];
     private const float FallDeathMarginPixels = 96.0f;
@@ -239,6 +244,11 @@ public partial class GameScene : Node2D
     private bool _debugHeldJumpPressed;
     private bool _debugHeldSpinPressed;
     private bool _debugHeldRunPressed;
+    private DebugAutoplayMode _autoplayMode;
+    private int _autoplayFrame;
+    private int _autoplayLastPlayerX;
+    private int _autoplayStuckFrames;
+    private bool _autoplayJumpHeld;
     private int _debugTraceFrames;
     private int _debugTraceTotalFrames;
     private int _debugTraceFrame;
@@ -466,6 +476,14 @@ public partial class GameScene : Node2D
         int EntranceSettings,
         bool Secondary,
         int SourceId);
+
+    private enum DebugAutoplayMode
+    {
+        Off,
+        TitleStart,
+        Explore,
+    }
+
     private sealed class RuntimeSpriteActor
     {
         public required Node2D Node { get; init; }
@@ -641,7 +659,7 @@ public partial class GameScene : Node2D
             return ReadScriptedFrameInput();
         }
 
-        return new SmwPhysics.FrameInput
+        var liveInput = new SmwPhysics.FrameInput
         {
             Left = Input.IsActionPressed("smw_left"),
             Right = Input.IsActionPressed("smw_right"),
@@ -653,6 +671,64 @@ public partial class GameScene : Node2D
             Run = Input.IsActionPressed("smw_run"),
             RunPressed = Input.IsActionJustPressed("smw_run"),
         };
+        return HasAnyFrameInput(liveInput) ? liveInput : ReadAutoplayFrameInput();
+    }
+
+    private SmwPhysics.FrameInput ReadAutoplayFrameInput()
+    {
+        if (_autoplayMode == DebugAutoplayMode.Off || _gamePaused || _gameOver || _courseClear)
+        {
+            _autoplayJumpHeld = false;
+            return new SmwPhysics.FrameInput();
+        }
+
+        _autoplayFrame++;
+        if (_autoplayMode == DebugAutoplayMode.TitleStart)
+        {
+            _autoplayJumpHeld = false;
+            return new SmwPhysics.FrameInput();
+        }
+
+        if (_state.X == _autoplayLastPlayerX)
+        {
+            if (_autoplayStuckFrames < int.MaxValue)
+            {
+                _autoplayStuckFrames++;
+            }
+        }
+        else
+        {
+            _autoplayLastPlayerX = _state.X;
+            _autoplayStuckFrames = 0;
+        }
+
+        var periodicJump = _state.OnGround &&
+            _autoplayFrame % AutoplayExploreJumpPeriod < AutoplayExploreJumpHeldFrames;
+        var stuckJump = _autoplayStuckFrames > AutoplayExploreStuckJumpThreshold &&
+            _autoplayFrame % AutoplayExploreStuckJumpPeriod < AutoplayExploreStuckJumpHeldFrames;
+        var jump = periodicJump || stuckJump;
+        var jumpPressed = jump && !_autoplayJumpHeld;
+        _autoplayJumpHeld = jump;
+        return new SmwPhysics.FrameInput
+        {
+            Right = true,
+            Jump = jump,
+            JumpPressed = jumpPressed,
+            Run = true,
+        };
+    }
+
+    private static bool HasAnyFrameInput(SmwPhysics.FrameInput input)
+    {
+        return input.Left ||
+            input.Right ||
+            input.Down ||
+            input.Jump ||
+            input.JumpPressed ||
+            input.Spin ||
+            input.SpinPressed ||
+            input.Run ||
+            input.RunPressed;
     }
 
     private SmwPhysics.FrameInput ReadCourseClearInput()
@@ -6079,6 +6155,13 @@ public partial class GameScene : Node2D
         GD.Print($"smw-debug: command_file={_debugCommandPath}");
     }
 
+    public void DebugSetAutoplayMode(string mode)
+    {
+        _autoplayMode = ParseAutoplayMode(mode);
+        ResetAutoplayState();
+        GD.Print($"smw-debug-autoplay: mode={AutoplayModeName(_autoplayMode)} frame={_autoplayFrame}");
+    }
+
     public void DebugStartRcon(int port)
     {
         StopDebugRcon();
@@ -6479,6 +6562,9 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugLoadInputScript(parts[1]);
                 return "ok script_loaded";
+            case "autoplay":
+            case "auto":
+                return ExecuteDebugAutoplayCommand(parts);
             case "capture":
                 RequirePartCount(parts, 2);
                 var frames = parts.Length >= 3 && int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var captureFrames)
@@ -6557,6 +6643,50 @@ public partial class GameScene : Node2D
             default:
                 throw new FormatException($"unknown command '{parts[0]}'");
         }
+    }
+
+    private string ExecuteDebugAutoplayCommand(string[] parts)
+    {
+        if (parts.Length >= 2)
+        {
+            DebugSetAutoplayMode(parts[1]);
+        }
+
+        return PrintDebugAutoplay();
+    }
+
+    private string PrintDebugAutoplay()
+    {
+        return $"smw-debug-autoplay: mode={AutoplayModeName(_autoplayMode)} frame={_autoplayFrame} stuck={_autoplayStuckFrames} last_x={_autoplayLastPlayerX}";
+    }
+
+    private void ResetAutoplayState()
+    {
+        _autoplayFrame = 0;
+        _autoplayLastPlayerX = _state.X;
+        _autoplayStuckFrames = 0;
+        _autoplayJumpHeld = false;
+    }
+
+    private static DebugAutoplayMode ParseAutoplayMode(string mode)
+    {
+        return mode.Trim().ToLowerInvariant() switch
+        {
+            "" or "off" or "none" or "0" or "false" => DebugAutoplayMode.Off,
+            "title" or "title-start" or "titlestart" => DebugAutoplayMode.TitleStart,
+            "explore" or "play" or "on" or "1" or "true" => DebugAutoplayMode.Explore,
+            _ => throw new FormatException($"unknown autoplay mode '{mode}'"),
+        };
+    }
+
+    private static string AutoplayModeName(DebugAutoplayMode mode)
+    {
+        return mode switch
+        {
+            DebugAutoplayMode.TitleStart => "title-start",
+            DebugAutoplayMode.Explore => "explore",
+            _ => "off",
+        };
     }
 
     private void QueueDebugInput(string[] parts)
@@ -6793,7 +6923,7 @@ public partial class GameScene : Node2D
             $"draw_calls={Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0} " +
             $"render_objects={Performance.GetMonitor(Performance.Monitor.RenderTotalObjectsInFrame):0} " +
             $"physics_tps={Engine.PhysicsTicksPerSecond} paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
-            $"nodes={CountNodes(GetTree().Root)} actors={_spriteActors.Count} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} " +
+            $"autoplay={AutoplayModeName(_autoplayMode)} auto_frame={_autoplayFrame} nodes={CountNodes(GetTree().Root)} actors={_spriteActors.Count} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} " +
             $"tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} player_sprites={_playerTileSprites.Count} " +
             $"audio_enabled={(AudioEnabled ? 1 : 0)} audio_process={(_audio?.ProcessMode.ToString() ?? "none")} audio_{audioStatus}";
         GD.Print(perf);
@@ -7382,7 +7512,7 @@ public partial class GameScene : Node2D
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"actors={_spriteActors.Count} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
+            $"actors={_spriteActors.Count} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} autoplay={AutoplayModeName(_autoplayMode)} auto_frame={_autoplayFrame} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
     }
 

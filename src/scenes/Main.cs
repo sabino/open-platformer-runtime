@@ -49,6 +49,7 @@ public partial class Main : Node2D
         string? audioPreview = null;
         int? audioSamplePreview = null;
         string? inputScriptPath = null;
+        string? autoplayMode = null;
         string? debugCommandPath = null;
         int? debugRconPort = null;
         Vector2? testSpawn = null;
@@ -91,6 +92,11 @@ public partial class Main : Node2D
             else if (arg.StartsWith("--smw-input-script=", StringComparison.Ordinal))
             {
                 inputScriptPath = arg["--smw-input-script=".Length..];
+                autostart = true;
+            }
+            else if (arg.StartsWith("--smw-autoplay=", StringComparison.Ordinal))
+            {
+                autoplayMode = arg["--smw-autoplay=".Length..];
                 autostart = true;
             }
             else if (arg.StartsWith("--smw-debug-command-file=", StringComparison.Ordinal))
@@ -149,6 +155,10 @@ public partial class Main : Node2D
         if (inputScriptPath != null)
         {
             _game?.DebugLoadInputScript(inputScriptPath);
+        }
+        if (autoplayMode != null)
+        {
+            _game?.DebugSetAutoplayMode(autoplayMode);
         }
         if (debugCommandPath != null)
         {
@@ -472,6 +482,7 @@ public partial class Main : Node2D
         AddCommandButton(samples, "Coin", () => _audio?.PlayCoin());
         AddCommandButton(samples, "Stomp", () => _audio?.PlayStomp(0));
         AddCommandButton(samples, "1UP", () => _audio?.PlayOneUp());
+        AddCommandButton(samples, "Fire", () => _audio?.PlayFireball());
         foreach (var sampleId in SmwAudio.ProbeSampleIds)
         {
             AddSampleButton(samples, sampleId, $"BRR{sampleId:X2}");

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added deterministic Godot runtime autoplay for repeatable playability probes: `--smw-autoplay=explore` and RCON `autoplay explore|off|status` now hold right/run and inject jump pulses using the same simple native-reference exploration policy, with headless coverage through 80 stepped frames in level `105`.
 - Added the first Fire Mario extended-sprite attack path: a native-style run/Y press now spawns up to two player fireballs using the SMW `SpawnPlayerFireball` offsets/speeds, applies the shoot pose timer/SFX probe, bounces against temporary level collision, and can defeat runtime sprite actors with headless coverage against a Yoshi Island 1 Rex.
 - Added a first native-style starman runtime path: collecting sprite `0x76` sets the SMW `$1490`-style `0xFF` timer, switches to a star music preview, exposes `star` through HUD/RCON, and lets star contact defeat runtime enemy actors without hurting Mario.
 - Added a first invisible-mushroom runtime path for sprite `0xC7`: touching the imported Yoshi Island 1 hidden mushroom now reveals a real mushroom actor with a native-style upward pop and temporary contact cooldown instead of leaving it as inert debug metadata.

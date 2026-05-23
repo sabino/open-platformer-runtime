@@ -11,6 +11,7 @@ Make Yoshi Island 1 playable in Godot with a path toward exact frame-level behav
 3. Implement Mario movement, jump, gravity, and collision in a deterministic fixed-step core.
 4. Implement pipe and screen-exit transitions early, preserving the original exit low byte, high bit, secondary flag, and raw property byte.
 5. Add focused regression tests for transition bugs before expanding content.
+6. Keep deterministic input paths available for every playability slice: imported scripts for fixed repros, RCON frame stepping for local debugging, and `--smw-autoplay=explore` for unattended first-level traversal probes.
 
 ## Compatibility Bar
 
