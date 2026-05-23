@@ -4692,7 +4692,6 @@ public partial class GameScene : Node2D
 
     private void HurtPlayerFromActor(RuntimeSpriteActor actor)
     {
-        var actorRect = actor.Rect;
         if (_playerHurtCooldown > 0)
         {
             return;
@@ -4716,11 +4715,10 @@ public partial class GameScene : Node2D
         _physics.SetPowerup(ref _state, SmwPhysics.SmallPowerup);
         _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
         UpdatePlayerGraphic(force: true);
-        _state.XSpeed = _state.XFloat < actorRect.GetCenter().X ? -24 : 24;
-        _state.YSpeed = -32;
+        _state.XSpeed = 0;
+        _state.YSpeed = 0;
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;
-        _state.OnGround = false;
         _audio?.PlayPlayerHurt();
     }
 
