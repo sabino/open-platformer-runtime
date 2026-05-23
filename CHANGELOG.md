@@ -13,6 +13,7 @@
 - Added live RCON `restart`/`reset`/`reload` commands so long Wayland debug sessions can rebuild the current level and return Mario to the imported entrance without relaunching Godot.
 - Stopped diagonal-pipe body/ceiling recovery from overriding valid floor-slope support, fixing a one-frame shove from `x=2025` to `x=2048` inside the Yoshi Island 1 sloped pipe cluster.
 - Hid the temporary translucent bubble placeholder for sprite `0xC7` during normal gameplay; it now only appears with debug overlays so fake actor art does not look like stray pixels near Mario.
+- Extended `actors_near` diagnostics with actor visual counts and node visibility, with headless coverage proving sprite `0xC7` has no normal-mode placeholder visuals and two debug-overlay placeholder nodes.
 - Ported the native spin-jump pose/facing cycle from `DATA_00CE99/00CEA1` for Mario's runtime OAM bridge and added trace output/regression coverage for pose/facing changes during spin jumps.
 - Replaced the remaining flat horizontal speed-cap hard clamp with native-style `00D742/00D76B` table drag, so held walk/run motion oscillates around the SMW caps through friction/deceleration tables instead of pinning subspeed to zero.
 - Added a live RCON headless regression that settles Mario on the actual level-105 diagonal-pipe slope at `x=921,y=208`, traces a jump, and asserts he leaves the slope with the native jump speed.

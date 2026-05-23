@@ -5578,7 +5578,7 @@ public partial class GameScene : Node2D
             .OrderBy(item => item.DistanceSq)
             .Take(8)
             .Select(item =>
-                $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}");
+                $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}:visuals={item.Actor.Visuals.Count}:visible={(item.Actor.Node.Visible ? 1 : 0)}");
         var description = string.Join(" | ", actors);
         return string.IsNullOrEmpty(description) ? "none" : description;
     }
