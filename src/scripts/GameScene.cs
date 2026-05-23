@@ -51,6 +51,7 @@ public partial class GameScene : Node2D
     private const int DragonCoinScore = 1000;
     private const int PowerupRewardScore = 1000;
     private const int CoinLifeThreshold = 100;
+    private const int DragonCoinLifeThreshold = 5;
     private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
@@ -3885,6 +3886,10 @@ public partial class GameScene : Node2D
         }
         AddScore(pickup.DragonCoin ? DragonCoinScore : CoinScore);
         AddCoin(pickup.DragonCoin ? "dragon_coin" : "coin");
+        if (pickup.DragonCoin && _dragonCoinCount == DragonCoinLifeThreshold)
+        {
+            AddOneUp("dragon_coin_5");
+        }
 
         _audio?.PlaySample(9);
         GD.Print(
@@ -5088,6 +5093,14 @@ public partial class GameScene : Node2D
         GD.Print($"smw-test-coins: coins={_coinCount} lives={_lives} oneups={_oneUpCount}");
     }
 
+    public void DebugSetDragonCoins(int dragonCoins)
+    {
+        _dragonCoinCount = Math.Clamp(dragonCoins, 0, DragonCoinLifeThreshold);
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print($"smw-test-dragon-coins: dragon={_dragonCoinCount} lives={_lives} oneups={_oneUpCount}");
+    }
+
     public void DebugSetPlayerGrounded(bool grounded)
     {
         _state.OnGround = grounded;
@@ -5503,6 +5516,16 @@ public partial class GameScene : Node2D
                 {
                     DebugSetCoins(ParseHexOrDecimalDebug(parts[1]));
                     return BuildDebugState("coins");
+                }
+
+                return PrintDebugStatusHud();
+            case "dragon":
+            case "dragon_coins":
+            case "dragoncoins":
+                if (parts.Length >= 2)
+                {
+                    DebugSetDragonCoins(ParseHexOrDecimalDebug(parts[1]));
+                    return BuildDebugState("dragon");
                 }
 
                 return PrintDebugStatusHud();
