@@ -1643,15 +1643,7 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
         lower_row_width = row_width - 1 if row_width > 0 else row_width
         place_relative(x, y, bottom_left, bottom_y, 0x01F7, "left_diagonal_ledge_bottom", slope_actual=True)
         for xx in range(1, lower_row_width):
-            place_relative(
-                x,
-                y,
-                bottom_left + xx,
-                bottom_y,
-                0x00A3 if xx == 1 else 0x003F,
-                "left_diagonal_ledge_fill",
-                diagonal_line=xx == 1,
-            )
+            place_relative(x, y, bottom_left + xx, bottom_y, 0x003F, "left_diagonal_ledge_fill")
         place_relative(x, y, bottom_left + lower_row_width, bottom_y, 0x00A6, "left_diagonal_ledge_edge", diagonal_line=True)
 
         for yy in range(1, fill_rows):

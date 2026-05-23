@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Synced left diagonal ledge bottom-row projection with the current Lunar Magic Universal renderer, removing a stale extra diagonal-line tile from the importer.
 - Snapped Mario's rendered OAM node to the native integer player position while preserving subpixel physics internally, reducing shimmer/stray edge pixels during movement.
 - Added RCON controller-latch commands for unattended debugging: `hold ...`, `tap ...`, and `release` let a live run be driven without keyboard focus while preserving first-frame jump/spin pressed-edge semantics.
 - Expanded the internal APU tester: the menu now exposes all decoded BRR probe samples, `--smw-audio-sample=ID` can trigger a sample from the CLI, and RCON `audio sample|jump|spin|music|stop` can exercise SFX/music probes during live runs.
