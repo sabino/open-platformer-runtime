@@ -43,6 +43,12 @@ public partial class GameScene : Node2D
     private const float GoalTapeUpSpeed = -1.0f;
     private const int CourseClearWalkoutMaxFrames = 420;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
+    private const int StartingLives = 5;
+    private const int DefaultLevelTimerSeconds = 300;
+    private const int NativeFramesPerSecond = 60;
+    private const int CoinScore = 100;
+    private const int DragonCoinScore = 1000;
+    private const int PowerupRewardScore = 1000;
     private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
@@ -132,6 +138,7 @@ public partial class GameScene : Node2D
     private readonly List<ColorRect> _playerSensorGizmos = [];
     private Label? _playerDebugLabel;
     private Line2D? _cameraGizmo;
+    private Label? _statusHud;
     private Label? _hud;
     private Label? _courseClearLabel;
     private CanvasLayer? _hudLayer;
@@ -175,6 +182,9 @@ public partial class GameScene : Node2D
     private int _coinCount;
     private int _dragonCoinCount;
     private int _oneUpCount;
+    private int _score;
+    private int _lives = StartingLives;
+    private int _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
     private int _blockBreakCount;
     private int _deathCount;
     private int _inputScriptIndex;
@@ -305,6 +315,7 @@ public partial class GameScene : Node2D
         UpdateGoalTapes();
         CheckCoinPickups();
         CheckGoalTape();
+        TickLevelTimer();
         UpdateHud();
         UpdateDebugGizmos();
         if (!entranceLocked && !_courseClear)
@@ -3629,8 +3640,10 @@ public partial class GameScene : Node2D
         {
             case 0:
                 _coinCount++;
+                AddScore(CoinScore);
                 break;
             case 1:
+                AddScore(PowerupRewardScore);
                 _physics.SetPowerup(
                     ref _state,
                     _state.Powerup == SmwPhysics.SmallPowerup ? SmwPhysics.BigPowerup : SmwPhysics.FirePowerup);
@@ -3638,6 +3651,7 @@ public partial class GameScene : Node2D
                 UpdatePlayerGraphic(force: true);
                 break;
             case 2:
+                AddScore(PowerupRewardScore);
                 _physics.SetPowerup(ref _state, SmwPhysics.CapePowerup);
                 _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
                 UpdatePlayerGraphic(force: true);
@@ -3652,7 +3666,7 @@ public partial class GameScene : Node2D
         _lastActorEvent = $"block:{actor.SpriteId:X2}:reward:{reward}";
         GD.Print(
             $"smw-runtime: block_reward level={_currentLevelId} sprite={actor.SpriteId:X2} reward={reward} " +
-            $"x={actor.X:0.00} y={actor.Y:0.00} coins={_coinCount} oneups={_oneUpCount} pow={_state.Powerup}");
+            $"x={actor.X:0.00} y={actor.Y:0.00} coins={_coinCount} oneups={_oneUpCount} pow={_state.Powerup} score={_score}");
         return true;
     }
 
@@ -3802,12 +3816,18 @@ public partial class GameScene : Node2D
         {
             _dragonCoinCount++;
         }
+        AddScore(pickup.DragonCoin ? DragonCoinScore : CoinScore);
 
         _audio?.PlaySample(9);
         GD.Print(
             $"smw-runtime: coin_pickup level={_currentLevelId} " +
-            $"dragon={(pickup.DragonCoin ? 1 : 0)} coins={_coinCount} dragon_coins={_dragonCoinCount} " +
+            $"dragon={(pickup.DragonCoin ? 1 : 0)} coins={_coinCount} dragon_coins={_dragonCoinCount} score={_score} " +
             $"x={pickup.Rect.Position.X:0.00} y={pickup.Rect.Position.Y:0.00}");
+    }
+
+    private void AddScore(int amount)
+    {
+        _score = Math.Max(0, _score + Math.Max(0, amount));
     }
 
     private void CheckGoalTape()
@@ -3839,6 +3859,21 @@ public partial class GameScene : Node2D
         _audio?.PlayMusicPreview("Credits");
         ShowCourseClearLabel();
         GD.Print($"smw-runtime: course_clear level={_currentLevelId} walkout=right");
+    }
+
+    private void TickLevelTimer()
+    {
+        if (_courseClear || _levelTimerFrames <= 0)
+        {
+            return;
+        }
+
+        _levelTimerFrames--;
+    }
+
+    private int LevelTimerSecondsRemaining()
+    {
+        return Math.Max(0, (_levelTimerFrames + NativeFramesPerSecond - 1) / NativeFramesPerSecond);
     }
 
     private void BuildPlayer()
@@ -4584,13 +4619,9 @@ public partial class GameScene : Node2D
         _hudLayer = null;
         _courseClearLayer?.QueueFree();
         _courseClearLayer = null;
+        _statusHud = null;
         _hud = null;
         _courseClearLabel = null;
-        if (!DebugOverlays)
-        {
-            BuildCourseClearLayer();
-            return;
-        }
 
         var layer = new CanvasLayer
         {
@@ -4598,22 +4629,27 @@ public partial class GameScene : Node2D
         };
         _hudLayer = layer;
         AddChild(layer);
-        _hud = new Label { Position = new Vector2(12, 10) };
-        _hud.AddThemeFontSizeOverride("font_size", 13);
-        layer.AddChild(_hud);
-        AddAssetPreviewOverlay(layer);
-        UpdateHud();
-        BuildCourseClearLabel(layer);
-    }
 
-    private void BuildCourseClearLayer()
-    {
-        var layer = new CanvasLayer
+        _statusHud = new Label
         {
-            Name = "CourseClearLayer",
+            Position = new Vector2(16, 8),
         };
-        _courseClearLayer = layer;
-        AddChild(layer);
+        _statusHud.AddThemeFontSizeOverride("font_size", 16);
+        _statusHud.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
+        _statusHud.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 0.95f));
+        _statusHud.AddThemeConstantOverride("shadow_offset_x", 2);
+        _statusHud.AddThemeConstantOverride("shadow_offset_y", 2);
+        layer.AddChild(_statusHud);
+
+        if (DebugOverlays)
+        {
+            _hud = new Label { Position = new Vector2(12, 32) };
+            _hud.AddThemeFontSizeOverride("font_size", 13);
+            layer.AddChild(_hud);
+            AddAssetPreviewOverlay(layer);
+        }
+
+        UpdateHud();
         BuildCourseClearLabel(layer);
     }
 
@@ -4703,6 +4739,11 @@ public partial class GameScene : Node2D
 
     private void UpdateHud()
     {
+        if (_statusHud != null)
+        {
+            _statusHud.Text = BuildStatusHudText();
+        }
+
         if (_hud == null)
         {
             return;
@@ -4713,7 +4754,14 @@ public partial class GameScene : Node2D
             $"xs={_state.XSpeed} ys={_state.YSpeed} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} " +
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"coins={_coinCount}/{_dragonCoinCount} deaths={_deathCount} tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
+            $"score={_score} lives={_lives} time={LevelTimerSecondsRemaining()} coins={_coinCount}/{_dragonCoinCount} deaths={_deathCount} " +
+            $"tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
+    }
+
+    private string BuildStatusHudText()
+    {
+        var clear = _courseClear ? "  COURSE CLEAR" : string.Empty;
+        return $"MARIO {_score:000000}  x{_lives:00}  COIN {_coinCount:00}  DRAGON {_dragonCoinCount}/5  TIME {LevelTimerSecondsRemaining():000}  L{_currentLevelId}{clear}";
     }
 
     private string DescribeFootTile()
@@ -5353,6 +5401,10 @@ public partial class GameScene : Node2D
             case "goal_tape":
             case "goal_tapes":
                 return PrintDebugGoalTapes();
+            case "status":
+            case "statusbar":
+            case "hud":
+                return PrintDebugStatusHud();
             case "player_oam":
             case "oam":
             case "pose":
@@ -5907,6 +5959,15 @@ public partial class GameScene : Node2D
         return line;
     }
 
+    private string PrintDebugStatusHud()
+    {
+        var line =
+            $"smw-debug-status: score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} " +
+            $"time={LevelTimerSecondsRemaining()} clear={(_courseClear ? 1 : 0)} text=\"{BuildStatusHudText()}\"";
+        GD.Print(line);
+        return line;
+    }
+
     private string PrintDebugActorsNear(string[] parts)
     {
         var radius = parts.Length >= 2 ? ParseFloat(parts[1]) : 96.0f;
@@ -6115,7 +6176,7 @@ public partial class GameScene : Node2D
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
-            $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
+            $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} time={LevelTimerSecondsRemaining()} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
@@ -6632,9 +6693,10 @@ public partial class GameScene : Node2D
         }
 
         _deathCount++;
+        _lives = Math.Max(0, _lives - 1);
         GD.Print(
             $"smw-runtime: player_death level={_currentLevelId} cause=fall count={_deathCount} " +
-            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
+            $"lives={_lives} x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
         RestartCurrentLevel("death:fall");
         return true;
     }
@@ -6652,6 +6714,7 @@ public partial class GameScene : Node2D
         _playerHurtCooldown = 0;
         _lastActorEvent = actorEvent;
         _blockBreakCount = 0;
+        _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
         _pipeTransitionLatch = false;
         _entranceMotionFrames = 0;
         _state = MakeInitialPlayerState();

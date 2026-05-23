@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a normal-play status bar and RCON `hud`/`status` probe for score, lives, coins, dragon coins, timer, level, and course-clear state, with score increments for imported coins and the first block rewards.
 - Added a course-clear control-lock slice: after touching the imported goal tape, Mario now enters a rightward autowalk state with RCON/trace `clear` and `walkout` diagnostics instead of freezing in place at the tape.
 - Moved the imported goal tape from a static placeholder into a runtime visual driven by the native `0x10/0xF0` Y-speed cadence, widened the gate trigger from generated Map16 post bounds, and added an RCON `goal` probe for first-level course-clear debugging.
 - Changed the internal APU mixer to push fixed 512-frame `AudioStreamGenerator` chunks instead of hundreds of per-frame C# `PushFrame` calls, and exposed the chunk size in RCON audio status for performance checks.

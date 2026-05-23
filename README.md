@@ -21,6 +21,7 @@ The current first slice covers:
 - Runtime collision separates imported diagonal pipe/slope/ledge clusters into per-Map16-tile floor and ceiling slope surfaces instead of long averaged slope lines; terrain slope-family support/fill rectangles are suppressed, while diagonal-pipe body/mouth Map16 cells now emit solid blockers so the pipe volume cannot be walked through.
 - Mario floor-slope resolution probes center plus both feet, biased toward the current horizontal movement direction, so diagonal pipe lips and slope edges are less likely to miss contact when the player is partly over a tile boundary.
 - Runtime coin pickup state is derived from imported Map16 coin markers, including normal coins and dragon coins.
+- A normal-play status bar shows score, lives, normal coins, dragon coins, level timer, current level, and course-clear state; the same fields are exposed through RCON for headless verification.
 - Runtime camera scrolling uses SMW-style horizontal and vertical screen-space thresholds instead of center-follow, clamped to generated tile bounds so Yoshi Island 1's lower routes can be inspected during drops.
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
 - Partial object expansion for the Yoshi Island 1 direct pipe target `1CB`, including horizontal pipes and underground ceiling ledges/edges in the generated Map16 tilemap.
