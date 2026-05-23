@@ -26,6 +26,7 @@ public sealed class SmwPhysics
     private const int PMeterSprintThreshold = 0x23;
     private const int MaxFall = 0x40;
     private const float StepUpTolerance = 12.0f;
+    private const float MaxHorizontalCollisionCorrection = 64.0f;
 
     public static readonly sbyte[] PMeterDeltaTable =
     [
@@ -312,6 +313,31 @@ public sealed class SmwPhysics
         return false;
     }
 
+    public static bool TryResolveFloorSlopeFromAbove(
+        float probeX,
+        float top,
+        float bottom,
+        float ySpeed,
+        IReadOnlyList<SlopeSurface> slopes,
+        float aboveTolerance,
+        float belowTolerance,
+        out float surfaceY)
+    {
+        if (!TryResolveFloorSlope(
+            probeX,
+            bottom,
+            ySpeed,
+            slopes,
+            aboveTolerance,
+            belowTolerance,
+            out surfaceY))
+        {
+            return false;
+        }
+
+        return top < surfaceY - 1.0f;
+    }
+
     private static void ApplyDucking(ref PlayerState state, FrameInput input)
     {
         var shouldDuck = state.OnGround && input.Down && state.Powerup != SmallPowerup;
@@ -493,6 +519,11 @@ public sealed class SmwPhysics
 
             if (horizontal)
             {
+                if (ShouldIgnoreWideFloorForHorizontalCollision(rect, solid))
+                {
+                    continue;
+                }
+
                 var allowStepUp = solidStepUpEnabled == null ||
                     solidIndex >= solidStepUpEnabled.Count ||
                     solidStepUpEnabled[solidIndex];
@@ -505,11 +536,23 @@ public sealed class SmwPhysics
 
                 if (state.XSpeed > 0)
                 {
-                    state.X = (int)MathF.Round(solid.Position.X - PlayerWidth);
+                    var resolvedX = solid.Position.X - PlayerWidth;
+                    if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
+                    {
+                        continue;
+                    }
+
+                    state.X = (int)MathF.Round(resolvedX);
                 }
                 else if (state.XSpeed < 0)
                 {
-                    state.X = (int)MathF.Round(solid.Position.X + solid.Size.X);
+                    var resolvedX = solid.Position.X + solid.Size.X;
+                    if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
+                    {
+                        continue;
+                    }
+
+                    state.X = (int)MathF.Round(resolvedX);
                 }
                 state.SubX = 0;
                 state.SubXSpeed = 0;
@@ -544,6 +587,14 @@ public sealed class SmwPhysics
         }
 
         return steppedOntoSolid;
+    }
+
+    private static bool ShouldIgnoreWideFloorForHorizontalCollision(Rect2 playerRect, Rect2 solid)
+    {
+        return solid.Size.X >= 128.0f &&
+            solid.Size.X > solid.Size.Y * 4.0f &&
+            playerRect.Position.Y >= solid.Position.Y &&
+            playerRect.Position.Y < solid.Position.Y + solid.Size.Y;
     }
 
     private static bool TryStepUp(ref PlayerState state, Rect2 solid, Rect2 playerRect, int playerHeight)
@@ -612,7 +663,7 @@ public sealed class SmwPhysics
             }
         }
 
-        if (!TryResolveFloorSlope(probeX, bottom, state.YSpeed, slopes, 6.0f, 16.0f, out var floorY))
+        if (!TryResolveFloorSlopeFromAbove(probeX, top, bottom, state.YSpeed, slopes, 6.0f, 16.0f, out var floorY))
         {
             return;
         }

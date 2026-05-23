@@ -43,6 +43,14 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckWideFloorIsNotSideWall(physics))
+        {
+            return 1;
+        }
+        if (!CheckFarSideCorrectionIsIgnored(physics))
+        {
+            return 1;
+        }
 
         var solids = new List<Rect2> { new(0, 128, 512, 32) };
         var state = physics.MakeState(32, 64);
@@ -401,6 +409,20 @@ public static class PhysicsSmoke
             return false;
         }
 
+        if (SmwPhysics.TryResolveFloorSlopeFromAbove(
+            probeX: 64.0f,
+            top: 112.0f,
+            bottom: 128.0f,
+            ySpeed: 2.0f,
+            slopes,
+            aboveTolerance: 8.0f,
+            belowTolerance: 16.0f,
+            out _))
+        {
+            Console.Error.WriteLine("expected from-above slope probe to reject player already below slope surface");
+            return false;
+        }
+
         return true;
     }
 
@@ -486,6 +508,45 @@ public static class PhysicsSmoke
         if (state.OnGround || state.Y <= 36 || state.YSpeed <= 0)
         {
             Console.Error.WriteLine($"expected horizontal-only solid to ignore vertical floor resolution, got y={state.Y} ys={state.YSpeed} ground={state.OnGround}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckWideFloorIsNotSideWall(SmwPhysics physics)
+    {
+        var state = physics.MakeState(64, 128);
+        state.XSpeed = -0x20;
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Left = true },
+            [new Rect2(0, 128, 512, 32)],
+            [],
+            []);
+        if (state.X > 64 || state.XSpeed == 0)
+        {
+            Console.Error.WriteLine($"expected wide floor overlap to be ignored by horizontal wall resolver, got x={state.X} xs={state.XSpeed}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckFarSideCorrectionIsIgnored(SmwPhysics physics)
+    {
+        var state = physics.MakeState(80, 64);
+        state.XSpeed = -0x20;
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Left = true },
+            [new Rect2(0, 64, 512, 32)],
+            [false],
+            [false],
+            []);
+        if (state.X > 256)
+        {
+            Console.Error.WriteLine($"expected far horizontal correction to be ignored, got x={state.X}");
             return false;
         }
 

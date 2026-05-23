@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+- Added raw Map16 sampling for diagonal-pipe body and underside tiles, including recovery when Mario starts inside the sloped pipe cell and focused headless checks around the `x=896` boundary.
+- Disabled generated player entrances on the Yoshi Island 1 sloped exit pipe; only imported entrance pipe mouths can trigger the screen-exit path now.
 - Added runtime collision for diagonal-pipe body and mouth Map16 cells while preserving their outer floor/ceiling slope surfaces, so Mario can no longer walk through the sloped pipe volume and the pipe mouth has a walkable top segment.
 - Restricted diagonal-pipe ceiling slope collision to upward movement only, preventing normal walking under the sloped pipe from snapping Mario into the pipe underside and launching him across the level.
-- Tightened the diagonal pipe transition trigger to the sloped pipe mouth instead of the whole pipe body, and shifted ducking big-form rendering up with the preserved-foot hitbox so Mario no longer sinks below the ground when ducking.
+- Tightened pipe transition triggers to actual imported pipe mouths instead of broad pipe bodies, and shifted ducking big-form rendering up with the preserved-foot hitbox so Mario no longer sinks below the ground when ducking.
 - Ported the native player walking animation speed table into generated metadata and moved Godot Mario walk/run pose cycling from wall-clock time to deterministic C# frame timers, including the native turn-around pose bridge.
 - Added `--smw-input-script=/path/to/script`, a deterministic frame-count input runner for C# Godot playtest/autoplay smoke checks and future TAS compatibility work, including headless coverage for scripted diagonal-pipe entry.
 - Reused the floor-slope probe for runtime sprite actors so imported Yoshi Island 1 enemies can snap to generated slope surfaces instead of only colliding with rectangular solids.

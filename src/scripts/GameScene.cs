@@ -72,6 +72,7 @@ public partial class GameScene : Node2D
     private readonly List<Godot.Collections.Dictionary> _layer2Objects = [];
     private readonly List<SpriteSpawn> _levelSprites = [];
     private readonly List<PlacedMap16Tile> _placedTiles = [];
+    private readonly List<PlacedMap16Tile> _rawPlacedTiles = [];
     private readonly List<PipeEntrance> _pipeEntrances = [];
     private readonly List<int> _headTilePointers = [];
     private readonly List<int> _bodyTilePointers = [];
@@ -92,6 +93,8 @@ public partial class GameScene : Node2D
     private readonly List<CoinPickup> _coinPickups = [];
     private readonly Dictionary<(int X, int Y), Sprite2D> _map16TileSprites = [];
     private readonly Dictionary<(int X, int Y), PlacedMap16Tile> _map16TilesByCoord = [];
+    private readonly HashSet<(int X, int Y)> _diagonalPipeBodyCells = [];
+    private readonly HashSet<(int X, int Y)> _diagonalPipeCeilingCells = [];
 
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
@@ -178,6 +181,7 @@ public partial class GameScene : Node2D
         }
         else
         {
+            var previousState = _state;
             _physics.Step(
                 ref _state,
                 frameInput,
@@ -187,6 +191,7 @@ public partial class GameScene : Node2D
                 _slopes,
                 0,
                 (int)MathF.Round(GetLevelPixelRight()));
+            ResolveDiagonalPipeTileContacts(previousState);
         }
         UpdateCamera();
 
@@ -307,6 +312,7 @@ public partial class GameScene : Node2D
         _layer2Objects.Clear();
         _levelSprites.Clear();
         _placedTiles.Clear();
+        _rawPlacedTiles.Clear();
 
         if (!FileAccess.FileExists("res://generated/smw/manifest.json"))
         {
@@ -550,6 +556,7 @@ public partial class GameScene : Node2D
             }
 
             var candidate = new PlacedMap16Tile(x, y, map16, source);
+            _rawPlacedTiles.Add(candidate);
             finalTiles[key] = finalTiles.TryGetValue(key, out var existing)
                 ? ChooseVisibleMap16Tile(existing, candidate)
                 : candidate;
@@ -706,6 +713,8 @@ public partial class GameScene : Node2D
         _coinPickups.Clear();
         _map16TileSprites.Clear();
         _map16TilesByCoord.Clear();
+        _diagonalPipeBodyCells.Clear();
+        _diagonalPipeCeilingCells.Clear();
         _cameraGizmo?.QueueFree();
         _cameraGizmo = null;
         StartWorldRoot();
@@ -1024,6 +1033,7 @@ public partial class GameScene : Node2D
     {
         var solidTiles = new HashSet<(int X, int Y)>();
         var noStepSolidTiles = new HashSet<(int X, int Y)>();
+        var slopeTileKeys = new HashSet<(int X, int Y, int Map16, bool Ceiling)>();
         var slopeTiles = new List<PlacedMap16Tile>();
         foreach (var tile in _placedTiles)
         {
@@ -1031,7 +1041,7 @@ public partial class GameScene : Node2D
             {
                 continue;
             }
-            if (IsSlopeSurfaceTile(tile))
+            if (IsSlopeSurfaceTile(tile) && slopeTileKeys.Add(SlopeTileKey(tile)))
             {
                 slopeTiles.Add(tile);
             }
@@ -1042,6 +1052,28 @@ public partial class GameScene : Node2D
             else if (IsSolidMap16Source(tile.Source))
             {
                 solidTiles.Add((tile.X, tile.Y));
+            }
+        }
+
+        foreach (var tile in _rawPlacedTiles)
+        {
+            if (tile.Source != "right_diagonal_pipe")
+            {
+                continue;
+            }
+
+            if (IsSlopeSurfaceTile(tile) && slopeTileKeys.Add(SlopeTileKey(tile)))
+            {
+                slopeTiles.Add(tile);
+            }
+            if (IsDiagonalPipeCeilingTile(tile))
+            {
+                _diagonalPipeCeilingCells.Add((tile.X, tile.Y));
+            }
+            if (IsDiagonalPipeBodySolidTile(tile))
+            {
+                _diagonalPipeBodyCells.Add((tile.X, tile.Y));
+                noStepSolidTiles.Add((tile.X, tile.Y));
             }
         }
 
@@ -1064,6 +1096,171 @@ public partial class GameScene : Node2D
         {
             AddSlope(slope, DebugOverlays);
         }
+    }
+
+    private void ResolveDiagonalPipeTileContacts(SmwPhysics.PlayerState previousState)
+    {
+        if (_diagonalPipeBodyCells.Count == 0 && _diagonalPipeCeilingCells.Count == 0)
+        {
+            return;
+        }
+
+        ResolveDiagonalPipeCeilingIntrusion();
+        ResolveDiagonalPipeBodyIntrusion(previousState);
+        SmwPhysics.ClampHorizontalLevelBounds(ref _state, 0, (int)MathF.Round(GetLevelPixelRight()));
+    }
+
+    private bool ResolveDiagonalPipeCeilingIntrusion()
+    {
+        if (_diagonalPipeCeilingCells.Count == 0)
+        {
+            return false;
+        }
+
+        var height = SmwPhysics.PlayerHeightFor(_state);
+        var left = _state.XFloat;
+        var right = left + SmwPhysics.PlayerWidth;
+        var top = _state.YFloat;
+        var bottom = top + height;
+        var tileMinX = WorldToTileX(left) - 1;
+        var tileMaxX = WorldToTileX(right) + 1;
+        var tileMinY = WorldToTileY(top) - 1;
+        var tileMaxY = WorldToTileY(bottom) + 1;
+        var targetLeft = left;
+
+        for (var tileY = tileMinY; tileY <= tileMaxY; tileY++)
+        {
+            for (var tileX = tileMinX; tileX <= tileMaxX; tileX++)
+            {
+                if (!_diagonalPipeCeilingCells.Contains((tileX, tileY)))
+                {
+                    continue;
+                }
+
+                var x0 = tileX * Map16TileSize;
+                var x1 = x0 + Map16TileSize;
+                var y0 = tileY * Map16TileSize + LevelVisualYOffset;
+                var y1 = y0 + Map16TileSize;
+                if (right <= x0 || left >= x1 || bottom <= y0 || top >= y1)
+                {
+                    continue;
+                }
+
+                var xAtPlayerTop = x0 + (y1 - top);
+                if (xAtPlayerTop < x0 || xAtPlayerTop > x1)
+                {
+                    continue;
+                }
+
+                if (left < xAtPlayerTop && right > x0)
+                {
+                    targetLeft = MathF.Max(targetLeft, xAtPlayerTop);
+                }
+            }
+        }
+
+        var correction = targetLeft - left;
+        if (correction <= 0.01f || correction > Map16TileSize * 1.5f)
+        {
+            return false;
+        }
+
+        MovePlayerX(targetLeft);
+        return true;
+    }
+
+    private bool ResolveDiagonalPipeBodyIntrusion(SmwPhysics.PlayerState previousState)
+    {
+        if (_diagonalPipeBodyCells.Count == 0)
+        {
+            return false;
+        }
+
+        var height = SmwPhysics.PlayerHeightFor(_state);
+        var left = _state.XFloat;
+        var right = left + SmwPhysics.PlayerWidth;
+        var top = _state.YFloat;
+        var bottom = top + height;
+        var previousLeft = previousState.XFloat;
+        var previousRight = previousLeft + SmwPhysics.PlayerWidth;
+        var tileMinX = WorldToTileX(left);
+        var tileMaxX = WorldToTileX(right);
+        var tileMinY = WorldToTileY(top);
+        var tileMaxY = WorldToTileY(bottom);
+        float? bestTarget = null;
+        var bestCorrection = float.MaxValue;
+
+        for (var tileY = tileMinY; tileY <= tileMaxY; tileY++)
+        {
+            for (var tileX = tileMinX; tileX <= tileMaxX; tileX++)
+            {
+                if (!_diagonalPipeBodyCells.Contains((tileX, tileY)))
+                {
+                    continue;
+                }
+
+                var x0 = tileX * Map16TileSize;
+                var x1 = x0 + Map16TileSize;
+                var y0 = tileY * Map16TileSize + LevelVisualYOffset;
+                var y1 = y0 + Map16TileSize;
+                if (right <= x0 || left >= x1 || bottom <= y0 || top >= y1)
+                {
+                    continue;
+                }
+
+                var target = previousRight <= x0 + 1.0f || _state.XSpeed > 0
+                    ? x0 - SmwPhysics.PlayerWidth
+                    : previousLeft >= x1 - 1.0f || _state.XSpeed < 0
+                        ? x1
+                        : NearestHorizontalEscape(left, right, x0, x1);
+                var correction = MathF.Abs(target - left);
+                if (correction < bestCorrection)
+                {
+                    bestCorrection = correction;
+                    bestTarget = target;
+                }
+            }
+        }
+
+        if (bestTarget == null || bestCorrection > Map16TileSize * 1.5f)
+        {
+            return false;
+        }
+
+        MovePlayerX(bestTarget.Value);
+        return true;
+    }
+
+    private static float NearestHorizontalEscape(float playerLeft, float playerRight, float tileLeft, float tileRight)
+    {
+        var pushLeft = tileLeft - SmwPhysics.PlayerWidth;
+        var pushRight = tileRight;
+        return MathF.Abs(pushLeft - playerLeft) <= MathF.Abs(pushRight - playerLeft)
+            ? pushLeft
+            : pushRight;
+    }
+
+    private void MovePlayerX(float x)
+    {
+        _state.X = (int)MathF.Round(x);
+        _state.SubX = 0;
+        _state.XSpeed = 0;
+        _state.SubXSpeed = 0;
+    }
+
+    private static int WorldToTileX(float x)
+    {
+        return (int)MathF.Floor(x / Map16TileSize);
+    }
+
+    private static int WorldToTileY(float y)
+    {
+        return (int)MathF.Floor((y - LevelVisualYOffset) / Map16TileSize);
+    }
+
+    private static (int X, int Y, int Map16, bool Ceiling) SlopeTileKey(PlacedMap16Tile tile)
+    {
+        return (tile.X, tile.Y, tile.Map16, IsDiagonalPipeCeilingTile(tile));
     }
 
     private static List<SmwPhysics.SlopeSurface> BuildSlopeSurfaces(IReadOnlyList<PlacedMap16Tile> slopeTiles)
@@ -1631,7 +1828,6 @@ public partial class GameScene : Node2D
             }
 
             var screen = screenVariant.AsInt32();
-            AddDiagonalPipeEntrance(screen);
 
             PlacedMap16Tile? entranceTile = null;
             foreach (var tile in _placedTiles)
@@ -2045,8 +2241,9 @@ public partial class GameScene : Node2D
 
         var probeX = actor.X + SpriteActorWidth * 0.5f;
         var bottom = actor.Y + SpriteActorHeight;
-        if (SmwPhysics.TryResolveFloorSlope(
+        if (SmwPhysics.TryResolveFloorSlopeFromAbove(
             probeX,
+            actor.Y,
             bottom,
             actor.YSpeed,
             _slopes,
@@ -2965,7 +3162,7 @@ public partial class GameScene : Node2D
     private void PrintRuntimeState()
     {
         var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
-        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} coin_pickups={_coinPickups.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} pipe_cells={_diagonalPipeBodyCells.Count}/{_diagonalPipeCeilingCells.Count} coin_pickups={_coinPickups.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)
