@@ -106,6 +106,7 @@ public partial class GameScene : Node2D
     private readonly List<Rect2> _goalTapeTriggers = [];
     private readonly List<CoinPickup> _coinPickups = [];
     private readonly Dictionary<(int X, int Y), PlacedMap16Tile> _map16TilesByCoord = [];
+    private readonly HashSet<(int X, int Y)> _diagonalPipeFloorCells = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeBodyCells = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeCeilingCells = [];
 
@@ -1019,6 +1020,7 @@ public partial class GameScene : Node2D
         _goalTapeTriggers.Clear();
         _coinPickups.Clear();
         _map16TilesByCoord.Clear();
+        _diagonalPipeFloorCells.Clear();
         _diagonalPipeBodyCells.Clear();
         _diagonalPipeCeilingCells.Clear();
         _cameraGizmo?.QueueFree();
@@ -1769,6 +1771,7 @@ public partial class GameScene : Node2D
         _solidStepUpEnabled.Clear();
         _solidVerticalEnabled.Clear();
         _slopes.Clear();
+        _diagonalPipeFloorCells.Clear();
         _diagonalPipeBodyCells.Clear();
         _diagonalPipeCeilingCells.Clear();
 
@@ -1801,6 +1804,10 @@ public partial class GameScene : Node2D
             if (IsSlopeSurfaceTile(tile) && slopeTileKeys.Add(SlopeTileKey(tile)))
             {
                 slopeTiles.Add(tile);
+            }
+            if (IsDiagonalPipeFloorTile(tile))
+            {
+                _diagonalPipeFloorCells.Add((tile.X, tile.Y));
             }
             if (IsDiagonalPipeCeilingTile(tile))
             {
@@ -1883,7 +1890,9 @@ public partial class GameScene : Node2D
 
     private void ResolveDiagonalPipeTileContacts(SmwPhysics.PlayerState previousState)
     {
-        if (_diagonalPipeBodyCells.Count == 0 && _diagonalPipeCeilingCells.Count == 0)
+        if (_diagonalPipeFloorCells.Count == 0 &&
+            _diagonalPipeBodyCells.Count == 0 &&
+            _diagonalPipeCeilingCells.Count == 0)
         {
             return;
         }
@@ -1955,7 +1964,7 @@ public partial class GameScene : Node2D
 
     private bool ResolveDiagonalPipeBodyIntrusion(SmwPhysics.PlayerState previousState)
     {
-        if (_diagonalPipeBodyCells.Count == 0)
+        if (_diagonalPipeBodyCells.Count == 0 && _diagonalPipeFloorCells.Count == 0)
         {
             return false;
         }
@@ -1978,7 +1987,10 @@ public partial class GameScene : Node2D
         {
             for (var tileX = tileMinX; tileX <= tileMaxX; tileX++)
             {
-                if (!_diagonalPipeBodyCells.Contains((tileX, tileY)))
+                var tileKey = (tileX, tileY);
+                var isFullBodyCell = _diagonalPipeBodyCells.Contains(tileKey);
+                var isFloorCell = _diagonalPipeFloorCells.Contains(tileKey);
+                if (!isFullBodyCell && !isFloorCell)
                 {
                     continue;
                 }
@@ -1988,6 +2000,10 @@ public partial class GameScene : Node2D
                 var y0 = tileY * Map16TileSize + LevelVisualYOffset;
                 var y1 = y0 + Map16TileSize;
                 if (right <= x0 || left >= x1 || bottom <= y0 || top >= y1)
+                {
+                    continue;
+                }
+                if (isFloorCell && !PlayerIsInsideDiagonalPipeFloorCell(left, right, top, x0, y1))
                 {
                     continue;
                 }
@@ -2013,6 +2029,18 @@ public partial class GameScene : Node2D
 
         MovePlayerX(bestTarget.Value);
         return true;
+    }
+
+    private static bool PlayerIsInsideDiagonalPipeFloorCell(
+        float playerLeft,
+        float playerRight,
+        float playerTop,
+        float tileLeft,
+        float tileBottom)
+    {
+        var probeX = Math.Clamp((playerLeft + playerRight) * 0.5f, tileLeft, tileLeft + Map16TileSize);
+        var surfaceY = tileBottom - (probeX - tileLeft);
+        return playerTop > surfaceY + 1.0f;
     }
 
     private static float NearestHorizontalEscape(float playerLeft, float playerRight, float tileLeft, float tileRight)
@@ -2227,7 +2255,7 @@ public partial class GameScene : Node2D
         return tile.Source switch
         {
             "left_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AA),
-            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C5 or 0x01C7 or 0x01EB,
+            "right_diagonal_pipe" => IsDiagonalPipeFloorTile(tile),
             _ => false,
         };
     }
@@ -2236,6 +2264,12 @@ public partial class GameScene : Node2D
     {
         return tile.Source == "right_diagonal_pipe" &&
             tile.Map16 is 0x01C6 or 0x01EF or 0x015C;
+    }
+
+    private static bool IsDiagonalPipeFloorTile(PlacedMap16Tile tile)
+    {
+        return tile.Source == "right_diagonal_pipe" &&
+            tile.Map16 is 0x01C4 or 0x01C5 or 0x01C7 or 0x01EB;
     }
 
     private static bool IsSlopeDownRightTile(PlacedMap16Tile tile)
@@ -2380,8 +2414,7 @@ public partial class GameScene : Node2D
 
         return tile.Source switch
         {
-            "right_diagonal_pipe" => tile.Map16 is 0x01C4 or 0x01C5 or 0x01C7 or 0x01EB ||
-                IsDiagonalPipeCeilingTile(tile),
+            "right_diagonal_pipe" => IsDiagonalPipeFloorTile(tile) || IsDiagonalPipeCeilingTile(tile),
             "left_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AA),
             "right_diagonal_ledge_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AF),
             "steep_right_slope_edge" => MatchesAdjustedSlopeTile(tile.Map16, 0x01AF),
@@ -4329,7 +4362,7 @@ public partial class GameScene : Node2D
     private void PrintRuntimeState()
     {
         var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
-        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} pipe_cells={_diagonalPipeBodyCells.Count}/{_diagonalPipeCeilingCells.Count} coin_pickups={_coinPickups.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
+        GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} pipe_cells={_diagonalPipeFloorCells.Count}/{_diagonalPipeBodyCells.Count}/{_diagonalPipeCeilingCells.Count} coin_pickups={_coinPickups.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
     }
 
     public void DebugEnterLevel(string levelId)

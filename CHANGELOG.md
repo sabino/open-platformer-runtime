@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Split right-diagonal pipe collision bookkeeping into floor/body/ceiling cell sets, letting the temporary pipe solver reject embedded positions against floor-slope pipe cells without turning the slope itself back into a full rectangular wall.
 - Added RCON `physics`/`phys` and `pmeter` controls plus richer HUD/trace/state fields for P-meter, spin-jump, running-takeoff, jump-hold, facing, subpixels, and native jump-table lookup during unattended playtest debugging.
 - Synced left diagonal ledge bottom-row projection with the current Lunar Magic Universal renderer, removing a stale extra diagonal-line tile from the importer.
 - Snapped Mario's rendered OAM node to the native integer player position while preserving subpixel physics internally, reducing shimmer/stray edge pixels during movement.
