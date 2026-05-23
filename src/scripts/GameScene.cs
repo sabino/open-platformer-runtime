@@ -95,6 +95,9 @@ public partial class GameScene : Node2D
     private bool _pipeTransitionLatch;
     private int _playerHurtCooldown;
     private bool _courseClear;
+    private int _entranceMotionFrames;
+    private int _entranceMotionAction;
+    private Vector2 _entranceMotionPixelsPerFrame;
 
     public bool DebugOverlays { get; set; }
 
@@ -128,16 +131,24 @@ public partial class GameScene : Node2D
             Run = Input.IsActionPressed("smw_run"),
         };
 
-        if (_state.OnGround && frameInput.SpinPressed)
+        var entranceLocked = _entranceMotionFrames > 0;
+        if (!entranceLocked && _state.OnGround && frameInput.SpinPressed)
         {
             _audio?.PlaySpinJump();
         }
-        else if (_state.OnGround && frameInput.JumpPressed)
+        else if (!entranceLocked && _state.OnGround && frameInput.JumpPressed)
         {
             _audio?.PlayJump();
         }
 
-        _physics.Step(ref _state, frameInput, _solids, _slopes, 0, (int)MathF.Round(GetLevelPixelRight()));
+        if (entranceLocked)
+        {
+            ApplyEntranceMotion();
+        }
+        else
+        {
+            _physics.Step(ref _state, frameInput, _solids, _slopes, 0, (int)MathF.Round(GetLevelPixelRight()));
+        }
         UpdateCamera();
 
         if (_player != null)
@@ -150,7 +161,10 @@ public partial class GameScene : Node2D
         CheckGoalTape();
         UpdateHud();
         UpdateDebugGizmos();
-        CheckPipeDebug();
+        if (!entranceLocked)
+        {
+            CheckPipeDebug();
+        }
     }
 
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
@@ -2034,11 +2048,97 @@ public partial class GameScene : Node2D
             (int)MathF.Round(entrance.Position.X),
             (int)MathF.Round(entrance.Position.Y),
             DefaultPlayerPowerup);
+        ApplyEntranceAction(ref state, entrance);
         GD.Print(
             $"smw-runtime: entrance level={entrance.LevelId} source={entrance.SourceId:X3} " +
             $"secondary={(entrance.Secondary ? 1 : 0)} settings={entrance.EntranceSettings} " +
-            $"spawn={state.X},{state.Y}");
+            $"spawn={state.X},{state.Y} facing={state.Facing}");
         return state;
+    }
+
+    private void ApplyEntranceAction(ref SmwPhysics.PlayerState state, LevelEntrance entrance)
+    {
+        _entranceMotionFrames = 0;
+        _entranceMotionAction = entrance.EntranceSettings;
+        _entranceMotionPixelsPerFrame = Vector2.Zero;
+        state.Facing = EntranceFacing(entrance.EntranceSettings);
+        state.SpinJump = false;
+        state.OnGround = false;
+        state.XSpeed = 0;
+        state.YSpeed = 0;
+        state.SubXSpeed = 0;
+        state.SubYSpeed = 0;
+
+        switch (entrance.EntranceSettings)
+        {
+            case 1:
+                StartEntranceMotion(entrance.EntranceSettings, 28, new Vector2(-0.5f, 0.0f), ref state);
+                break;
+            case 2:
+                StartEntranceMotion(entrance.EntranceSettings, 28, new Vector2(0.5f, 0.0f), ref state);
+                break;
+            case 3:
+                StartEntranceMotion(entrance.EntranceSettings, 28, new Vector2(0.0f, -1.0f), ref state);
+                break;
+            case 4:
+                StartEntranceMotion(entrance.EntranceSettings, 28, new Vector2(0.0f, 1.0f), ref state);
+                break;
+            case 6:
+                state.X |= 8;
+                state.Y |= 2;
+                StartEntranceMotion(entrance.EntranceSettings, 32, new Vector2(4.0f, -4.0f), ref state);
+                break;
+        }
+    }
+
+    private void StartEntranceMotion(int action, int frames, Vector2 pixelsPerFrame, ref SmwPhysics.PlayerState state)
+    {
+        _entranceMotionAction = action;
+        _entranceMotionFrames = frames;
+        _entranceMotionPixelsPerFrame = pixelsPerFrame;
+        state.XSpeed = (int)MathF.Round(pixelsPerFrame.X * 16.0f);
+        state.YSpeed = (int)MathF.Round(pixelsPerFrame.Y * 16.0f);
+        GD.Print($"smw-runtime: entrance_motion action={action} frames={frames} dx={pixelsPerFrame.X:0.00} dy={pixelsPerFrame.Y:0.00}");
+    }
+
+    private static int EntranceFacing(int entranceSettings)
+    {
+        return entranceSettings == 1 ? 0 : 1;
+    }
+
+    private void ApplyEntranceMotion()
+    {
+        AddSubpixelDelta(ref _state.X, ref _state.SubX, _entranceMotionPixelsPerFrame.X);
+        AddSubpixelDelta(ref _state.Y, ref _state.SubY, _entranceMotionPixelsPerFrame.Y);
+        _state.XSpeed = (int)MathF.Round(_entranceMotionPixelsPerFrame.X * 16.0f);
+        _state.YSpeed = (int)MathF.Round(_entranceMotionPixelsPerFrame.Y * 16.0f);
+        _state.OnGround = false;
+
+        _entranceMotionFrames--;
+        if (_entranceMotionFrames <= 0)
+        {
+            _entranceMotionFrames = 0;
+            _entranceMotionPixelsPerFrame = Vector2.Zero;
+            _state.XSpeed = 0;
+            _state.YSpeed = 0;
+            _state.SubXSpeed = 0;
+            _state.SubYSpeed = 0;
+            GD.Print($"smw-runtime: entrance_motion_done action={_entranceMotionAction} x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
+        }
+    }
+
+    private static void AddSubpixelDelta(ref int pixel, ref int subpixel, float deltaPixels)
+    {
+        var total = pixel * 256 + subpixel + (int)MathF.Round(deltaPixels * 256.0f);
+        pixel = MathDivFloor(total, 256);
+        subpixel = total - pixel * 256;
+    }
+
+    private static int MathDivFloor(int value, int divisor)
+    {
+        var quotient = value / divisor;
+        var remainder = value % divisor;
+        return remainder != 0 && ((remainder < 0) != (divisor < 0)) ? quotient - 1 : quotient;
     }
 
     private SmwPhysics.PlayerState MakeFallbackInitialPlayerState()
