@@ -367,6 +367,17 @@ for _ in $(seq 1 80); do
 done
 grep -q "smw-debug-trace: tag=rcon_probe i=2/2" "$LOG_FILE"
 grep -q "smw-debug-state: tag=rcon_probe_done" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh trace_oam 2 right run tag=rcon_oam_probe | tee "$RCON_LOG"
+grep -q "ok trace_queued=2" "$RCON_LOG"
+for _ in $(seq 1 80); do
+  if grep -q "smw-debug-state: tag=rcon_oam_probe_done" "$LOG_FILE"; then
+    break
+  fi
+  sleep 0.05
+done
+grep -q "smw-debug-trace: tag=rcon_oam_probe i=2/2" "$LOG_FILE"
+grep -q "smw-debug-player-oam: tag=rcon_oam_probe_01 metadata=1" "$LOG_FILE"
+grep -q "smw-debug-state: tag=rcon_oam_probe_done" "$LOG_FILE"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh powerup small | tee "$RCON_LOG"
 grep -q "pow=0" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 921 208 | tee "$RCON_LOG"

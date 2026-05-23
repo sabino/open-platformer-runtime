@@ -190,6 +190,7 @@ public partial class GameScene : Node2D
     private int _debugTraceTotalFrames;
     private int _debugTraceFrame;
     private string _debugTraceTag = "trace";
+    private bool _debugTraceOam;
     private bool _debugActorsEnabled = true;
     private bool _debugActorVisualsEnabled = true;
     private bool _debugInvincible;
@@ -4851,7 +4852,12 @@ public partial class GameScene : Node2D
                 ClearDebugHeldInput();
                 return "ok hold input=-------";
             case "trace":
-                QueueDebugTrace(parts);
+                QueueDebugTrace(parts, includeOam: false);
+                return $"ok trace_queued={_debugTraceFrames}";
+            case "trace_oam":
+            case "traceoam":
+            case "oam_trace":
+                QueueDebugTrace(parts, includeOam: true);
                 return $"ok trace_queued={_debugTraceFrames}";
             case "spawn":
             case "pos":
@@ -5030,7 +5036,7 @@ public partial class GameScene : Node2D
         GD.Print("smw-debug: hold input=-------");
     }
 
-    private void QueueDebugTrace(string[] parts)
+    private void QueueDebugTrace(string[] parts, bool includeOam)
     {
         RequirePartCount(parts, 2);
         var frames = Math.Max(1, int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture));
@@ -5051,6 +5057,7 @@ public partial class GameScene : Node2D
         _debugTraceTotalFrames = frames;
         _debugTraceFrame = 0;
         _debugTraceTag = string.IsNullOrWhiteSpace(tag) ? "trace" : tag;
+        _debugTraceOam = includeOam;
         _debugCommandInput = input;
         _debugCommandInputFrames = frames;
         _debugCommandInputFrame = 0;
@@ -5060,7 +5067,7 @@ public partial class GameScene : Node2D
         }
 
         GD.Print(
-            $"smw-debug: trace queued={frames} tag={_debugTraceTag} input={DescribeFrameInput(input)}");
+            $"smw-debug: trace queued={frames} tag={_debugTraceTag} input={DescribeFrameInput(input)} oam={(includeOam ? 1 : 0)}");
     }
 
     private void PrintQueuedDebugTrace(SmwPhysics.FrameInput frameInput)
@@ -5081,9 +5088,15 @@ public partial class GameScene : Node2D
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
             $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
 
+        if (_debugTraceOam)
+        {
+            GD.Print(BuildDebugPlayerOam($"{_debugTraceTag}_{_debugTraceFrame:00}"));
+        }
+
         _debugTraceFrames--;
         if (_debugTraceFrames <= 0)
         {
+            _debugTraceOam = false;
             PrintDebugState($"{_debugTraceTag}_done");
         }
     }

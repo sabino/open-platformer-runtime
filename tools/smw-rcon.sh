@@ -42,10 +42,17 @@ with socket.create_connection((host, port), timeout=2.0) as sock:
         pass
 
     sock.sendall(command.encode("utf-8"))
-    try:
-        response = sock.recv(4096)
-        if response:
-            sys.stdout.write(response.decode("utf-8", "replace"))
-    except socket.timeout:
-        pass
+    saw_response = False
+    while True:
+        sock.settimeout(2.0 if not saw_response else 0.02)
+        try:
+            response = sock.recv(4096)
+        except socket.timeout:
+            break
+        if not response:
+            break
+        saw_response = True
+        sys.stdout.write(response.decode("utf-8", "replace"))
+        if len(response) < 4096:
+            break
 PY
