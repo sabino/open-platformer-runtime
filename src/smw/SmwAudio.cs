@@ -9,7 +9,10 @@ public partial class SmwAudio : Node
     private const int FramesPerSecond = 60;
     private const int InstrumentTable = 0x5570;
     private const int MaxVoices = 10;
-    private const int MaxFramesPerAudioProcess = 512;
+    private const float GeneratorBufferLengthSeconds = 0.25f;
+    private const int GeneratorBufferFrames = (int)(SampleRate * GeneratorBufferLengthSeconds);
+    private const int TargetQueuedAudioFrames = 1536;
+    private const int MaxFramesPerAudioProcess = 2048;
     private readonly Dictionary<int, DecodedSample> _samples = [];
     private readonly List<Voice> _voices = [];
     private byte[] _spcRam = new byte[0x10000];
@@ -26,6 +29,8 @@ public partial class SmwAudio : Node
     private int _debugMixFrames;
     private int _debugMixCalls;
     private double _debugMixMilliseconds;
+    private int _debugLastMixFrames;
+    private double _debugLastMixMilliseconds;
 
     public static readonly int[] ProbeSampleIds = [9, 14, 16];
 
@@ -122,10 +127,12 @@ public partial class SmwAudio : Node
     public string DebugStatus()
     {
         var framesAvailable = _playback?.GetFramesAvailable() ?? -1;
+        var averageMixMilliseconds = _debugMixCalls > 0 ? _debugMixMilliseconds / _debugMixCalls : 0.0;
         return $"loaded={(_loaded ? 1 : 0)} samples={LoadedProbeSampleCount} voices={_voices.Count} " +
             $"music={(_musicPlaying ? 1 : 0)} music_frame={_musicFrame} events={_musicPattern.Count} " +
             $"loop_frames={_musicLoopFrames} frames_available={framesAvailable} " +
-            $"mix_frames={_debugMixFrames} mix_calls={_debugMixCalls} mix_ms={_debugMixMilliseconds:0.000}";
+            $"mix_frames={_debugMixFrames} mix_calls={_debugMixCalls} mix_ms={_debugMixMilliseconds:0.000} " +
+            $"mix_last_frames={_debugLastMixFrames} mix_last_ms={_debugLastMixMilliseconds:0.000} mix_avg_ms={averageMixMilliseconds:0.000}";
     }
 
     private void EnsureLoaded()
@@ -161,7 +168,7 @@ public partial class SmwAudio : Node
         {
             MixRateMode = AudioStreamGenerator.AudioStreamGeneratorMixRate.Custom,
             MixRate = SampleRate,
-            BufferLength = 0.25f,
+            BufferLength = GeneratorBufferLengthSeconds,
         };
         _player = new AudioStreamPlayer
         {
@@ -435,7 +442,14 @@ public partial class SmwAudio : Node
             return;
         }
 
-        var frameCount = Math.Min(framesAvailable, MaxFramesPerAudioProcess);
+        var targetFreeFrames = Math.Max(0, GeneratorBufferFrames - TargetQueuedAudioFrames);
+        var framesNeeded = Math.Max(0, framesAvailable - targetFreeFrames);
+        if (framesNeeded <= 0)
+        {
+            return;
+        }
+
+        var frameCount = Math.Min(framesNeeded, MaxFramesPerAudioProcess);
         if (_mixBuffer.Length != MaxFramesPerAudioProcess)
         {
             _mixBuffer = new Vector2[MaxFramesPerAudioProcess];
@@ -461,7 +475,9 @@ public partial class SmwAudio : Node
 
         _debugMixFrames += frameCount;
         _debugMixCalls++;
-        _debugMixMilliseconds += (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
+        _debugLastMixFrames = frameCount;
+        _debugLastMixMilliseconds = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
+        _debugMixMilliseconds += _debugLastMixMilliseconds;
     }
 
     private void AddVoice(Voice voice)

@@ -1546,6 +1546,13 @@ public partial class GameScene : Node2D
             0x83 => WingOamTiles,
             0xDA or 0xDB or 0xDC or 0xDD or 0xDF => ShellOamTilesFor(spriteId),
             0x4F or 0x50 => JumpingPiranhaOamTiles,
+            0x4B => PipeLakituOamTiles,
+            0x52 => MovingLedgeHoleOamTiles,
+            0x7B => GoalTapeOamTiles,
+            0x87 => LakituCloudOamTiles,
+            0x8F => ScalePlatformOamTiles,
+            0x90 => GreenGasBubbleOamTiles,
+            0x99 => VolcanoLotusOamTiles,
             _ => [],
         };
     }
@@ -1608,6 +1615,69 @@ public partial class GameScene : Node2D
         new(16, -9, 0x83, 0x4A, 1, false),
         new(8, -1, 0xC4, 0x0A, 1, false),
         new(16, -1, 0xC4, 0x4A, 1, false),
+    ];
+
+    private static readonly SpriteOamTile[] PipeLakituOamTiles =
+    [
+        new(0, 0, 0xEC, 0x5B, 3, true),
+        new(0, 16, 0xEE, 0x5B, 3, true),
+    ];
+
+    private static readonly SpriteOamTile[] MovingLedgeHoleOamTiles =
+    [
+        new(0, 0, 0xEB, 0x71, 3, true),
+        new(8, 0, 0xEA, 0x31, 3, true),
+        new(24, 0, 0xEA, 0x31, 3, true),
+        new(32, 0, 0xEB, 0x31, 3, true),
+    ];
+
+    private static readonly SpriteOamTile[] GoalTapeOamTiles =
+    [
+        new(-8, 8, 0xD4, 0x32, 1, false),
+        new(0, 8, 0xD5, 0x32, 1, false),
+        new(8, 8, 0xD5, 0x32, 1, false),
+    ];
+
+    private static readonly SpriteOamTile[] LakituCloudOamTiles =
+    [
+        new(-4, 0, 0x60, 0x00, 1, true),
+        new(4, -1, 0x60, 0x00, 1, true),
+        new(-2, 3, 0x60, 0x00, 1, true),
+        new(2, 4, 0x60, 0x00, 1, true),
+    ];
+
+    private static readonly SpriteOamTile[] ScalePlatformOamTiles =
+    [
+        new(-8, -1, 0x80, 0x0B, 3, true),
+        new(8, -1, 0x80, 0x4B, 3, true),
+    ];
+
+    private static readonly SpriteOamTile[] GreenGasBubbleOamTiles =
+    [
+        new(0, 2, 0x80, 0x3B, 3, true),
+        new(16, 2, 0x82, 0x3B, 3, true),
+        new(32, 2, 0x84, 0x3B, 3, true),
+        new(48, 2, 0x86, 0x3B, 3, true),
+        new(0, 18, 0xA0, 0x3B, 3, true),
+        new(16, 18, 0xA2, 0x3B, 3, true),
+        new(32, 18, 0xA4, 0x3B, 3, true),
+        new(48, 18, 0xA6, 0x3B, 3, true),
+        new(0, 30, 0xA0, 0xBB, 3, true),
+        new(16, 30, 0xA2, 0xBB, 3, true),
+        new(32, 30, 0xA4, 0xBB, 3, true),
+        new(48, 30, 0xA6, 0xBB, 3, true),
+        new(0, 46, 0x80, 0xBB, 3, true),
+        new(16, 46, 0x82, 0xBB, 3, true),
+        new(32, 46, 0x84, 0xBB, 3, true),
+        new(48, 46, 0x86, 0xBB, 3, true),
+    ];
+
+    private static readonly SpriteOamTile[] VolcanoLotusOamTiles =
+    [
+        new(-8, -1, 0xCE, 0x0B, 3, true),
+        new(8, -1, 0xCE, 0x4B, 3, true),
+        new(0, -1, 0x8E, 0x39, 3, false),
+        new(8, -1, 0x8F, 0x39, 3, false),
     ];
 
     private static IReadOnlyList<SpriteOamTile> ShellOamTilesFor(int spriteId)
