@@ -121,6 +121,7 @@ spawn 440 288 big
 actors on
 ground on
 step 24
+actors_near 256
 EOF
 cat >"$BREAK_COMMAND_FILE" <<'EOF'
 pause
@@ -459,7 +460,7 @@ grep -q "stomp_chain=1" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 32 --smw-test-autostart --smw-debug-command-file="$BANZAI_UNDER_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$BANZAI_UNDER_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "near=9F:0:"
+grep -q "smw-debug-actors-near: radius=256.00 .*9F:state=0:.*active=1" "$LOG_FILE"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "pow=1"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "hurt=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=none"

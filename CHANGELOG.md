@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Tuned actors-on playability probes: debug autoplay now slows down and suppresses periodic jump pulses while interactive actors are in the lookahead window, and Banzai Bill's current gameplay hitbox was shifted upward so low jumps and underpasses better match the visible sprite. Actors-on first-level traversal still needs smarter enemy handling.
 - Tightened actors-on first-level contact behavior: stomp checks now use the previous player rectangle as a frame-crossing test, autoplay only jumps toward stompable threats and ducks/runs under overhead non-stompable actors, and Banzai Bill uses a smaller gameplay hitbox so ground-level Mario can pass beneath it.
 - Strengthened the deterministic autoplay regression from an 80-frame smoke probe into an actor-off end-to-end Yoshi Island 1 traversal that reaches the imported goal tape and verifies the course-clear walkout state.
 - Added native-style camera-window activation for runtime sprite actors: imported actors now skip motion, player contact, and fireball contact while outside the expanded camera wake region, spawned item actors stay always-active, and debug state/actor probes expose `actors_active`/`active` for regression checks.
