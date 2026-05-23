@@ -407,6 +407,10 @@ SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh collision 2064 304 48 | tee "
 grep -q "smw-debug-collision: point=2064.00,304.00 radius=48.00" "$RCON_LOG"
 grep -q "solids=" "$RCON_LOG"
 grep -q "slopes=" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh slope_probe 2064 304 16 -3 tag=rcon_pipe_slope | tee "$RCON_LOG"
+grep -q "smw-debug-slope-probe: tag=rcon_pipe_slope" "$RCON_LOG"
+grep -q "probe=center" "$RCON_LOG"
+grep -q "kind=" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh pipe 2064 304 48 | tee "$RCON_LOG"
 grep -q "smw-debug-pipe: point=2064.00,304.00 radius=48.00" "$RCON_LOG"
 grep -q "floor=" "$RCON_LOG"
@@ -483,6 +487,16 @@ grep -q "smw-debug-trace: tag=rcon_slope_jump i=1/4" "$LOG_FILE"
 grep -q "ys=-77" "$LOG_FILE"
 grep -q "g=0" "$LOG_FILE"
 grep -q "smw-debug-state: tag=rcon_slope_jump_done" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh trace_sensors 2 right tag=rcon_sensor_trace | tee "$RCON_LOG"
+grep -q "ok trace_queued=2" "$RCON_LOG"
+for _ in $(seq 1 80); do
+  if grep -q "smw-debug-slope-probe: tag=rcon_sensor_trace_01" "$LOG_FILE"; then
+    break
+  fi
+  sleep 0.05
+done
+grep -q "smw-debug-sensors: tag=rcon_sensor_trace_01" "$LOG_FILE"
+grep -q "smw-debug-slope-probe: tag=rcon_sensor_trace_01" "$LOG_FILE"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh powerup small | tee "$RCON_LOG"
 grep -q "pow=0" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 32 288 | tee "$RCON_LOG"

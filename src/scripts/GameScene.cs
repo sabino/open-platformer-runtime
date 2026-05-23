@@ -193,6 +193,7 @@ public partial class GameScene : Node2D
     private int _debugTraceFrame;
     private string _debugTraceTag = "trace";
     private bool _debugTraceOam;
+    private bool _debugTraceSensors;
     private bool _debugActorsEnabled = true;
     private bool _debugActorVisualsEnabled = true;
     private bool _debugInvincible;
@@ -5031,12 +5032,21 @@ public partial class GameScene : Node2D
                 ClearDebugHeldInput();
                 return "ok hold input=-------";
             case "trace":
-                QueueDebugTrace(parts, includeOam: false);
+                QueueDebugTrace(parts, includeOam: false, includeSensors: false);
                 return $"ok trace_queued={_debugTraceFrames}";
             case "trace_oam":
             case "traceoam":
             case "oam_trace":
-                QueueDebugTrace(parts, includeOam: true);
+                QueueDebugTrace(parts, includeOam: true, includeSensors: false);
+                return $"ok trace_queued={_debugTraceFrames}";
+            case "trace_sensors":
+            case "tracesensors":
+            case "sensor_trace":
+                QueueDebugTrace(parts, includeOam: false, includeSensors: true);
+                return $"ok trace_queued={_debugTraceFrames}";
+            case "trace_full":
+            case "full_trace":
+                QueueDebugTrace(parts, includeOam: true, includeSensors: true);
                 return $"ok trace_queued={_debugTraceFrames}";
             case "spawn":
             case "pos":
@@ -5149,6 +5159,10 @@ public partial class GameScene : Node2D
             case "collisions":
             case "collide":
                 return PrintDebugCollision(parts);
+            case "slope_probe":
+            case "slopes_probe":
+            case "slopes_at":
+                return PrintDebugSlopeProbe(parts);
             case "pipe":
             case "pipe_probe":
             case "pipe_cells":
@@ -5224,7 +5238,7 @@ public partial class GameScene : Node2D
         GD.Print("smw-debug: hold input=-------");
     }
 
-    private void QueueDebugTrace(string[] parts, bool includeOam)
+    private void QueueDebugTrace(string[] parts, bool includeOam, bool includeSensors)
     {
         RequirePartCount(parts, 2);
         var frames = Math.Max(1, int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture));
@@ -5246,6 +5260,7 @@ public partial class GameScene : Node2D
         _debugTraceFrame = 0;
         _debugTraceTag = string.IsNullOrWhiteSpace(tag) ? "trace" : tag;
         _debugTraceOam = includeOam;
+        _debugTraceSensors = includeSensors;
         _debugCommandInput = input;
         _debugCommandInputFrames = frames;
         _debugCommandInputFrame = 0;
@@ -5255,7 +5270,7 @@ public partial class GameScene : Node2D
         }
 
         GD.Print(
-            $"smw-debug: trace queued={frames} tag={_debugTraceTag} input={DescribeFrameInput(input)} oam={(includeOam ? 1 : 0)}");
+            $"smw-debug: trace queued={frames} tag={_debugTraceTag} input={DescribeFrameInput(input)} oam={(includeOam ? 1 : 0)} sensors={(includeSensors ? 1 : 0)}");
     }
 
     private void PrintQueuedDebugTrace(SmwPhysics.FrameInput frameInput)
@@ -5282,10 +5297,17 @@ public partial class GameScene : Node2D
             GD.Print(BuildDebugPlayerOam($"{_debugTraceTag}_{_debugTraceFrame:00}"));
         }
 
+        if (_debugTraceSensors)
+        {
+            GD.Print(BuildDebugPlayerSensors($"{_debugTraceTag}_{_debugTraceFrame:00}"));
+            GD.Print(BuildDebugSlopeProbe($"{_debugTraceTag}_{_debugTraceFrame:00}", _state.XFloat, _state.YFloat, SmwPhysics.PlayerHeightFor(_state), _state.YSpeed));
+        }
+
         _debugTraceFrames--;
         if (_debugTraceFrames <= 0)
         {
             _debugTraceOam = false;
+            _debugTraceSensors = false;
             PrintDebugState($"{_debugTraceTag}_done");
         }
     }
@@ -5374,6 +5396,13 @@ public partial class GameScene : Node2D
 
     private string PrintDebugPlayerSensors(string tag)
     {
+        var line = BuildDebugPlayerSensors(tag);
+        GD.Print(line);
+        return line;
+    }
+
+    private string BuildDebugPlayerSensors(string tag)
+    {
         var height = SmwPhysics.PlayerHeightFor(_state);
         var left = _state.XFloat;
         var right = left + SmwPhysics.PlayerWidth;
@@ -5405,7 +5434,6 @@ public partial class GameScene : Node2D
             $"side_l={DescribeSensorPoint(left, middleY)} side_r={DescribeSensorPoint(right - 1.0f, middleY)} " +
             $"foot_l={DescribeSensorPoint(footLeftX, footY)} foot_c={DescribeSensorPoint(centerX, footY)} foot_r={DescribeSensorPoint(footRightX, footY)} " +
             $"floor_slope={slope}";
-        GD.Print(line);
         return line;
     }
 
@@ -5439,6 +5467,131 @@ public partial class GameScene : Node2D
             $"{DescribeSolidsNear(point, radius)} {DescribeSlopesNear(point, radius)}";
         GD.Print(line);
         return line;
+    }
+
+    private string PrintDebugSlopeProbe(string[] parts)
+    {
+        var tag = "manual";
+        var x = _state.XFloat;
+        var y = _state.YFloat;
+        var height = (float)SmwPhysics.PlayerHeightFor(_state);
+        var ySpeed = (float)_state.YSpeed;
+
+        for (var i = 1; i < parts.Length; i++)
+        {
+            if (parts[i].StartsWith("tag=", StringComparison.OrdinalIgnoreCase))
+            {
+                tag = parts[i][4..];
+            }
+        }
+
+        if (parts.Length >= 3 &&
+            float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedX) &&
+            float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedY))
+        {
+            x = parsedX;
+            y = parsedY;
+            if (parts.Length >= 4 &&
+                float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedHeight))
+            {
+                height = parsedHeight;
+            }
+            if (parts.Length >= 5 &&
+                float.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedYSpeed))
+            {
+                ySpeed = parsedYSpeed;
+            }
+        }
+
+        var line = BuildDebugSlopeProbe(tag, x, y, height, ySpeed);
+        GD.Print(line);
+        return line;
+    }
+
+    private string BuildDebugSlopeProbe(string tag, float x, float y, float height, float ySpeed)
+    {
+        var left = x;
+        var right = x + SmwPhysics.PlayerWidth;
+        var top = y;
+        var bottom = y + height;
+        var leftProbe = left + 2.0f;
+        var centerProbe = left + SmwPhysics.PlayerWidth * 0.5f;
+        var rightProbe = right - 2.0f;
+        var line =
+            $"smw-debug-slope-probe: tag={tag} frame={_debugFrameCounter} " +
+            $"x={x:0.00} y={y:0.00} h={height:0.00} ys={ySpeed:0.00} top={top:0.00} bottom={bottom:0.00} " +
+            $"{DescribeSlopeProbe("left", leftProbe, top, bottom, ySpeed)} " +
+            $"{DescribeSlopeProbe("center", centerProbe, top, bottom, ySpeed)} " +
+            $"{DescribeSlopeProbe("right", rightProbe, top, bottom, ySpeed)}";
+        return line;
+    }
+
+    private string DescribeSlopeProbe(string label, float probeX, float top, float bottom, float ySpeed)
+    {
+        var hit = SmwPhysics.TryResolveFloorSlope(
+            probeX,
+            bottom,
+            (int)MathF.Round(ySpeed),
+            _slopes,
+            aboveTolerance: 6.0f,
+            belowTolerance: 16.0f,
+            out var hitY);
+        var fromAbove = SmwPhysics.TryResolveFloorSlopeFromAbove(
+            probeX,
+            top,
+            bottom,
+            bottom,
+            (int)MathF.Round(ySpeed),
+            _slopes,
+            aboveTolerance: 6.0f,
+            belowTolerance: 16.0f,
+            out var fromAboveY);
+        return
+            $"probe={label}:{probeX:0.00}:tile={DescribeSensorPoint(probeX, bottom)}:" +
+            $"hit={(hit ? 1 : 0)}:{(hit ? hitY.ToString("0.00", CultureInfo.InvariantCulture) : "--")}:" +
+            $"from_above={(fromAbove ? 1 : 0)}:{(fromAbove ? fromAboveY.ToString("0.00", CultureInfo.InvariantCulture) : "--")}:" +
+            $"{DescribeSlopeCandidatesForProbe(probeX, bottom)}";
+    }
+
+    private string DescribeSlopeCandidatesForProbe(float probeX, float bottom)
+    {
+        var candidates = _slopes
+            .Select((slope, index) => new
+            {
+                Slope = slope,
+                Index = index,
+                SurfaceY = SurfaceYAtProbe(slope, probeX),
+            })
+            .Where(item => item.SurfaceY != null)
+            .OrderBy(item => MathF.Abs(bottom - item.SurfaceY!.Value))
+            .Take(3)
+            .Select(item =>
+            {
+                var surfaceY = item.SurfaceY!.Value;
+                return
+                    $"#{item.Index}:y={surfaceY:0.00}:d={bottom - surfaceY:0.00}:ceil={(item.Slope.Ceiling ? 1 : 0)}:" +
+                    $"kind={item.Slope.NativeSlopeKind}:snap={item.Slope.SnapDistance:0.00}";
+            });
+        var description = string.Join(",", candidates);
+        return $"candidates={(string.IsNullOrEmpty(description) ? "none" : description)}";
+    }
+
+    private static float? SurfaceYAtProbe(SmwPhysics.SlopeSurface slope, float probeX)
+    {
+        var minX = MathF.Min(slope.X0, slope.X1);
+        var maxX = MathF.Max(slope.X0, slope.X1);
+        if (probeX < minX || probeX > maxX)
+        {
+            return null;
+        }
+
+        var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+        if (t < 0.0f || t > 1.0f)
+        {
+            return null;
+        }
+
+        return slope.Y0 + (slope.Y1 - slope.Y0) * t;
     }
 
     private string PrintDebugPipeCells(string[] parts)
