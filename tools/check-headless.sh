@@ -388,6 +388,25 @@ grep -q "smw-debug-trace: tag=rcon_slope_jump i=1/4" "$LOG_FILE"
 grep -q "ys=-77" "$LOG_FILE"
 grep -q "g=0" "$LOG_FILE"
 grep -q "smw-debug-state: tag=rcon_slope_jump_done" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh powerup small | tee "$RCON_LOG"
+grep -q "pow=0" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 32 288 | tee "$RCON_LOG"
+grep -q "x=32.00" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh ground on | tee "$RCON_LOG"
+grep -q "g=1" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh trace 8 spin tag=rcon_spin_pose | tee "$RCON_LOG"
+grep -q "ok trace_queued=8" "$RCON_LOG"
+for _ in $(seq 1 80); do
+  if grep -q "smw-debug-state: tag=rcon_spin_pose_done" "$LOG_FILE"; then
+    break
+  fi
+  sleep 0.05
+done
+grep -q "smw-debug-trace: tag=rcon_spin_pose i=8/8" "$LOG_FILE"
+grep "smw-debug-trace: tag=rcon_spin_pose" "$LOG_FILE" | grep -q "sj=1"
+grep "smw-debug-trace: tag=rcon_spin_pose" "$LOG_FILE" | grep -q "pose_face=0"
+grep "smw-debug-trace: tag=rcon_spin_pose" "$LOG_FILE" | grep -q "pose_face=1"
+grep "smw-debug-trace: tag=rcon_spin_pose" "$LOG_FILE" | grep -Eq "pose=(15|37)"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh quit >/dev/null || true
 wait "$RCON_PID" || true
 

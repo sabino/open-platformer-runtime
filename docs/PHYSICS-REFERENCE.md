@@ -25,9 +25,9 @@ These are the values currently implemented in `SmwPhysics.cs`:
 | Sprint cap | `0x30` |
 | Walk acceleration | `0x0180` |
 | Run acceleration | `0x0180` |
-| Turn acceleration | `0x0600` |
-| Ground friction | `0x0020` |
-| Air acceleration | `0x0100` |
+| Turn acceleration | `0x0280` walk, `0x0500` run |
+| Ground friction | `0x0020`, table-selected by direction |
+| Air acceleration | native `MarioAccel` table branch |
 | P-meter max | `0x70` |
 | Normal gravity | `0x06` |
 | Jump-held gravity | `0x03` |

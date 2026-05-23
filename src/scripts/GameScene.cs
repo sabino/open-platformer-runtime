@@ -75,6 +75,14 @@ public partial class GameScene : Node2D
         0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01,
         0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
     ];
+    private static readonly int[] NativeSpinJumpPoseTable =
+    [
+        0x00, 0x00, 0x25, 0x44, 0x00, 0x00, 0x0F, 0x45,
+    ];
+    private static readonly int[] NativeSpinJumpFacingTable =
+    [
+        0, 0, 0, 0, 1, 1, 1, 1,
+    ];
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -3659,7 +3667,7 @@ public partial class GameScene : Node2D
         }
 
         var pose = ChoosePlayerPose();
-        var nativeFacing = _state.Facing == 0 ? 0 : 1;
+        var nativeFacing = ChoosePlayerNativeFacing();
         if (!force &&
             pose == _lastPlayerPose &&
             nativeFacing == _lastPlayerFacing &&
@@ -3685,7 +3693,7 @@ public partial class GameScene : Node2D
 
         if (!_state.OnGround)
         {
-            return _state.SpinJump ? 4 : 6;
+            return _state.SpinJump ? ChooseSpinJumpPose() : 6;
         }
 
         if (_state.Ducking)
@@ -3700,6 +3708,32 @@ public partial class GameScene : Node2D
         }
 
         return ChooseGroundWalkRunPose(absSpeed);
+    }
+
+    private int ChoosePlayerNativeFacing()
+    {
+        if (!_state.OnGround && _state.SpinJump)
+        {
+            return NativeSpinJumpFacingTable[SpinJumpAnimationIndex()];
+        }
+
+        return _state.Facing == 0 ? 0 : 1;
+    }
+
+    private int ChooseSpinJumpPose()
+    {
+        return NativeSpinJumpPoseTable[SpinJumpAnimationIndex()];
+    }
+
+    private int SpinJumpAnimationIndex()
+    {
+        var index = (int)(_debugFrameCounter & 0x06);
+        if (_state.Powerup != SmwPhysics.SmallPowerup)
+        {
+            index++;
+        }
+
+        return index;
     }
 
     private int ChooseGroundWalkRunPose(int absSpeed)
@@ -5015,7 +5049,7 @@ public partial class GameScene : Node2D
             $"p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
-            $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
+            $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
 
         _debugTraceFrames--;
         if (_debugTraceFrames <= 0)
@@ -5302,7 +5336,7 @@ public partial class GameScene : Node2D
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
-            $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
+            $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount}";
     }
