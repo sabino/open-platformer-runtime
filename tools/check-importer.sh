@@ -69,6 +69,9 @@ assert player_graphics["status"] == "partial"
 assert player_graphics["categories"]["states_pending_direct_oam_port"], player_graphics
 assert player_graphics["palette"]["layout"].startswith("full OBJ palette row 8"), player_graphics["palette"]
 assert player_graphics["palette"]["snes_bgr555"][:8] == [0x0000, 0x7FDD, 0x0000, 0x0D71, 0x1E9B, 0x3B7F, 0x635F, 0x581D]
+assert player_graphics["tile_pointer_tables"]["walking_pose_count"] == [1, 2, 2, 2]
+assert player_graphics["tile_pointer_tables"]["animation_speed_table"][:16] == [10, 8, 6, 4, 3, 2, 1, 1, 10, 8, 6, 4, 3, 2, 1, 1]
+assert len(player_graphics["tile_pointer_tables"]["animation_speed_table"]) == 112
 oam_tables = player_graphics["oam_tables"]
 assert oam_tables["player_xy_disp_index_index"]["source_addr"] == "0x00DCEC"
 assert oam_tables["player_xy_disp_index"]["source_addr"] == "0x00DD32"

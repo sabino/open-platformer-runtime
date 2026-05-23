@@ -44,6 +44,23 @@ public partial class GameScene : Node2D
     [
         0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01,
     ];
+    private static readonly int[] NativePlayerAnimationSpeedFallback =
+    [
+        0x0A, 0x08, 0x06, 0x04, 0x03, 0x02, 0x01, 0x01,
+        0x0A, 0x08, 0x06, 0x04, 0x03, 0x02, 0x01, 0x01,
+        0x0A, 0x08, 0x06, 0x04, 0x03, 0x02, 0x01, 0x01,
+        0x08, 0x06, 0x04, 0x03, 0x02, 0x01, 0x01, 0x01,
+        0x08, 0x06, 0x04, 0x03, 0x02, 0x01, 0x01, 0x01,
+        0x05, 0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01,
+        0x05, 0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01,
+        0x05, 0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01,
+        0x05, 0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01,
+        0x05, 0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01,
+        0x05, 0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01,
+        0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x04, 0x03, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+    ];
 
     private readonly SmwPhysics _physics = new();
     private readonly List<Rect2> _solids = [];
@@ -56,6 +73,8 @@ public partial class GameScene : Node2D
     private readonly List<PipeEntrance> _pipeEntrances = [];
     private readonly List<int> _headTilePointers = [];
     private readonly List<int> _bodyTilePointers = [];
+    private readonly List<int> _playerWalkingPoseCounts = [];
+    private readonly List<int> _playerAnimationSpeedTable = [];
     private readonly List<int> _playerXYDispIndexIndex = [];
     private readonly List<int> _playerXYDispIndex = [];
     private readonly List<int> _playerXDisp = [];
@@ -113,6 +132,9 @@ public partial class GameScene : Node2D
     private int _inputScriptElapsedFrames;
     private string _inputScriptName = "";
     private bool _inputScriptDoneLogged;
+    private SmwPhysics.FrameInput _lastFrameInput;
+    private int _playerWalkingFrame;
+    private int _playerAnimTimer;
 
     public bool DebugOverlays { get; set; }
 
@@ -124,6 +146,7 @@ public partial class GameScene : Node2D
         AddChild(_audio);
         LoadAssetPack();
         _state = MakeInitialPlayerState();
+        ResetPlayerAnimationState();
         BuildWorld();
         BuildPlayer();
         BuildHud();
@@ -135,6 +158,7 @@ public partial class GameScene : Node2D
         var frameInput = _courseClear
             ? new SmwPhysics.FrameInput()
             : ReadFrameInput();
+        _lastFrameInput = frameInput;
 
         var entranceLocked = _entranceMotionFrames > 0;
         if (!entranceLocked && _state.OnGround && frameInput.SpinPressed)
@@ -590,6 +614,8 @@ public partial class GameScene : Node2D
         var tables = tablesVariant.AsGodotDictionary();
         LoadTilePointerArray(tables, "head", _headTilePointers);
         LoadTilePointerArray(tables, "body", _bodyTilePointers);
+        LoadTilePointerArray(tables, "walking_pose_count", _playerWalkingPoseCounts);
+        LoadTilePointerArray(tables, "animation_speed_table", _playerAnimationSpeedTable);
 
         if (!metadata.TryGetValue("oam_tables", out var oamTablesVariant) ||
             oamTablesVariant.VariantType != Variant.Type.Dictionary)
@@ -2247,6 +2273,11 @@ public partial class GameScene : Node2D
 
     private int ChoosePlayerPose()
     {
+        if (_playerAnimTimer > 0)
+        {
+            _playerAnimTimer--;
+        }
+
         if (!_state.OnGround)
         {
             return _state.SpinJump ? 4 : 6;
@@ -2257,13 +2288,78 @@ public partial class GameScene : Node2D
             return 60;
         }
 
-        if (Math.Abs(_state.XSpeed) >= 4)
+        var absSpeed = Math.Abs(_state.XSpeed);
+        if (IsGroundTurnAroundPose(absSpeed))
         {
-            var walkFrame = (int)((Time.GetTicksMsec() / 110) % 3);
-            return 2 - walkFrame;
+            return 13;
         }
 
-        return 0;
+        return ChooseGroundWalkRunPose(absSpeed);
+    }
+
+    private int ChooseGroundWalkRunPose(int absSpeed)
+    {
+        if (absSpeed == 0)
+        {
+            _playerWalkingFrame = 0;
+            return 0;
+        }
+
+        if (_playerAnimTimer <= 0)
+        {
+            var nextFrame = _playerWalkingFrame - 1;
+            if (nextFrame < 0)
+            {
+                nextFrame = WalkingPoseCountForPowerup(_state.Powerup);
+            }
+
+            _playerWalkingFrame = nextFrame;
+            _playerAnimTimer = PlayerAnimationSpeedFor(absSpeed);
+        }
+
+        return absSpeed >= 0x2F
+            ? _playerWalkingFrame + 4
+            : _playerWalkingFrame;
+    }
+
+    private bool IsGroundTurnAroundPose(int absSpeed)
+    {
+        if (absSpeed == 0 || _state.Ducking)
+        {
+            return false;
+        }
+
+        var inputDir = (_lastFrameInput.Right ? 1 : 0) - (_lastFrameInput.Left ? 1 : 0);
+        return inputDir != 0 && Math.Sign(_state.XSpeed) != inputDir;
+    }
+
+    private int WalkingPoseCountForPowerup(int powerup)
+    {
+        if (_playerWalkingPoseCounts.Count == 0)
+        {
+            return powerup == SmwPhysics.SmallPowerup ? 1 : 2;
+        }
+
+        return _playerWalkingPoseCounts[Math.Clamp(powerup, 0, _playerWalkingPoseCounts.Count - 1)];
+    }
+
+    private int PlayerAnimationSpeedFor(int absSpeed)
+    {
+        var index = Math.Clamp(absSpeed >> 3, 0, Math.Max(0, NativePlayerAnimationSpeedFallback.Length - 1));
+        if (_playerAnimationSpeedTable.Count > 0)
+        {
+            index = Math.Clamp(index, 0, _playerAnimationSpeedTable.Count - 1);
+            return Math.Max(1, _playerAnimationSpeedTable[index]);
+        }
+
+        return NativePlayerAnimationSpeedFallback[index];
+    }
+
+    private void ResetPlayerAnimationState()
+    {
+        _playerWalkingFrame = 0;
+        _playerAnimTimer = 0;
+        _lastFrameInput = new SmwPhysics.FrameInput();
     }
 
     private bool HasPlayerOamMetadata()
@@ -2881,6 +2977,7 @@ public partial class GameScene : Node2D
     public void DebugSetPlayerPowerup(int powerup)
     {
         _physics.SetPowerup(ref _state, powerup);
+        _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
         if (_player != null)
         {
             _player.Position = new Vector2(_state.XFloat, _state.YFloat);
@@ -3084,6 +3181,7 @@ public partial class GameScene : Node2D
         _courseClear = false;
         _playerHurtCooldown = 0;
         _state = MakeInitialPlayerState(entrance);
+        ResetPlayerAnimationState();
         _cameraInitialized = false;
         UpdateCamera();
         BuildWorld();

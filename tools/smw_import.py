@@ -2443,6 +2443,7 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
             "head": list(rom.get_bytes(0x00E00C, 192)),
             "body": list(rom.get_bytes(0x00E0CC, 192)),
             "walking_pose_count": list(rom.get_bytes(0x00DC78, 4)),
+            "animation_speed_table": list(rom.get_bytes(0x00DC7C, 112)),
         },
         "oam_tables": extract_player_oam_tables(rom),
         "categories": {
