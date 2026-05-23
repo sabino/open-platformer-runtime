@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Made imported block-style sprite actors physically solid: the Yoshi Island 1 flying question block now bobs on a deterministic wing cycle and resolves Mario top, side, and underside contacts instead of remaining a visual-only marker.
 - Added a first timed sprite state machine for imported jumping Piranha plants: the Godot runtime now cycles sprite `0x4F/0x50` through hidden, rising, extended, and falling states, suppressing its hurtbox while hidden and covering both hidden/visible branches in headless debug checks.
 - Started level music automatically from imported level-header `music_index` metadata, so normal gameplay entry and pipe transitions now drive the C# internal music sequencer instead of requiring menu button probes.
 - Added a first imported-block interaction: non-small spin-jumping onto Yoshi Island 1 `std_generic_08`/Map16 `0x11E` turn blocks now removes the tile sprite, rebuilds runtime collision, logs `smw-runtime: block_break`, and is covered by headless debug-command regression.

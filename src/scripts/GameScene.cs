@@ -36,6 +36,7 @@ public partial class GameScene : Node2D
     private const int JumpingPiranhaExtendedFrames = 48;
     private const int JumpingPiranhaFallFrames = 24;
     private const float JumpingPiranhaTravelPixels = 32.0f;
+    private const int WingedQuestionBlockCycleFrames = 64;
     private const int GoalTapeSpriteId = 0x7B;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
@@ -211,6 +212,7 @@ public partial class GameScene : Node2D
             ? new SmwPhysics.FrameInput()
             : ReadFrameInput();
         _lastFrameInput = frameInput;
+        var previousStateForActors = _state;
 
         var entranceLocked = _entranceMotionFrames > 0;
         if (!entranceLocked && _state.OnGround && frameInput.SpinPressed)
@@ -249,7 +251,14 @@ public partial class GameScene : Node2D
         }
 
         UpdatePlayerGraphic();
-        UpdateSpriteActors();
+        if (UpdateSpriteActors(_physics.PlayerRect(previousStateForActors)))
+        {
+            if (_player != null)
+            {
+                _player.Position = new Vector2(_state.XFloat, _state.YFloat);
+            }
+            UpdatePlayerGraphic(force: true);
+        }
         CheckCoinPickups();
         CheckGoalTape();
         UpdateHud();
@@ -295,6 +304,8 @@ public partial class GameScene : Node2D
         public int SpriteId { get; init; }
         public float X { get; set; }
         public float Y { get; set; }
+        public float PreviousX { get; set; }
+        public float PreviousY { get; set; }
         public float HomeY { get; init; }
         public float XSpeed { get; set; }
         public float YSpeed { get; set; }
@@ -1037,6 +1048,11 @@ public partial class GameScene : Node2D
         return spriteId is 0x4F or 0x50;
     }
 
+    private static bool IsSolidBlockSprite(int spriteId)
+    {
+        return spriteId is 0x83 or 0xB9;
+    }
+
     private RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn, bool debugOverlays)
     {
         var color = SpriteActorColor(spawn.SpriteId);
@@ -1075,15 +1091,29 @@ public partial class GameScene : Node2D
             SpriteId = spawn.SpriteId,
             X = spawn.X,
             Y = spawn.Y - SpriteActorHeight,
+            PreviousX = spawn.X,
+            PreviousY = spawn.Y - SpriteActorHeight,
             HomeY = spawn.Y - SpriteActorHeight,
             XSpeed = behavior.InitialXSpeed,
             WakeScreen = spawn.Screen,
-            MotionFrame = IsJumpingPiranhaSprite(spawn.SpriteId)
-                ? (spawn.Offset * 7) % JumpingPiranhaCycleFrames
-                : 0,
+            MotionFrame = InitialSpriteMotionFrame(spawn),
             Visuals = visuals,
             Behavior = behavior,
         };
+    }
+
+    private static int InitialSpriteMotionFrame(SpriteSpawn spawn)
+    {
+        if (IsJumpingPiranhaSprite(spawn.SpriteId))
+        {
+            return (spawn.Offset * 7) % JumpingPiranhaCycleFrames;
+        }
+        if (spawn.SpriteId == 0x83)
+        {
+            return (spawn.Offset * 5) % WingedQuestionBlockCycleFrames;
+        }
+
+        return 0;
     }
 
     private List<Node> AddSpriteActorVisuals(Node2D node, int spriteId, int state)
@@ -2706,8 +2736,9 @@ public partial class GameScene : Node2D
         line.AddPoint(new Vector2(left, top));
     }
 
-    private void UpdateSpriteActors()
+    private bool UpdateSpriteActors(Rect2 previousPlayerRect)
     {
+        var playerAdjusted = false;
         if (_playerHurtCooldown > 0)
         {
             _playerHurtCooldown--;
@@ -2715,7 +2746,7 @@ public partial class GameScene : Node2D
 
         if (_spriteActors.Count == 0)
         {
-            return;
+            return false;
         }
 
         for (var i = _spriteActors.Count - 1; i >= 0; i--)
@@ -2728,14 +2759,25 @@ public partial class GameScene : Node2D
                 continue;
             }
 
+            actor.PreviousX = actor.X;
+            actor.PreviousY = actor.Y;
             UpdateSpriteActorMotion(actor);
+            if (IsSolidBlockSprite(actor.SpriteId))
+            {
+                playerAdjusted |= ResolvePlayerSolidBlockActorCollision(actor, previousPlayerRect);
+                actor.Node.Position = new Vector2(actor.X, actor.Y);
+                continue;
+            }
+
             var handledPlayerCollision = ResolvePlayerSpriteActorCollision(actor, _physics.PlayerRect(_state));
             actor.Node.Position = new Vector2(actor.X, actor.Y);
             if (handledPlayerCollision)
             {
-                break;
+                return true;
             }
         }
+
+        return playerAdjusted;
     }
 
     private void UpdateSpriteActorMotion(RuntimeSpriteActor actor)
@@ -2749,6 +2791,11 @@ public partial class GameScene : Node2D
         if (IsJumpingPiranhaSprite(actor.SpriteId))
         {
             UpdateJumpingPiranhaMotion(actor);
+            return;
+        }
+        if (actor.SpriteId == 0x83)
+        {
+            UpdateWingedQuestionBlockMotion(actor);
             return;
         }
 
@@ -2835,6 +2882,17 @@ public partial class GameScene : Node2D
         }
     }
 
+    private static void UpdateWingedQuestionBlockMotion(RuntimeSpriteActor actor)
+    {
+        var frame = actor.MotionFrame % WingedQuestionBlockCycleFrames;
+        actor.MotionFrame = (actor.MotionFrame + 1) % WingedQuestionBlockCycleFrames;
+        var wave = frame < WingedQuestionBlockCycleFrames / 2
+            ? frame
+            : WingedQuestionBlockCycleFrames - frame;
+        actor.State = wave < WingedQuestionBlockCycleFrames / 4 ? 0 : 1;
+        actor.Y = actor.HomeY + (wave - WingedQuestionBlockCycleFrames / 4) / 4.0f;
+    }
+
     private static void UpdateJumpingPiranhaMotion(RuntimeSpriteActor actor)
     {
         var frame = actor.MotionFrame % JumpingPiranhaCycleFrames;
@@ -2873,6 +2931,120 @@ public partial class GameScene : Node2D
         actor.State = 3;
         var fallT = (frame - fallStart + 1) / (float)JumpingPiranhaFallFrames;
         actor.Y = Mathf.Lerp(actor.HomeY, hiddenY, Math.Clamp(fallT, 0.0f, 1.0f));
+    }
+
+    private bool ResolvePlayerSolidBlockActorCollision(RuntimeSpriteActor actor, Rect2 previousPlayerRect)
+    {
+        var actorRect = actor.Rect;
+        var playerRect = _physics.PlayerRect(_state);
+        if (!playerRect.Intersects(actorRect))
+        {
+            return false;
+        }
+
+        var playerLeft = playerRect.Position.X;
+        var playerRight = playerRect.Position.X + playerRect.Size.X;
+        var playerTop = playerRect.Position.Y;
+        var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+        var previousLeft = previousPlayerRect.Position.X;
+        var previousRight = previousPlayerRect.Position.X + previousPlayerRect.Size.X;
+        var previousTop = previousPlayerRect.Position.Y;
+        var previousBottom = previousPlayerRect.Position.Y + previousPlayerRect.Size.Y;
+        var actorLeft = actorRect.Position.X;
+        var actorRight = actorRect.Position.X + actorRect.Size.X;
+        var actorTop = actorRect.Position.Y;
+        var actorBottom = actorRect.Position.Y + actorRect.Size.Y;
+        var previousActorTop = actor.PreviousY + actor.Behavior.Hitbox.Position.Y;
+        var previousActorBottom = previousActorTop + actor.Behavior.Hitbox.Size.Y;
+
+        if (_state.YSpeed >= 0 && previousBottom <= previousActorTop + 6.0f)
+        {
+            LandPlayerOnSolidBlockActor(actor, actorTop);
+            return true;
+        }
+
+        if (_state.YSpeed < 0 && previousTop >= previousActorBottom - 6.0f)
+        {
+            _state.Y = (int)MathF.Round(actorBottom);
+            _state.SubY = 0;
+            _state.YSpeed = 8;
+            _state.SubYSpeed = 0;
+            _state.OnGround = false;
+            _lastActorEvent = $"block:{actor.SpriteId:X2}:bump";
+            _audio?.PlayJump();
+            return true;
+        }
+
+        if (_state.XSpeed > 0 && previousRight <= actorLeft + 6.0f)
+        {
+            _state.X = (int)MathF.Round(actorLeft - SmwPhysics.PlayerWidth);
+            _state.SubX = 0;
+            _state.XSpeed = 0;
+            _state.SubXSpeed = 0;
+            _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
+            return true;
+        }
+
+        if (_state.XSpeed < 0 && previousLeft >= actorRight - 6.0f)
+        {
+            _state.X = (int)MathF.Round(actorRight);
+            _state.SubX = 0;
+            _state.XSpeed = 0;
+            _state.SubXSpeed = 0;
+            _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
+            return true;
+        }
+
+        var overlapFromTop = playerBottom - actorTop;
+        var overlapFromBottom = actorBottom - playerTop;
+        var overlapFromLeft = playerRight - actorLeft;
+        var overlapFromRight = actorRight - playerLeft;
+        var minOverlap = MathF.Min(
+            MathF.Min(overlapFromTop, overlapFromBottom),
+            MathF.Min(overlapFromLeft, overlapFromRight));
+
+        if (minOverlap == overlapFromTop)
+        {
+            LandPlayerOnSolidBlockActor(actor, actorTop);
+        }
+        else if (minOverlap == overlapFromBottom)
+        {
+            _state.Y = (int)MathF.Round(actorBottom);
+            _state.SubY = 0;
+            _state.YSpeed = Math.Max(8, _state.YSpeed);
+            _state.SubYSpeed = 0;
+            _state.OnGround = false;
+            _lastActorEvent = $"block:{actor.SpriteId:X2}:bump";
+        }
+        else if (overlapFromLeft < overlapFromRight)
+        {
+            _state.X = (int)MathF.Round(actorLeft - SmwPhysics.PlayerWidth);
+            _state.SubX = 0;
+            _state.XSpeed = 0;
+            _state.SubXSpeed = 0;
+            _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
+        }
+        else
+        {
+            _state.X = (int)MathF.Round(actorRight);
+            _state.SubX = 0;
+            _state.XSpeed = 0;
+            _state.SubXSpeed = 0;
+            _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
+        }
+
+        return true;
+    }
+
+    private void LandPlayerOnSolidBlockActor(RuntimeSpriteActor actor, float actorTop)
+    {
+        _state.Y = (int)MathF.Round(actorTop - SmwPhysics.PlayerHeightFor(_state));
+        _state.SubY = 0;
+        _state.YSpeed = 0;
+        _state.SubYSpeed = 0;
+        _state.OnGround = true;
+        _state.X += (int)MathF.Round(actor.X - actor.PreviousX);
+        _lastActorEvent = $"block:{actor.SpriteId:X2}:top";
     }
 
     private bool ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect)
