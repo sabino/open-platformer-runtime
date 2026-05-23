@@ -216,6 +216,7 @@ public partial class GameScene : Node2D
     private bool _pipeTransitionLatch;
     private int _playerHurtCooldown;
     private string _lastActorEvent = "none";
+    private string _lastActorContact = "none";
     private bool _courseClear;
     private bool _gamePaused;
     private bool _gameOver;
@@ -4591,9 +4592,12 @@ public partial class GameScene : Node2D
         var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
         var previousBottom = previousPlayerRect.Position.Y + previousPlayerRect.Size.Y;
         var actorTop = actorRect.Position.Y;
+        var downwardContact = _state.YSpeed > 0 || playerBottom > previousBottom + 0.01f;
         var crossedActorTop = previousBottom <= actorTop + 20.0f && playerBottom >= actorTop - 2.0f;
         var topContact = playerBottom <= actorTop + 32.0f;
-        var stomped = actor.Behavior.Stompable && _state.YSpeed > 0 && topContact && crossedActorTop;
+        _lastActorContact =
+            $"{actor.SpriteId:X2}:{actor.State}:pb={playerBottom:0.00}:ppb={previousBottom:0.00}:at={actorTop:0.00}:ys={_state.YSpeed}:down={(downwardContact ? 1 : 0)}:top={(topContact ? 1 : 0)}:cross={(crossedActorTop ? 1 : 0)}";
+        var stomped = actor.Behavior.Stompable && downwardContact && topContact && crossedActorTop;
         if (stomped)
         {
             if (TryStompRex(actor))
@@ -4818,10 +4822,12 @@ public partial class GameScene : Node2D
         if (_debugInvincible)
         {
             _lastActorEvent = $"god:{actor.SpriteId:X2}:{actor.State}";
+            GD.Print($"smw-runtime: actor_contact level={_currentLevelId} action=god contact={_lastActorContact}");
             return;
         }
 
         _lastActorEvent = $"hurt:{actor.SpriteId:X2}:{actor.State}";
+        GD.Print($"smw-runtime: actor_contact level={_currentLevelId} action=hurt contact={_lastActorContact}");
         _stompChainCounter = 0;
         if (_state.Powerup <= SmwPhysics.SmallPowerup)
         {
@@ -7688,7 +7694,7 @@ public partial class GameScene : Node2D
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_active={activeActorCount} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} autoplay={AutoplayModeName(_autoplayMode)} auto_frame={_autoplayFrame} " +
-            $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
+            $"near={nearestActor} actor_event={_lastActorEvent} actor_contact={_lastActorContact} blocks={_blockBreakCount} deaths={_deathCount}";
     }
 
     private int CountActiveSpriteActors()
@@ -8252,6 +8258,7 @@ public partial class GameScene : Node2D
         _courseClearWalkoutFrames = 0;
         _playerHurtCooldown = 0;
         _lastActorEvent = "none";
+        _lastActorContact = "none";
         _blockBreakCount = 0;
         _stompChainCounter = 0;
         _starPowerTimer = 0;
