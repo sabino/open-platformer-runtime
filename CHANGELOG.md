@@ -4,6 +4,7 @@
 
 - Fed native slope contact metadata back into horizontal physics so held movement and no-input slope sliding read the SMW `player_slope_player_is_on1` acceleration, cap, friction, and target sub-speed table rows instead of falling back to flat-ground rows.
 - Added RCON `slope_probe`, `trace_sensors`, and `trace_full` diagnostics so unattended playtests can log per-foot slope candidates, snap distances, pipe-cell roles, and sensor state frame-by-frame.
+- Guarded Mario's OAM pose bridge against out-of-atlas dynamic tile regions so any still-unported pose descriptor fails hidden instead of drawing stray texture fragments.
 - Changed the internal APU probe to target a small queued audio buffer instead of pushing a fixed 512 frames per process tick, reducing visible Wayland underruns while keeping RCON perf diagnostics for last/average mix cost.
 - Added more Lunar Magic Universal-derived sprite OAM previews, including Pipe Lakitu, moving ledge holes, goal tape, Lakitu clouds, scale platforms, green gas bubbles, and Volcano Lotus.
 - Ported the native fast-toward-slope-peak Y-speed branch so steep/normal slope contact can pull Mario upward from `kSlopeDataTables_Player_TowardsPeakYSpeed` instead of only applying stationary slope caps.

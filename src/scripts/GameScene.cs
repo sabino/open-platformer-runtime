@@ -4125,13 +4125,24 @@ public partial class GameScene : Node2D
 
         var spriteSize = large ? 16 : 8;
         var sprite = _playerTileSprites[spriteIndex];
-        sprite.Position = new Vector2(x, y);
-        sprite.FlipH = flipH;
-        sprite.RegionRect = new Rect2(
+        var region = new Rect2(
             (tile % 16) * 8,
             (tile / 16) * 8,
             spriteSize,
             spriteSize);
+        if (sprite.Texture == null ||
+            region.Position.X < 0 ||
+            region.Position.Y < 0 ||
+            region.Position.X + region.Size.X > sprite.Texture.GetWidth() ||
+            region.Position.Y + region.Size.Y > sprite.Texture.GetHeight())
+        {
+            sprite.Visible = false;
+            return;
+        }
+
+        sprite.Position = new Vector2(x, y);
+        sprite.FlipH = flipH;
+        sprite.RegionRect = region;
         sprite.Visible = true;
     }
 
