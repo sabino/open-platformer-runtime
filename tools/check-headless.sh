@@ -227,7 +227,7 @@ grep -q "smw-input-script: done name=$INPUT_SCRIPT frames=4" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2050,292 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
 ! grep -q "pipe-debug screen=07" "$LOG_FILE"
 grep -q "smw-input-script: done name=$PIPE_SCRIPT frames=1" "$LOG_FILE"
-grep -q "x=2064.00 y=288.00" "$LOG_FILE"
+grep -q "x=2050.00 y=288.00" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2072,240 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
 ! grep -q "pipe-debug screen=07" "$LOG_FILE"

@@ -2082,6 +2082,11 @@ public partial class GameScene : Node2D
         var bottom = top + height;
         var previousLeft = previousState.XFloat;
         var previousRight = previousLeft + SmwPhysics.PlayerWidth;
+        if (MathF.Abs(left - previousLeft) <= 0.01f && _state.XSpeed == 0)
+        {
+            return false;
+        }
+
         var tileMinX = WorldToTileX(left);
         var tileMaxX = WorldToTileX(right);
         var tileMinY = WorldToTileY(top);
