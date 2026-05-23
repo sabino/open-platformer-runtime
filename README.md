@@ -11,7 +11,7 @@ The current first slice covers:
 - Raw SPC upload banks plus a few decoded BRR preview WAVs used only as importer verification artifacts while the full SPC/DSP sequencer is still pending.
 - A Godot .NET C# menu and minimal playable scene; the initial menu uses generated Yoshi Island 1 preview art, exposes audio/debug-gizmo toggles, includes internal sound/music test buttons, and starts the playable first-level slice.
 - A SNES-sized `256x224` logical viewport that opens as a 3x Wayland window for normal graphical runs.
-- Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; the Godot runtime no longer depends on WAV/MP3 playback for these probes.
+- Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; named SFX probes now decode native SPC RAM command streams before falling back to hand-authored notes, and the Godot runtime no longer depends on WAV/MP3 playback for these probes.
 - A menu audio panel for internal port-1 SFX command probes, named gameplay SFX probes, decoded BRR sample probes, and imported music bank previews while the full SPC/DSP command sequencer is still pending.
 - An opt-in debug overlay showing imported asset previews plus collision rectangles/outlines, slope lines, player hitbox/feet, active camera bounds, pipe/goal triggers, sprite hitboxes, sprite spawn markers, object markers, coin/block semantic markers, and the Map16 tile currently under Mario's feet.
 - Runtime placement of the generated Yoshi Island 1 Map16 tilemap through a batched custom draw layer, with temporary merged collision rectangles derived from imported tile placement sources.

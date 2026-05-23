@@ -35,6 +35,9 @@ public partial class SmwAudio : Node
     private string _lastSfxName = "none";
     private int _lastSfxPort;
     private int _lastSfxCommand;
+    private bool _lastSfxNativeStream;
+    private int _lastSfxPointer;
+    private int _lastSfxNoteCount;
 
     public static readonly int[] ProbeSampleIds = [9, 14, 16];
 
@@ -70,14 +73,23 @@ public partial class SmwAudio : Node
 
     public void PlayJump()
     {
-        RecordSfx("jump", port: 1, command: 0x01);
-        PlayPort1JumpCommand();
+        PlayNativeSfxProbe(
+            "jump",
+            port: 1,
+            command: 0x01,
+            [new SfxProbeNote(8, 0xB2, 0x30, 0.52f, 4, 0.0f)]);
     }
 
     public void PlaySpinJump()
     {
-        RecordSfx("spin_jump", port: 1, command: 0x04);
-        PlayPort1TwoNoteCommand();
+        PlayNativeSfxProbe(
+            "spin_jump",
+            port: 1,
+            command: 0x04,
+            [
+                new SfxProbeNote(7, 0xA4, 0x0C, 0.42f, 4, 0.0f),
+                new SfxProbeNote(7, 0xA4, 0x0C, 0.42f, 0x10, 0.0f),
+            ]);
     }
 
     public void PlayCoin()
@@ -286,7 +298,8 @@ public partial class SmwAudio : Node
             $"mix_chunk={AudioMixChunkFrames} mix_max_chunks={MaxAudioMixChunksPerProcess} " +
             $"mix_frames={_debugMixFrames} mix_calls={_debugMixCalls} mix_ms={_debugMixMilliseconds:0.000} " +
             $"mix_last_frames={_debugLastMixFrames} mix_last_ms={_debugLastMixMilliseconds:0.000} mix_avg_ms={averageMixMilliseconds:0.000} " +
-            $"last_sfx={_lastSfxName} last_sfx_port={_lastSfxPort} last_sfx_cmd={_lastSfxCommand:X2}";
+            $"last_sfx={_lastSfxName} last_sfx_port={_lastSfxPort} last_sfx_cmd={_lastSfxCommand:X2} " +
+            $"last_sfx_native={(_lastSfxNativeStream ? 1 : 0)} last_sfx_ptr={_lastSfxPointer:X4} last_sfx_notes={_lastSfxNoteCount}";
     }
 
     private void EnsureLoaded()
@@ -456,32 +469,171 @@ public partial class SmwAudio : Node
         return new DecodedSample(sampleId, start, loop, samples.ToArray());
     }
 
-    private void PlayPort1JumpCommand()
+    private void PlayNativeSfxProbe(string name, int port, int command, IReadOnlyList<SfxProbeNote> fallbackNotes)
     {
-        PlayInstrumentNote(instrument: 8, note: 0xB2, durationFrames: 0x30, volume: 0.52f, delayFrames: 4);
-    }
+        EnsureLoaded();
+        var nativeStream = TryDecodeNativeSfxCommand(port, command, out var notes, out var pointer);
+        if (!nativeStream || notes.Count == 0)
+        {
+            notes = fallbackNotes;
+            pointer = 0;
+            nativeStream = false;
+        }
 
-    private void PlayPort1TwoNoteCommand()
-    {
-        PlayInstrumentNote(instrument: 7, note: 0xA4, durationFrames: 0x0C, volume: 0.42f, delayFrames: 4);
-        PlayInstrumentNote(instrument: 7, note: 0xA4, durationFrames: 0x0C, volume: 0.42f, delayFrames: 0x10);
-    }
-
-    private void PlayNativeSfxProbe(string name, int port, int command, IReadOnlyList<SfxProbeNote> notes)
-    {
-        RecordSfx(name, port, command);
+        RecordSfx(name, port, command, nativeStream, pointer, notes.Count);
         foreach (var note in notes)
         {
             PlayInstrumentNote(note.Instrument, note.Note, note.DurationFrames, note.Volume, note.DelayFrames, note.Pan);
         }
     }
 
-    private void RecordSfx(string name, int port, int command)
+    private void RecordSfx(string name, int port, int command, bool nativeStream, int pointer, int noteCount)
     {
         _lastSfxName = name;
         _lastSfxPort = port;
         _lastSfxCommand = command & 0xFF;
-        GD.Print($"smw-audio: sfx={name} port={port} command={_lastSfxCommand:X2}");
+        _lastSfxNativeStream = nativeStream;
+        _lastSfxPointer = pointer & 0xFFFF;
+        _lastSfxNoteCount = noteCount;
+        GD.Print(
+            $"smw-audio: sfx={name} port={port} command={_lastSfxCommand:X2} " +
+            $"native={(nativeStream ? 1 : 0)} ptr={_lastSfxPointer:X4} notes={noteCount}");
+    }
+
+    private bool TryDecodeNativeSfxCommand(int port, int command, out IReadOnlyList<SfxProbeNote> notes, out int pointer)
+    {
+        notes = Array.Empty<SfxProbeNote>();
+        pointer = 0;
+        var table = port == 3 ? 0x5619 : 0x5681;
+        var commandIndex = command & 0xFF;
+        var tableOffset = table + commandIndex * 2;
+        if (tableOffset + 1 >= _spcRam.Length)
+        {
+            return false;
+        }
+
+        pointer = _spcRam[tableOffset] | (_spcRam[tableOffset + 1] << 8);
+        if (pointer <= 0 || pointer >= _spcRam.Length)
+        {
+            return false;
+        }
+
+        var decoded = new List<SfxProbeNote>();
+        var offset = pointer;
+        var length = 8;
+        var instrument = 7;
+        var volume = 0.34f;
+        var pan = 0.0f;
+        var delay = port == 3 ? 2 : 0;
+        var guard = 0;
+        while (offset >= 0 && offset < _spcRam.Length && guard++ < 192 && decoded.Count < 16)
+        {
+            var streamCommand = _spcRam[offset++];
+            if (streamCommand == 0)
+            {
+                break;
+            }
+
+            if ((streamCommand & 0x80) == 0)
+            {
+                length = Math.Max(1, (int)streamCommand);
+                if (offset >= _spcRam.Length)
+                {
+                    break;
+                }
+
+                streamCommand = _spcRam[offset++];
+                if ((streamCommand & 0x80) == 0)
+                {
+                    var left = streamCommand;
+                    if (offset >= _spcRam.Length)
+                    {
+                        break;
+                    }
+
+                    streamCommand = _spcRam[offset++];
+                    var right = left;
+                    if ((streamCommand & 0x80) == 0)
+                    {
+                        right = streamCommand;
+                        if (offset >= _spcRam.Length)
+                        {
+                            break;
+                        }
+
+                        streamCommand = _spcRam[offset++];
+                    }
+
+                    var leftNorm = Math.Clamp(left / 127.0f, 0.0f, 1.0f);
+                    var rightNorm = Math.Clamp(right / 127.0f, 0.0f, 1.0f);
+                    volume = Math.Clamp((leftNorm + rightNorm) * 0.22f, 0.06f, 0.50f);
+                    pan = Math.Clamp(rightNorm - leftNorm, -0.8f, 0.8f);
+                }
+            }
+
+            if (streamCommand == 0xDA)
+            {
+                if (port == 3)
+                {
+                    do
+                    {
+                        if (offset >= _spcRam.Length)
+                        {
+                            return decoded.Count > 0;
+                        }
+
+                        streamCommand = _spcRam[offset++];
+                    } while ((streamCommand & 0x80) != 0);
+
+                    instrument = streamCommand;
+                }
+                else
+                {
+                    if (offset >= _spcRam.Length)
+                    {
+                        break;
+                    }
+
+                    instrument = _spcRam[offset++];
+                }
+
+                continue;
+            }
+
+            if (streamCommand == 0xDD)
+            {
+                if (offset >= _spcRam.Length)
+                {
+                    break;
+                }
+
+                var note = _spcRam[offset++];
+                decoded.Add(new SfxProbeNote(instrument, note, length, volume, delay, pan));
+                delay += length;
+                offset = Math.Min(_spcRam.Length, offset + 3);
+                continue;
+            }
+
+            if (streamCommand == 0xEB)
+            {
+                offset = Math.Min(_spcRam.Length, offset + 3);
+                continue;
+            }
+
+            if (streamCommand == 0xFF)
+            {
+                break;
+            }
+
+            if ((streamCommand & 0x80) != 0)
+            {
+                decoded.Add(new SfxProbeNote(instrument, streamCommand, length, volume, delay, pan));
+                delay += length;
+            }
+        }
+
+        notes = decoded;
+        return decoded.Count > 0;
     }
 
     private void PlayInstrumentNote(int instrument, int note, int durationFrames, float volume, int delayFrames, float pan = 0.0f)
