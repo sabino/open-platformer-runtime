@@ -121,7 +121,7 @@ public partial class GameScene : Node2D
     private CanvasLayer? _courseClearLayer;
     private Node2D? _worldRoot;
     private SmwAudio? _audio;
-    private ImageTexture? _playerTexture;
+    private readonly ImageTexture?[] _playerTextures = new ImageTexture?[4];
     private ImageTexture? _spriteTexture;
     private readonly ImageTexture?[] _spritePaletteTextures = new ImageTexture?[8];
     private ImageTexture? _map16Texture;
@@ -3540,27 +3540,39 @@ public partial class GameScene : Node2D
 
     private bool TryBuildPlayerSprites()
     {
-        const string playerAtlasPath = "res://generated/smw/player/gfx32_player_palette0.png";
         if (_player == null ||
-            !HasPlayerOamMetadata() ||
-            !FileAccess.FileExists(playerAtlasPath))
+            !HasPlayerOamMetadata())
         {
             return false;
         }
 
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(playerAtlasPath));
-        if (image == null || image.IsEmpty())
+        for (var paletteIndex = 0; paletteIndex < _playerTextures.Length; paletteIndex++)
+        {
+            var playerAtlasPath = $"res://generated/smw/player/gfx32_player_palette{paletteIndex}.png";
+            if (!FileAccess.FileExists(playerAtlasPath))
+            {
+                continue;
+            }
+
+            var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(playerAtlasPath));
+            if (image == null || image.IsEmpty())
+            {
+                continue;
+            }
+
+            _playerTextures[paletteIndex] = ImageTexture.CreateFromImage(image);
+        }
+
+        if (_playerTextures[0] == null)
         {
             return false;
         }
-
-        _playerTexture = ImageTexture.CreateFromImage(image);
 
         for (var i = 0; i < PlayerOamSpriteSlots; i++)
         {
             var sprite = new Sprite2D
             {
-                Texture = _playerTexture,
+                Texture = _playerTextures[0],
                 RegionEnabled = true,
                 Centered = false,
                 Visible = false,
@@ -3721,10 +3733,12 @@ public partial class GameScene : Node2D
         var headBase = _headTilePointers[tablePose];
         var bodyBase = _bodyTilePointers[tablePose];
         var flipH = (_playerTileXFlip[Math.Clamp(nativeFacing, 0, _playerTileXFlip.Count - 1)] & 0x40) != 0;
+        var playerTexture = PlayerTextureForPowerup(powerup);
 
         foreach (var sprite in _playerTileSprites)
         {
             sprite.Visible = false;
+            sprite.Texture = playerTexture;
         }
 
         // Normal big Mario uses four PlayerGFXRt OAM calls. The high bits in
@@ -3771,6 +3785,17 @@ public partial class GameScene : Node2D
         return powerup == SmwPhysics.SmallPowerup || ducking
             ? SmwPhysics.SmallPlayerHeight - SmwPhysics.BigPlayerHeight
             : 0;
+    }
+
+    private ImageTexture? PlayerTextureForPowerup(int powerup)
+    {
+        var paletteIndex = PlayerPaletteVariantForPowerup(powerup);
+        return _playerTextures[Math.Clamp(paletteIndex, 0, _playerTextures.Length - 1)] ?? _playerTextures[0];
+    }
+
+    private static int PlayerPaletteVariantForPowerup(int powerup)
+    {
+        return powerup == SmwPhysics.FirePowerup ? 2 : 0;
     }
 
     private static bool TryResolvePlayerDynamicTile(int descriptor, int headPointer, int bodyPointer, out int tile)
@@ -4336,7 +4361,9 @@ public partial class GameScene : Node2D
         UpdatePlayerGraphic(force: true);
         UpdateHud();
         UpdateDebugGizmos();
-        GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} render_y={PlayerRenderYOffsetForState(_state.Powerup, _state.Ducking)}");
+        GD.Print(
+            $"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} " +
+            $"render_y={PlayerRenderYOffsetForState(_state.Powerup, _state.Ducking)} player_palette={PlayerPaletteVariantForPowerup(_state.Powerup)}");
     }
 
     public void DebugSetPlayerVelocity(int xSpeed, int ySpeed)

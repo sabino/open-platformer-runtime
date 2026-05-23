@@ -160,7 +160,10 @@ grep -q "smw-runtime: coin_pickup level=1CB dragon=0 coins=1 dragon_coins=0" "$L
 grep -q "smw-runtime: course_clear level=105" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=small 2>&1 | tee "$LOG_FILE"
-grep -q "smw-test-powerup: powerup=0 height=16 render_y=-16" "$LOG_FILE"
+grep -q "smw-test-powerup: powerup=0 height=16 render_y=-16 player_palette=0" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=fire 2>&1 | tee "$LOG_FILE"
+grep -q "smw-test-powerup: powerup=3 height=32 render_y=0 player_palette=2" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-input-script="$INPUT_SCRIPT" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-input-script: loaded path=$INPUT_SCRIPT segments=4 frames=4" "$LOG_FILE"

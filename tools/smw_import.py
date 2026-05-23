@@ -2440,16 +2440,35 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
         "sha1": write_json(secondary_path, secondary_payload),
     }
 
-    player_sprite_palette_words = build_player_sprite_palette_words(rom, player=0)
-    player_sprite_palette_rgb = snes_words_to_rgb(player_sprite_palette_words)
+    player_palette_variants = []
+    player_palette_rgbs = []
+    for player_index, player_name in enumerate(("mario", "luigi", "fire_mario", "fire_luigi")):
+        palette_words = build_player_sprite_palette_words(rom, player=player_index)
+        palette_rgb = snes_words_to_rgb(palette_words)
+        player_palette_variants.append(
+            {
+                "index": player_index,
+                "name": player_name,
+                "snes_bgr555": palette_words,
+                "colors": palette_rgb,
+            }
+        )
+        player_palette_rgbs.append(palette_rgb)
 
+    player_sprite_palette_words = player_palette_variants[0]["snes_bgr555"]
+    player_sprite_palette_rgb = player_palette_rgbs[0]
     for name, pointer_addr in {"gfx32": 0x00B8D8, "gfx33": 0x00B88B}.items():
         gfx_addr = 0x080000 | rom.get_word(pointer_addr)
         gfx_data, compressed_len = smw_decomp(rom, gfx_addr)
         gfx_path = out_dir / "gfx" / f"{name}.bin"
-        atlas_path = out_dir / "player" / f"{name}_player_palette0.png"
-        atlas = write_4bpp_atlas_png(atlas_path, gfx_data, player_sprite_palette_rgb)
-        atlas["file"] = rel(atlas_path, out_dir)
+        atlas_variants = []
+        for palette_index, palette_rgb in enumerate(player_palette_rgbs):
+            atlas_path = out_dir / "player" / f"{name}_player_palette{palette_index}.png"
+            atlas = write_4bpp_atlas_png(atlas_path, gfx_data, palette_rgb)
+            atlas["file"] = rel(atlas_path, out_dir)
+            atlas["palette_variant"] = palette_index
+            atlas["palette_name"] = player_palette_variants[palette_index]["name"]
+            atlas_variants.append(atlas)
         assets[name] = {
             "file": rel(gfx_path, out_dir),
             "source_addr": f"0x{gfx_addr:06X}",
@@ -2457,7 +2476,8 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
             "decompressed_length": len(gfx_data),
             "format": "snes_4bpp_planar",
             "sha1": write_bin(gfx_path, gfx_data),
-            "atlas_png": atlas,
+            "atlas_png": atlas_variants[0],
+            "atlas_pngs": atlas_variants,
         }
 
     player_graphics_path = out_dir / "player" / "player_graphics.json"
@@ -2473,6 +2493,7 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
             "variant": 0,
             "snes_bgr555": player_sprite_palette_words,
             "colors": player_sprite_palette_rgb,
+            "variants": player_palette_variants,
             "layout": "full OBJ palette row 8: colors 0-1 fixed, 2-5 object row, 6-15 dynamic Mario palette from $00B2C8",
         },
         "tile_pointer_tables": {

@@ -32,9 +32,13 @@ assert pipe_exit["vanilla_source_map_high"] == 1, pipe_exit
 assert pipe_exit["vanilla_secondary"] == 0, pipe_exit
 assert pipe_exit["raw_r11"] == 0, pipe_exit
 
-for png in [
-    out_dir / "player" / "gfx32_player_palette0.png",
-    out_dir / "player" / "gfx33_player_palette0.png",
+player_pngs = [
+    out_dir / "player" / f"gfx32_player_palette{i}.png" for i in range(4)
+] + [
+    out_dir / "player" / f"gfx33_player_palette{i}.png" for i in range(4)
+]
+
+for png in player_pngs + [
     out_dir / "tilesets" / "level_105_tileset7_8x8.png",
     out_dir / "tilesets" / "level_105_tileset7_map16_preview.png",
     out_dir / "tilesets" / "level_1CB_tileset3_8x8.png",
@@ -69,6 +73,8 @@ assert player_graphics["status"] == "partial"
 assert player_graphics["categories"]["states_pending_direct_oam_port"], player_graphics
 assert player_graphics["palette"]["layout"].startswith("full OBJ palette row 8"), player_graphics["palette"]
 assert player_graphics["palette"]["snes_bgr555"][:8] == [0x0000, 0x7FDD, 0x0000, 0x0D71, 0x1E9B, 0x3B7F, 0x635F, 0x581D]
+assert [variant["name"] for variant in player_graphics["palette"]["variants"]] == ["mario", "luigi", "fire_mario", "fire_luigi"]
+assert player_graphics["palette"]["variants"][2]["snes_bgr555"][6:16] != player_graphics["palette"]["snes_bgr555"][6:16]
 assert player_graphics["tile_pointer_tables"]["walking_pose_count"] == [1, 2, 2, 2]
 assert player_graphics["tile_pointer_tables"]["animation_speed_table"][:16] == [10, 8, 6, 4, 3, 2, 1, 1, 10, 8, 6, 4, 3, 2, 1, 1]
 assert len(player_graphics["tile_pointer_tables"]["animation_speed_table"]) == 112
