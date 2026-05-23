@@ -5383,15 +5383,24 @@ public partial class GameScene : Node2D
 
     private Error CaptureViewportNow(string capturePath, bool quitAfterCapture)
     {
-        var image = GetViewport().GetTexture()?.GetImage();
+        if (IsHeadlessDisplay())
+        {
+            return FailCapture(capturePath, "headless_viewport_texture_unavailable", quitAfterCapture);
+        }
+
+        Image? image;
+        try
+        {
+            image = GetViewport().GetTexture()?.GetImage();
+        }
+        catch (Exception ex)
+        {
+            return FailCapture(capturePath, $"viewport_texture_error:{ex.Message}", quitAfterCapture);
+        }
+
         if (image == null)
         {
-            GD.PrintErr($"smw-capture: failed path={capturePath} reason=viewport_texture_unavailable level={_currentLevelId}");
-            if (quitAfterCapture)
-            {
-                GetTree().Quit(1);
-            }
-            return Error.Unavailable;
+            return FailCapture(capturePath, "viewport_texture_unavailable", quitAfterCapture);
         }
 
         image.Convert(Image.Format.Rgba8);
@@ -5415,6 +5424,36 @@ public partial class GameScene : Node2D
         }
 
         return error;
+    }
+
+    private static bool IsHeadlessDisplay()
+    {
+        if (OS.HasFeature("headless") ||
+            DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        foreach (var arg in OS.GetCmdlineArgs())
+        {
+            if (arg.Equals("--headless", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private Error FailCapture(string capturePath, string reason, bool quitAfterCapture)
+    {
+        GD.PrintErr($"smw-capture: failed path={capturePath} reason={reason} level={_currentLevelId}");
+        if (quitAfterCapture)
+        {
+            GetTree().Quit(1);
+        }
+
+        return Error.Unavailable;
     }
 
     private void EnterLevel(string levelId, LevelEntrance? entrance = null)
