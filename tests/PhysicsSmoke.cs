@@ -202,6 +202,17 @@ public static class PhysicsSmoke
             return false;
         }
 
+        state = physics.MakeState(0, 0);
+        state.XSpeed = 0x14;
+        state.SubXSpeed = 0x80;
+        state.PMeter = 1;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.XSpeed != 0x14 || state.SubXSpeed != 0x80 || state.PMeter != 0)
+        {
+            Console.Error.WriteLine($"expected no airborne no-input friction, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2} p=0x{state.PMeter:X2}");
+            return false;
+        }
+
         return true;
     }
 

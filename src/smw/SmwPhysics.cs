@@ -21,7 +21,6 @@ public sealed class SmwPhysics
     private const int TurnAccel = 0x0600;
     private const int GroundFriction = 0x0020;
     private const int AirAccel = 0x0100;
-    private const int AirFriction = 0x0100;
     private const int PMeterMax = 0x70;
     private const int PMeterSprintThreshold = 0x23;
     private const int MaxFall = 0x40;
@@ -252,10 +251,14 @@ public sealed class SmwPhysics
         else
         {
             UpdatePMeterEx(ref state, 0);
-            var friction = state.OnGround ? GroundFriction : AirFriction;
+            if (!state.OnGround)
+            {
+                return;
+            }
+
             if (state.XSpeed > 0)
             {
-                AddXAccel(ref state, -friction);
+                AddXAccel(ref state, -GroundFriction);
                 if (state.XSpeed < 0)
                 {
                     state.XSpeed = 0;
@@ -264,7 +267,7 @@ public sealed class SmwPhysics
             }
             else if (state.XSpeed < 0)
             {
-                AddXAccel(ref state, friction);
+                AddXAccel(ref state, GroundFriction);
                 if (state.XSpeed > 0)
                 {
                     state.XSpeed = 0;
