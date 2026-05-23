@@ -123,6 +123,7 @@ public partial class GameScene : Node2D
     private SmwAudio? _audio;
     private ImageTexture? _playerTexture;
     private ImageTexture? _spriteTexture;
+    private readonly ImageTexture?[] _spritePaletteTextures = new ImageTexture?[8];
     private ImageTexture? _map16Texture;
     private Map16TileLayer? _map16Layer;
     private Godot.Collections.Dictionary? _entranceTables;
@@ -130,6 +131,8 @@ public partial class GameScene : Node2D
     private string _levelGfxAtlasPath = "res://generated/smw/tilesets/level_105_tileset7_8x8.png";
     private string _levelMap16AtlasPath = "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png";
     private string _levelSpriteAtlasPath = "res://generated/smw/spritesets/level_105_spritegfx8_8x8.png";
+    private string _levelSpriteVramPath = "res://generated/smw/spritesets/level_105_spritegfx8_vram.bin";
+    private string _levelPalettePath = "res://generated/smw/palettes/level_105_palette.json";
     private string _levelLayoutPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
     private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
     private string _levelLayer2BackgroundPath = "res://generated/smw/levels/level_105_layer2_background.png";
@@ -688,8 +691,24 @@ public partial class GameScene : Node2D
             {
                 _levelSpriteAtlasPath = $"res://generated/smw/{atlasFile}";
             }
+            if (spriteTileset.TryGetValue("vram", out var vramVariant) &&
+                TryReadAssetFile(vramVariant, out var vramFile))
+            {
+                _levelSpriteVramPath = $"res://generated/smw/{vramFile}";
+            }
+            if (spriteTileset.TryGetValue("palette_assets", out var spritePaletteVariant) &&
+                TryReadAssetFile(spritePaletteVariant, out var spritePaletteFile))
+            {
+                _levelPalettePath = $"res://generated/smw/{spritePaletteFile}";
+            }
 
             ApplySpriteUploadTileStarts(spriteTileset);
+        }
+
+        if (level.TryGetValue("palette_assets", out var paletteVariant) &&
+            TryReadAssetFile(paletteVariant, out var paletteFile))
+        {
+            _levelPalettePath = $"res://generated/smw/{paletteFile}";
         }
 
         if (level.TryGetValue("layout_preview", out var layoutVariant) && layoutVariant.VariantType == Variant.Type.Dictionary)
@@ -983,6 +1002,7 @@ public partial class GameScene : Node2D
         _cameraGizmo?.QueueFree();
         _cameraGizmo = null;
         _spriteTexture = null;
+        Array.Clear(_spritePaletteTextures);
         _map16Texture = null;
         _map16Layer = null;
         StartWorldRoot();
@@ -1084,18 +1104,152 @@ public partial class GameScene : Node2D
 
     private void LoadSpriteTexture()
     {
+        var paletteTextureCount = LoadSpritePaletteTextures();
+
         if (!FileAccess.FileExists(_levelSpriteAtlasPath))
         {
+            if (paletteTextureCount > 0)
+            {
+                GD.Print(
+                    $"smw-runtime: sprite_palettes={paletteTextureCount} source=vram palette={_levelPalettePath} vram={_levelSpriteVramPath}");
+            }
             return;
         }
 
         var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelSpriteAtlasPath));
-        if (image == null || image.IsEmpty())
+        if (image != null && !image.IsEmpty())
         {
-            return;
+            _spriteTexture = ImageTexture.CreateFromImage(image);
         }
 
-        _spriteTexture = ImageTexture.CreateFromImage(image);
+        GD.Print(
+            $"smw-runtime: sprite_palettes={paletteTextureCount} source={(paletteTextureCount > 0 ? "vram" : "preview")} atlas={_levelSpriteAtlasPath}");
+    }
+
+    private int LoadSpritePaletteTextures()
+    {
+        Array.Clear(_spritePaletteTextures);
+        if (!FileAccess.FileExists(_levelSpriteVramPath) ||
+            !TryLoadLevelPalette(out var palette))
+        {
+            return 0;
+        }
+
+        byte[] vram;
+        try
+        {
+            vram = IoFile.ReadAllBytes(ProjectSettings.GlobalizePath(_levelSpriteVramPath));
+        }
+        catch (Exception ex)
+        {
+            GD.PushWarning($"smw-runtime: failed to read sprite VRAM {_levelSpriteVramPath}: {ex.Message}");
+            return 0;
+        }
+
+        if (vram.Length == 0 || vram.Length % 32 != 0)
+        {
+            GD.PushWarning($"smw-runtime: invalid sprite VRAM length {vram.Length} for {_levelSpriteVramPath}");
+            return 0;
+        }
+
+        var tileCount = vram.Length / 32;
+        var rows = (tileCount + SnesSpriteAtlasColumns - 1) / SnesSpriteAtlasColumns;
+        var width = SnesSpriteAtlasColumns * SnesSpriteTileSize;
+        var height = rows * SnesSpriteTileSize;
+        var built = 0;
+        for (var oamPalette = 0; oamPalette < _spritePaletteTextures.Length; oamPalette++)
+        {
+            var image = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+            var rowOffset = (8 + oamPalette) * 16;
+            for (var tileIndex = 0; tileIndex < tileCount; tileIndex++)
+            {
+                var tileOffset = tileIndex * 32;
+                var tileX = (tileIndex % SnesSpriteAtlasColumns) * SnesSpriteTileSize;
+                var tileY = (tileIndex / SnesSpriteAtlasColumns) * SnesSpriteTileSize;
+                for (var y = 0; y < SnesSpriteTileSize; y++)
+                {
+                    var p0 = vram[tileOffset + y * 2];
+                    var p1 = vram[tileOffset + y * 2 + 1];
+                    var p2 = vram[tileOffset + 16 + y * 2];
+                    var p3 = vram[tileOffset + 16 + y * 2 + 1];
+                    for (var x = 0; x < SnesSpriteTileSize; x++)
+                    {
+                        var bit = 7 - x;
+                        var colorIndex =
+                            ((p0 >> bit) & 1) |
+                            (((p1 >> bit) & 1) << 1) |
+                            (((p2 >> bit) & 1) << 2) |
+                            (((p3 >> bit) & 1) << 3);
+                        var color = colorIndex == 0
+                            ? new Color(0, 0, 0, 0)
+                            : palette[rowOffset + colorIndex];
+                        image.SetPixel(tileX + x, tileY + y, color);
+                    }
+                }
+            }
+
+            _spritePaletteTextures[oamPalette] = ImageTexture.CreateFromImage(image);
+            built++;
+        }
+
+        return built;
+    }
+
+    private bool TryLoadLevelPalette(out Color[] palette)
+    {
+        palette = [];
+        if (!FileAccess.FileExists(_levelPalettePath))
+        {
+            return false;
+        }
+
+        using var file = FileAccess.Open(_levelPalettePath, FileAccess.ModeFlags.Read);
+        if (file == null)
+        {
+            return false;
+        }
+
+        var parsed = Json.ParseString(file.GetAsText());
+        if (parsed.VariantType != Variant.Type.Dictionary)
+        {
+            return false;
+        }
+
+        var dictionary = parsed.AsGodotDictionary();
+        if (!dictionary.TryGetValue("rgb888", out var rgbVariant) ||
+            rgbVariant.VariantType != Variant.Type.Array)
+        {
+            return false;
+        }
+
+        var rgbRows = rgbVariant.AsGodotArray();
+        if (rgbRows.Count < 256)
+        {
+            return false;
+        }
+
+        palette = new Color[256];
+        for (var i = 0; i < palette.Length; i++)
+        {
+            if (rgbRows[i].VariantType != Variant.Type.Array)
+            {
+                return false;
+            }
+
+            var rgb = rgbRows[i].AsGodotArray();
+            if (rgb.Count < 3)
+            {
+                return false;
+            }
+
+            palette[i] = new Color(
+                rgb[0].AsSingle() / 255.0f,
+                rgb[1].AsSingle() / 255.0f,
+                rgb[2].AsSingle() / 255.0f,
+                1.0f);
+        }
+
+        return true;
     }
 
     private static bool IsRuntimeEnemySprite(int spriteId)
@@ -1194,9 +1348,15 @@ public partial class GameScene : Node2D
     private bool AddSpriteOamTile(Node2D node, SpriteOamTile tile, out Sprite2D sprite)
     {
         sprite = null!;
-        if (_spriteTexture == null ||
-            tile.Bank < 0 ||
+        if (tile.Bank < 0 ||
             tile.Bank >= SpriteAtlasTileStartByLmuBank.Length)
+        {
+            return false;
+        }
+
+        var oamPalette = (tile.Prop >> 1) & 0x07;
+        var texture = _spritePaletteTextures[oamPalette] ?? _spriteTexture;
+        if (texture == null)
         {
             return false;
         }
@@ -1208,15 +1368,15 @@ public partial class GameScene : Node2D
             (tileIndex / SnesSpriteAtlasColumns) * SnesSpriteTileSize,
             size,
             size);
-        if (region.Position.X + size > _spriteTexture.GetWidth() ||
-            region.Position.Y + size > _spriteTexture.GetHeight())
+        if (region.Position.X + size > texture.GetWidth() ||
+            region.Position.Y + size > texture.GetHeight())
         {
             return false;
         }
 
         sprite = new Sprite2D
         {
-            Texture = _spriteTexture,
+            Texture = texture,
             RegionEnabled = true,
             RegionRect = region,
             Position = new Vector2(tile.Dx, tile.Dy),

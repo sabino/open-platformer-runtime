@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added palette-aware runtime sprite rendering: Godot now builds eight OAM sprite atlases from the imported SNES 4bpp sprite VRAM plus the current level CGRAM palette, then selects the OAM palette row from each sprite property byte instead of using the single preview row.
 - Synced the offline level projection with current Lunar Magic Universal behavior for right diagonal ledge object `0x3B` and the 2x2 extended goal marker, and taught runtime slope classification to treat the generated right diagonal ledge edge tiles as slope surfaces.
 - Extended `tools/capture-wayland.sh` so compositor captures can pass additional Godot debug arguments such as `--smw-test-spawn=...`, while still forcing the safe Wayland/OpenGL path and workspace `6` by default.
 - Added RCON inspection commands for unattended playtest debugging: `tile`/`probe` reports the Map16/collision role at Mario's feet or an explicit world point, and `near`/`actors_near` lists nearby runtime sprite actors with state, position, and hitbox.

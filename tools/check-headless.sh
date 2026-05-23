@@ -97,6 +97,7 @@ EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1477 collision_rects=25 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
+grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
 grep -q "sprite_actors=33" "$LOG_FILE"
@@ -109,6 +110,7 @@ grep -q "smw-runtime: level_music level=105 music_index=0 bank=Level" "$LOG_FILE
 grep -q "smw-audio: disabled=1" "$LOG_FILE"
 ! grep -q "smw-audio: internal_apu=1" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1477" "$LOG_FILE"
+grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-test-screen-exit=7 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: entrance_motion action=4 frames=28 dx=0.00 dy=1.00" "$LOG_FILE"
