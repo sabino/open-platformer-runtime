@@ -104,6 +104,16 @@ public static class PhysicsSmoke
             }
         }
 
+        sbyte[] expectedPMeterDeltas = [-1, -1, 2];
+        for (var i = 0; i < expectedPMeterDeltas.Length; i++)
+        {
+            if (SmwPhysics.PMeterDeltaTable[i] != expectedPMeterDeltas[i])
+            {
+                Console.Error.WriteLine($"P-meter delta table mismatch at {i}");
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -141,6 +151,44 @@ public static class PhysicsSmoke
         if (state.PMeter != 0x70 || state.XSpeed <= 0x23 || state.XSpeed > 0x30)
         {
             Console.Error.WriteLine($"expected P-meter sprint acceleration, got xs=0x{state.XSpeed:X2} p=0x{state.PMeter:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x10;
+        state.PMeter = 0x70;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true, Run = true }, []);
+        if (state.PMeter != 0x6F || state.XSpeed > 0x24)
+        {
+            Console.Error.WriteLine($"expected full P-meter to decay below sprint threshold, got xs=0x{state.XSpeed:X2} p=0x{state.PMeter:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x30;
+        state.PMeter = 0x70;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true, Jump = true, JumpPressed = true, Run = true }, []);
+        if (!state.RunningTakeoff || state.PMeter != 0x70)
+        {
+            Console.Error.WriteLine($"expected full P-meter jump to mark running takeoff, got takeoff={state.RunningTakeoff} p=0x{state.PMeter:X2}");
+            return false;
+        }
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true, Run = true }, []);
+        if (state.PMeter != 0x70 || state.XSpeed <= 0x24 || state.XSpeed > 0x30)
+        {
+            Console.Error.WriteLine($"expected running-takeoff air sprint carry, got xs=0x{state.XSpeed:X2} p=0x{state.PMeter:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.PMeter = 1;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.PMeter != 0)
+        {
+            Console.Error.WriteLine($"expected P-meter decay to clamp at zero, got p=0x{state.PMeter:X2}");
             return false;
         }
 

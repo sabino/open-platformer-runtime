@@ -27,6 +27,11 @@ public sealed class SmwPhysics
     private const int MaxFall = 0x40;
     private const float StepUpTolerance = 12.0f;
 
+    public static readonly sbyte[] PMeterDeltaTable =
+    [
+        -1, -1, 2,
+    ];
+
     public static readonly sbyte[] HorizontalMaxSpeedTable =
     [
         unchecked((sbyte)0xec), 0x14, unchecked((sbyte)0xdc), 0x24,
@@ -57,6 +62,7 @@ public sealed class SmwPhysics
         public int PMeter;
         public int Powerup;
         public bool SpinJump;
+        public bool RunningTakeoff;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -133,8 +139,8 @@ public sealed class SmwPhysics
         IReadOnlyList<Rect2> solids,
         IReadOnlyList<SlopeSurface> slopes)
     {
-        ApplyHorizontal(ref state, input);
         ApplyJumpAndGravity(ref state, input);
+        ApplyHorizontal(ref state, input);
 
         IntegrateX(ref state);
         var steppedOntoSolid = ResolveAxis(ref state, solids, horizontal: true);
@@ -223,8 +229,9 @@ public sealed class SmwPhysics
         if (dir != 0)
         {
             state.Facing = dir > 0 ? 1 : 0;
-            UpdatePMeter(ref state, input, Math.Abs(state.XSpeed));
-            var target = HorizontalTarget(input.Run, Math.Abs(state.XSpeed), state.PMeter);
+            var absSpeed = Math.Abs(state.XSpeed);
+            var pMeterMode = UpdatePMeterEx(ref state, PMeterModeForHorizontal(state, input, absSpeed));
+            var target = HorizontalTargetForPMeterMode(pMeterMode);
             var accel = input.Run ? RunAccel : WalkAccel;
             if (!state.OnGround)
             {
@@ -244,7 +251,7 @@ public sealed class SmwPhysics
         }
         else
         {
-            UpdatePMeter(ref state, input, Math.Abs(state.XSpeed));
+            UpdatePMeterEx(ref state, 0);
             var friction = state.OnGround ? GroundFriction : AirFriction;
             if (state.XSpeed > 0)
             {
@@ -267,26 +274,48 @@ public sealed class SmwPhysics
         }
     }
 
-    private static void UpdatePMeter(ref PlayerState state, FrameInput input, int absSpeed)
+    private static int PMeterModeForHorizontal(PlayerState state, FrameInput input, int absSpeed)
     {
-        if (state.OnGround && input.Run && absSpeed >= PMeterSprintThreshold)
+        if (!input.Run)
         {
-            state.PMeter = Math.Min(PMeterMax, state.PMeter + 2);
+            return 0;
         }
-        else
+
+        if (absSpeed >= PMeterSprintThreshold && (state.OnGround || state.RunningTakeoff))
         {
-            state.PMeter = Math.Max(0, state.PMeter - 1);
+            return 2;
         }
+
+        return 1;
     }
 
-    private static int HorizontalTarget(bool runHeld, int absSpeed, int pMeter)
+    private static int UpdatePMeterEx(ref PlayerState state, int mode)
     {
-        if (!runHeld)
+        mode = Math.Clamp(mode, 0, PMeterDeltaTable.Length - 1);
+        var pMeter = state.PMeter + PMeterDeltaTable[mode];
+        if (pMeter < 0)
         {
-            return WalkMax;
+            pMeter = 0;
         }
 
-        return pMeter >= PMeterMax && absSpeed >= PMeterSprintThreshold ? SprintMax : RunMax;
+        if (pMeter >= PMeterMax)
+        {
+            mode++;
+            pMeter = PMeterMax;
+        }
+
+        state.PMeter = pMeter;
+        return mode;
+    }
+
+    private static int HorizontalTargetForPMeterMode(int mode)
+    {
+        if (mode >= 3)
+        {
+            return SprintMax;
+        }
+
+        return mode >= 1 ? RunMax : WalkMax;
     }
 
     private static void ApplyJumpAndGravity(ref PlayerState state, FrameInput input)
@@ -302,8 +331,13 @@ public sealed class SmwPhysics
 
             state.YSpeed = JumpHeightTable[speedIndex];
             state.OnGround = false;
+            state.RunningTakeoff = state.PMeter >= PMeterMax;
             state.SpinJump = input.SpinPressed;
             state.JumpHeldFrames = 0;
+        }
+        else if (state.OnGround)
+        {
+            state.RunningTakeoff = false;
         }
 
         if (state.YSpeed < 0 && (input.Jump || input.Spin))
@@ -360,6 +394,7 @@ public sealed class SmwPhysics
                 {
                     state.Y = (int)MathF.Round(solid.Position.Y - PlayerHeightFor(state));
                     state.OnGround = true;
+                    state.RunningTakeoff = false;
                 }
                 else if (state.YSpeed < 0)
                 {
@@ -393,6 +428,7 @@ public sealed class SmwPhysics
         state.Y = (int)MathF.Round(solidTop - playerHeight);
         state.SubY = 0;
         state.SubYSpeed = 0;
+        state.RunningTakeoff = false;
         return true;
     }
 
@@ -458,6 +494,7 @@ public sealed class SmwPhysics
                 state.YSpeed = 0;
             }
             state.OnGround = true;
+            state.RunningTakeoff = false;
             return;
         }
     }

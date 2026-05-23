@@ -7,8 +7,10 @@ Current implementation details:
 - Position is stored in sixteenth-pixel units.
 - Horizontal and vertical speeds use the same practical scale as SMW player speeds: one speed unit is `1/16 px/frame`.
 - Normal flat-ground horizontal caps use the first entries from `kHandlePlayerPhysics_DATA_00D535`: walking `0x14`, running `0x24`, and full P-meter sprinting `0x30`.
+- P-meter updates use the native `kHandlePlayerPhysics_DATA_00D5EB` mode deltas `[-1, -1, +2]`; mode `2` returns mode `3` when it reaches `0x70`, which selects the sprint cap. The current C# bridge tracks full-P-meter running jumps as `RunningTakeoff` until landing so the airborne sprint mode is only carried from a native-style takeoff, not from every airborne full-meter state.
 - Ground friction now uses the native sub-speed step `0x0020`; airborne no-input friction uses `0x0100`.
 - Normal jump speeds use the 16-entry `kHandlePlayerPhysics_JumpHeightTable`.
+- The fixed-step order now starts jump/gravity before horizontal acceleration/P-meter selection, matching the native `HandlePlayerPhysics()` branch where jump can set the running-takeoff air flag before horizontal speed mode is resolved.
 - Gravity uses the native non-cape constants visible around `HandlePlayerPhysics_D930`: `0x06` when jump is not held and `0x03` while jump is held during rising motion.
 - Maximum normal fall speed is currently `0x40`, matching the common non-cape clamp in the same table.
 - Horizontal movement is clamped to the generated level bounds so Mario cannot leave the level to the left or right during the playable slice.
