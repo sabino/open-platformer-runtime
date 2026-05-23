@@ -32,7 +32,6 @@ public partial class GameScene : Node2D
     private const int PlayerHurtCooldownFrames = 90;
     private const int GoalTapeSpriteId = 0x7B;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
-    private const bool RuntimeSpriteActorPlayerInteractionEnabled = false;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
     [
@@ -257,6 +256,13 @@ public partial class GameScene : Node2D
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
     private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
     private readonly record struct SpriteOamTile(int Dx, int Dy, int Tile, int Prop, int Bank, bool Large);
+    private readonly record struct SpriteActorBehavior(
+        Rect2 Hitbox,
+        bool CanInteract,
+        bool Stompable,
+        bool TerrainCollision,
+        bool Gravity,
+        float InitialXSpeed);
     private readonly record struct PipeEntrance(Rect2 Rect, int Screen, bool Horizontal, string Kind);
     private readonly record struct ScriptedInputSegment(int Frames, SmwPhysics.FrameInput Input);
     private readonly record struct LevelEntrance(
@@ -277,7 +283,8 @@ public partial class GameScene : Node2D
         public bool Alive { get; set; } = true;
         public bool OnGround { get; set; }
         public int WakeScreen { get; init; }
-        public Rect2 Rect => new(X, Y, SpriteActorWidth, SpriteActorHeight);
+        public required SpriteActorBehavior Behavior { get; init; }
+        public Rect2 Rect => new(X + Behavior.Hitbox.Position.X, Y + Behavior.Hitbox.Position.Y, Behavior.Hitbox.Size.X, Behavior.Hitbox.Size.Y);
     }
 
     private sealed class CoinPickup
@@ -968,6 +975,7 @@ public partial class GameScene : Node2D
     private RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn, bool debugOverlays)
     {
         var color = SpriteActorColor(spawn.SpriteId);
+        var behavior = SpriteActorBehaviorFor(spawn.SpriteId);
         var node = new Node2D
         {
             Name = $"Sprite_{spawn.SpriteId:X2}_{spawn.Offset:X2}",
@@ -979,8 +987,8 @@ public partial class GameScene : Node2D
         {
             Name = hasVisual ? "ActorCollisionDebug" : "ActorPlaceholderDebug",
             Color = debugOverlays ? new Color(color.R, color.G, color.B, 0.20f) : color,
-            Position = Vector2.Zero,
-            Size = new Vector2(SpriteActorWidth, SpriteActorHeight),
+            Position = behavior.Hitbox.Position,
+            Size = behavior.Hitbox.Size,
             MouseFilter = Control.MouseFilterEnum.Ignore,
             Visible = false,
         };
@@ -989,7 +997,7 @@ public partial class GameScene : Node2D
         {
             AddRectOutline(
                 node,
-                new Rect2(Vector2.Zero, new Vector2(SpriteActorWidth, SpriteActorHeight)),
+                behavior.Hitbox,
                 new Color(1.0f, 0.10f, 0.10f, 0.88f),
                 1.0f,
                 60);
@@ -1001,8 +1009,9 @@ public partial class GameScene : Node2D
             SpriteId = spawn.SpriteId,
             X = spawn.X,
             Y = spawn.Y - SpriteActorHeight,
-            XSpeed = InitialSpriteActorSpeed(spawn.SpriteId),
+            XSpeed = behavior.InitialXSpeed,
             WakeScreen = spawn.Screen,
+            Behavior = behavior,
         };
     }
 
@@ -1202,13 +1211,15 @@ public partial class GameScene : Node2D
         new(16, 8, 0xC4, 0x4A, 1, false),
     ];
 
-    private static float InitialSpriteActorSpeed(int spriteId)
+    private static SpriteActorBehavior SpriteActorBehaviorFor(int spriteId)
     {
         return spriteId switch
         {
-            0x4F or 0x8E or 0x9F or 0xB9 or 0xBD or 0xC7 or 0xDB => -0.58f,
-            0xAB => -0.42f,
-            _ => 0.0f,
+            0x9F => new SpriteActorBehavior(new Rect2(0, 0, 64, 64), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
+            0xAB => new SpriteActorBehavior(new Rect2(-4, -15, 20, 31), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
+            0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.58f),
+            0x4F or 0x50 => new SpriteActorBehavior(new Rect2(8, -16, 16, 32), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
+            _ => new SpriteActorBehavior(new Rect2(0, 0, SpriteActorWidth, SpriteActorHeight), CanInteract: false, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
         };
     }
 
@@ -2520,73 +2531,87 @@ public partial class GameScene : Node2D
 
     private void UpdateSpriteActorMotion(RuntimeSpriteActor actor)
     {
-        if (MathF.Abs((actor.X + SpriteActorWidth * 0.5f) - (_cameraX + LogicalViewportWidth * 0.5f)) > LogicalViewportWidth + 48.0f)
+        var actorRect = actor.Rect;
+        if (MathF.Abs(actorRect.GetCenter().X - (_cameraX + LogicalViewportWidth * 0.5f)) > LogicalViewportWidth + 80.0f)
         {
             return;
         }
 
         actor.X += actor.XSpeed;
         var rect = actor.Rect;
-        foreach (var solid in _solids)
+        if (actor.Behavior.TerrainCollision)
         {
-            if (!rect.Intersects(solid))
+            foreach (var solid in _solids)
             {
-                continue;
-            }
+                if (!rect.Intersects(solid))
+                {
+                    continue;
+                }
 
-            if (actor.XSpeed > 0)
-            {
-                actor.X = solid.Position.X - SpriteActorWidth;
+                if (actor.XSpeed > 0)
+                {
+                    actor.X = solid.Position.X - actor.Behavior.Hitbox.Position.X - actor.Behavior.Hitbox.Size.X;
+                }
+                else if (actor.XSpeed < 0)
+                {
+                    actor.X = solid.Position.X + solid.Size.X - actor.Behavior.Hitbox.Position.X;
+                }
+                actor.XSpeed = -actor.XSpeed;
+                rect = actor.Rect;
             }
-            else if (actor.XSpeed < 0)
-            {
-                actor.X = solid.Position.X + solid.Size.X;
-            }
-            actor.XSpeed = -actor.XSpeed;
-            rect = actor.Rect;
         }
 
-        actor.YSpeed = MathF.Min(SpriteActorMaxFall, actor.YSpeed + SpriteActorGravity);
+        if (actor.Behavior.Gravity)
+        {
+            actor.YSpeed = MathF.Min(SpriteActorMaxFall, actor.YSpeed + SpriteActorGravity);
+        }
         actor.Y += actor.YSpeed;
         actor.OnGround = false;
         rect = actor.Rect;
-        foreach (var solid in _solids)
+        if (actor.Behavior.TerrainCollision)
         {
-            if (!rect.Intersects(solid))
+            foreach (var solid in _solids)
             {
-                continue;
-            }
+                if (!rect.Intersects(solid))
+                {
+                    continue;
+                }
 
-            if (actor.YSpeed >= 0)
+                if (actor.YSpeed >= 0)
+                {
+                    actor.Y = solid.Position.Y - actor.Behavior.Hitbox.Position.Y - actor.Behavior.Hitbox.Size.Y;
+                    actor.YSpeed = 0.0f;
+                    actor.OnGround = true;
+                }
+                else
+                {
+                    actor.Y = solid.Position.Y + solid.Size.Y - actor.Behavior.Hitbox.Position.Y;
+                    actor.YSpeed = 0.0f;
+                }
+                rect = actor.Rect;
+            }
+        }
+
+        if (actor.Behavior.TerrainCollision)
+        {
+            rect = actor.Rect;
+            var probeX = rect.GetCenter().X;
+            var bottom = rect.Position.Y + rect.Size.Y;
+            if (SmwPhysics.TryResolveFloorSlopeFromAbove(
+                probeX,
+                rect.Position.Y,
+                bottom,
+                bottom,
+                actor.YSpeed,
+                _slopes,
+                aboveTolerance: 8.0f,
+                belowTolerance: 16.0f,
+                out var slopeY))
             {
-                actor.Y = solid.Position.Y - SpriteActorHeight;
+                actor.Y = slopeY - actor.Behavior.Hitbox.Position.Y - actor.Behavior.Hitbox.Size.Y;
                 actor.YSpeed = 0.0f;
                 actor.OnGround = true;
             }
-            else
-            {
-                actor.Y = solid.Position.Y + solid.Size.Y;
-                actor.YSpeed = 0.0f;
-            }
-            rect = actor.Rect;
-        }
-
-        var probeX = actor.X + SpriteActorWidth * 0.5f;
-        var bottom = actor.Y + SpriteActorHeight;
-        if (SmwPhysics.TryResolveFloorSlopeFromAbove(
-            probeX,
-            actor.Y,
-            bottom,
-            bottom,
-            actor.YSpeed,
-            _slopes,
-            aboveTolerance: 8.0f,
-            belowTolerance: 16.0f,
-            out var slopeY))
-        {
-            actor.Y = slopeY - SpriteActorHeight;
-            actor.YSpeed = 0.0f;
-            actor.OnGround = true;
         }
 
         if (actor.Y > GetLevelPixelBottom() + 128.0f)
@@ -2597,18 +2622,14 @@ public partial class GameScene : Node2D
 
     private void ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect)
     {
-        if (!RuntimeSpriteActorPlayerInteractionEnabled)
-        {
-            return;
-        }
-
-        if (!actor.Alive || !playerRect.Intersects(actor.Rect))
+        var actorRect = actor.Rect;
+        if (!actor.Alive || !actor.Behavior.CanInteract || !playerRect.Intersects(actorRect))
         {
             return;
         }
 
         var playerBottom = _state.YFloat + SmwPhysics.PlayerHeightFor(_state);
-        var stomped = _state.YSpeed > 0 && playerBottom <= actor.Y + 10.0f;
+        var stomped = actor.Behavior.Stompable && _state.YSpeed > 0 && playerBottom <= actorRect.Position.Y + 10.0f;
         if (stomped)
         {
             actor.Alive = false;
@@ -2630,7 +2651,7 @@ public partial class GameScene : Node2D
             _physics.SetPowerup(ref _state, SmwPhysics.SmallPowerup);
             UpdatePlayerGraphic(force: true);
         }
-        _state.XSpeed = _state.XFloat < actor.X ? -24 : 24;
+        _state.XSpeed = _state.XFloat < actorRect.GetCenter().X ? -24 : 24;
         _state.YSpeed = -32;
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;

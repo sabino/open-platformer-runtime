@@ -19,9 +19,10 @@ LOG_FILE="$(mktemp)"
 INPUT_SCRIPT="$(mktemp)"
 PIPE_SCRIPT="$(mktemp)"
 DEBUG_COMMAND_FILE="$(mktemp)"
+ACTOR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 1 right run
@@ -34,6 +35,13 @@ spawn 880 304
 powerup small
 state before
 step 1
+EOF
+cat >"$ACTOR_COMMAND_FILE" <<'EOF'
+pause
+spawn 528 304
+powerup big
+step 1
+state after_actor_hit
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
@@ -92,6 +100,13 @@ grep -q "smw-debug: command_file=$DEBUG_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=before" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "x=896.00 y=304.00" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$ACTOR_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$ACTOR_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-state: tag=after_actor_hit" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "pow=0" "$LOG_FILE"
+grep -q "ys=-32" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 600 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
 RCON_PID="$!"
