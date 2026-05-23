@@ -1681,15 +1681,12 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var minX = bestCluster.Min(cell => cell.X);
         var maxX = bestCluster.Max(cell => cell.X);
         var minY = bestCluster.Min(cell => cell.Y);
-        var maxY = bestCluster.Max(cell => cell.Y);
-        var topLeft = TileToWorld(minX, minY);
-        var bottomRight = TileToWorld(maxX + 1, maxY + 1);
+        var topLeft = TileToWorld(maxX - 2, minY);
         var rect = new Rect2(
-            new Vector2(topLeft.X, topLeft.Y - 12.0f),
-            new Vector2(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y + 16.0f));
+            topLeft,
+            new Vector2(Map16TileSize * 3.0f, Map16TileSize * 3.0f));
         _pipeEntrances.Add(new PipeEntrance(rect, screen, Horizontal: false, Kind: "diagonal"));
     }
 
@@ -2427,15 +2424,15 @@ public partial class GameScene : Node2D
                 slot,
                 tile,
                 _playerXDisp[dispIndex],
-                _playerYDisp[dispIndex] + PlayerRenderYOffsetForPowerup(powerup),
+                _playerYDisp[dispIndex] + PlayerRenderYOffsetForState(powerup, _state.Ducking),
                 large,
                 flipH);
         }
     }
 
-    private static int PlayerRenderYOffsetForPowerup(int powerup)
+    private static int PlayerRenderYOffsetForState(int powerup, bool ducking)
     {
-        return powerup == SmwPhysics.SmallPowerup
+        return powerup == SmwPhysics.SmallPowerup || ducking
             ? SmwPhysics.SmallPlayerHeight - SmwPhysics.BigPlayerHeight
             : 0;
     }
@@ -2954,6 +2951,10 @@ public partial class GameScene : Node2D
 
     public void DebugSetPlayerPosition(Vector2 position)
     {
+        _entranceMotionFrames = 0;
+        _entranceMotionAction = 0;
+        _entranceMotionPixelsPerFrame = Vector2.Zero;
+        _pipeTransitionLatch = false;
         _state.X = (int)MathF.Round(position.X);
         _state.Y = (int)MathF.Round(position.Y);
         _state.SubX = 0;
@@ -2986,7 +2987,7 @@ public partial class GameScene : Node2D
         UpdatePlayerGraphic(force: true);
         UpdateHud();
         UpdateDebugGizmos();
-        GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} render_y={PlayerRenderYOffsetForPowerup(_state.Powerup)}");
+        GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} render_y={PlayerRenderYOffsetForState(_state.Powerup, _state.Ducking)}");
     }
 
     public void DebugLoadInputScript(string path)

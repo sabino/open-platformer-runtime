@@ -69,6 +69,10 @@ grep -q "smw-input-script: loaded path=$INPUT_SCRIPT segments=2 frames=2" "$LOG_
 grep -q "smw-input-script: done name=$INPUT_SCRIPT frames=2" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2050,292 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
+! grep -q "pipe-debug screen=07" "$LOG_FILE"
+grep -q "smw-input-script: done name=$PIPE_SCRIPT frames=1" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2072,240 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
 grep -q "pipe-debug screen=07 target=1CB secondary=0 source=1CB kind=diagonal" "$LOG_FILE"
 grep -q "smw-input-script: done name=$PIPE_SCRIPT frames=1" "$LOG_FILE"
 
