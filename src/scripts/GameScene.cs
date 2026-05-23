@@ -182,6 +182,7 @@ public partial class GameScene : Node2D
     private int _debugTraceFrame;
     private string _debugTraceTag = "trace";
     private bool _debugActorsEnabled = true;
+    private bool _debugActorVisualsEnabled = true;
     private bool _debugInvincible;
     private TcpListener? _debugRconListener;
     private readonly List<TcpClient> _debugRconClients = [];
@@ -1300,6 +1301,7 @@ public partial class GameScene : Node2D
             Name = $"Sprite_{spawn.SpriteId:X2}_{spawn.Offset:X2}",
             Position = new Vector2(spawn.X, spawn.Y - SpriteActorHeight),
             ZIndex = 6,
+            Visible = _debugActorVisualsEnabled,
         };
         var visuals = AddSpriteActorVisuals(node, spawn.SpriteId, state: 0);
         var hasVisual = visuals.Count > 0;
@@ -3008,6 +3010,7 @@ public partial class GameScene : Node2D
             actor.PreviousX = actor.X;
             actor.PreviousY = actor.Y;
             UpdateSpriteActorMotion(actor);
+            ApplySpriteActorVisualVisibility(actor);
             if (IsSolidBlockSprite(actor.SpriteId))
             {
                 playerAdjusted |= ResolvePlayerSolidBlockActorCollision(actor, previousPlayerRect);
@@ -3125,6 +3128,14 @@ public partial class GameScene : Node2D
         if (actor.Y > GetLevelPixelBottom() + 128.0f)
         {
             actor.Alive = false;
+        }
+    }
+
+    private void ApplySpriteActorVisualVisibility(RuntimeSpriteActor actor)
+    {
+        if (!_debugActorVisualsEnabled)
+        {
+            actor.Node.Visible = false;
         }
     }
 
@@ -4490,6 +4501,17 @@ public partial class GameScene : Node2D
         GD.Print($"smw-debug: actors={(_debugActorsEnabled ? 1 : 0)}");
     }
 
+    public void DebugSetActorVisualsEnabled(bool enabled)
+    {
+        _debugActorVisualsEnabled = enabled;
+        foreach (var actor in _spriteActors)
+        {
+            actor.Node.Visible = enabled && (!IsJumpingPiranhaSprite(actor.SpriteId) || actor.State != 0);
+        }
+
+        GD.Print($"smw-debug: actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)}");
+    }
+
     public void DebugSetInvincible(bool enabled)
     {
         _debugInvincible = enabled;
@@ -4815,6 +4837,12 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugSetActorsEnabled(ParseDebugBool(parts[1]));
                 return BuildDebugState("actors");
+            case "actor_visuals":
+            case "sprite_visuals":
+            case "sprites_visible":
+                RequirePartCount(parts, 2);
+                DebugSetActorVisualsEnabled(ParseDebugBool(parts[1]));
+                return BuildDebugState("actor_visuals");
             case "god":
             case "invincible":
                 RequirePartCount(parts, 2);
@@ -5018,7 +5046,7 @@ public partial class GameScene : Node2D
         var perf =
             $"smw-debug-perf: tag={tag} frame={_debugFrameCounter} fps={Engine.GetFramesPerSecond():0.00} " +
             $"physics_tps={Engine.PhysicsTicksPerSecond} paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
-            $"nodes={CountNodes(GetTree().Root)} actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} " +
+            $"nodes={CountNodes(GetTree().Root)} actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} " +
             $"tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} player_sprites={_playerTileSprites.Count} " +
             $"audio_enabled={(AudioEnabled ? 1 : 0)} audio_process={(_audio?.ProcessMode.ToString() ?? "none")} audio_{audioStatus}";
         GD.Print(perf);
@@ -5247,7 +5275,7 @@ public partial class GameScene : Node2D
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
-            $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
+            $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount}";
     }
 

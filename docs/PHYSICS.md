@@ -8,6 +8,7 @@ Current implementation details:
 - Horizontal and vertical speeds use the same practical scale as SMW player speeds: one speed unit is `1/16 px/frame`.
 - Normal flat-ground horizontal caps use the first entries from `kHandlePlayerPhysics_DATA_00D535`: walking `0x14`, running `0x24`, and full P-meter sprinting `0x30`.
 - P-meter updates use the native `kHandlePlayerPhysics_DATA_00D5EB` mode deltas `[-1, -1, +2]`; mode `2` returns mode `3` when it reaches `0x70`, which selects the sprint cap. The current C# bridge tracks full-P-meter running jumps as `RunningTakeoff` until landing so the airborne sprint mode is only carried from a native-style takeoff, not from every airborne full-meter state.
+- The native `kHandlePlayerPhysics_MarioAccel` table is exposed as `SmwPhysics.HorizontalAccelerationTable`. Flat-ground turn-around acceleration now uses the native walk/run entries `0x0280` and `0x0500` instead of the earlier temporary `0x0600` shortcut.
 - Ground friction now uses the native sub-speed step `0x0020`; no-input friction is skipped while airborne, matching `HandlePlayerPhysics_00D764()` only calling the friction branch when `player_in_air_flag` is clear.
 - Normal jump speeds use the 16-entry `kHandlePlayerPhysics_JumpHeightTable`.
 - The jump-table lookup is now public as `SmwPhysics.JumpSpeedIndexFor()` / `JumpYSpeedFor()` and exposed through RCON `physics`, so live playtests can verify exactly which native jump row a given X speed and spin state would use.

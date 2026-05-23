@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replaced the temporary flat-ground turn-around acceleration with the native `kHandlePlayerPhysics_MarioAccel` walk/run entries (`0x0280`/`0x0500`) and exposed the full horizontal acceleration table for regression checks.
+- Added RCON `actor_visuals`/`sprite_visuals` toggles so unattended visual debugging can hide runtime sprite actor nodes without freezing their simulation, making Mario OAM pixel glitches easier to isolate from nearby enemy or block sprites.
 - Split right-diagonal pipe collision bookkeeping into floor/body/ceiling cell sets, letting the temporary pipe solver reject embedded positions against floor-slope pipe cells without turning the slope itself back into a full rectangular wall.
 - Added RCON `physics`/`phys` and `pmeter` controls plus richer HUD/trace/state fields for P-meter, spin-jump, running-takeoff, jump-hold, facing, subpixels, and native jump-table lookup during unattended playtest debugging.
 - Synced left diagonal ledge bottom-row projection with the current Lunar Magic Universal renderer, removing a stale extra diagonal-line tile from the importer.

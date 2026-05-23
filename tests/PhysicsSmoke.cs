@@ -136,6 +136,16 @@ public static class PhysicsSmoke
             }
         }
 
+        if (SmwPhysics.HorizontalAccelerationTable.Length != 124 ||
+            SmwPhysics.HorizontalAccelerationTable[72] != -SmwPhysics.NativeFlatWalkTurnAcceleration ||
+            SmwPhysics.HorizontalAccelerationTable[73] != -SmwPhysics.NativeFlatRunTurnAcceleration ||
+            SmwPhysics.HorizontalAccelerationTable[74] != SmwPhysics.NativeFlatWalkTurnAcceleration ||
+            SmwPhysics.HorizontalAccelerationTable[75] != SmwPhysics.NativeFlatRunTurnAcceleration)
+        {
+            Console.Error.WriteLine("expected native horizontal acceleration table to expose flat turn rows");
+            return false;
+        }
+
         sbyte[] expectedPMeterDeltas = [-1, -1, 2];
         for (var i = 0; i < expectedPMeterDeltas.Length; i++)
         {
@@ -306,6 +316,26 @@ public static class PhysicsSmoke
         if (state.XSpeed != 0x14 || state.SubXSpeed != 0x80 || state.PMeter != 0)
         {
             Console.Error.WriteLine($"expected no airborne no-input friction, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2} p=0x{state.PMeter:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x10;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Left = true }, []);
+        if (state.XSpeed != 0x0D || state.SubXSpeed != 0x80)
+        {
+            Console.Error.WriteLine($"expected native flat walk turn acceleration 0x0280, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x10;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Left = true, Run = true }, []);
+        if (state.XSpeed != 0x0B || state.SubXSpeed != 0x00)
+        {
+            Console.Error.WriteLine($"expected native flat run turn acceleration 0x0500, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
             return false;
         }
 
