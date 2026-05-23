@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Made Godot input scripts tolerate the native `smw/` `.input` format more closely by ignoring `@` directives and accepting `Start`, `Select`, `Up`, `L`, and `R` as no-op tokens while preserving `B` jump, `A` spin, and `X/Y` run.
 - Changed Mario floor-slope resolution from a single center probe to center/left/right foot probes biased by movement direction, with a headless diagonal-pipe slope regression around `x=921,y=208`.
 - Stopped treating imported warp-hole sprite `0x8E` as a normal visible runtime actor; it remains inspectable through sprite/debug markers without drawing a fake gameplay block in the sloped-pipe area.
 - Added palette-aware runtime sprite rendering: Godot now builds eight OAM sprite atlases from the imported SNES 4bpp sprite VRAM plus the current level CGRAM palette, then selects the OAM palette row from each sprite property byte instead of using the single preview row.

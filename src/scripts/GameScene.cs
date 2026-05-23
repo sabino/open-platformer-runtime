@@ -4924,6 +4924,11 @@ public partial class GameScene : Node2D
         {
             return false;
         }
+        line = line.Trim();
+        if (line.StartsWith('@'))
+        {
+            return false;
+        }
 
         var parts = line.Split(
             [' ', '\t', ',', ':', ';'],
@@ -4960,12 +4965,17 @@ public partial class GameScene : Node2D
             case "-":
                 break;
             case "left":
-            case "l":
                 input.Left = true;
                 break;
             case "right":
-            case "r":
                 input.Right = true;
+                break;
+            case "up":
+            case "u":
+            case "select":
+            case "start":
+            case "l":
+            case "r":
                 break;
             case "down":
             case "d":

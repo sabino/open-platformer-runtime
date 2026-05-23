@@ -32,8 +32,11 @@ RCON_PORT=4617
 trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
+@allow-opposing-directions
+1 Start
 1 right run
 1 right run jump
+1 L,R,Select
 EOF
 printf '1 down\n' >"$PIPE_SCRIPT"
 
@@ -152,8 +155,8 @@ grep -q "smw-runtime: course_clear level=105" "$LOG_FILE"
 grep -q "smw-test-powerup: powerup=0 height=16 render_y=-16" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-input-script="$INPUT_SCRIPT" 2>&1 | tee "$LOG_FILE"
-grep -q "smw-input-script: loaded path=$INPUT_SCRIPT segments=2 frames=2" "$LOG_FILE"
-grep -q "smw-input-script: done name=$INPUT_SCRIPT frames=2" "$LOG_FILE"
+grep -q "smw-input-script: loaded path=$INPUT_SCRIPT segments=4 frames=4" "$LOG_FILE"
+grep -q "smw-input-script: done name=$INPUT_SCRIPT frames=4" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2050,292 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
 ! grep -q "pipe-debug screen=07" "$LOG_FILE"

@@ -79,7 +79,7 @@ For reproducible lower-route captures, the runtime also accepts `--smw-test-spaw
 
 During a debug RCON run, `tools/smw-rcon.sh snapshot res://generated/smw/captures/name.png` saves the current Godot viewport immediately in visible runs, while `capture <path> <frames>` schedules a capture after one or more process frames. The same RCON channel can toggle inspection helpers live: `overlays on`, `actors off`, and `god on` are useful before positioning Mario for a screenshot or frame-step probe. Use `tile` or `tile <world-x> <world-y>` to query the Map16/collision role under a point, and `near <radius>` to list nearby runtime sprite actors.
 
-For deterministic autoplay checks, pass `--smw-input-script=/path/to/script`. Each non-comment line starts with a frame count followed by held inputs separated by spaces, commas, colons, or semicolons, for example `8 right run` or `4 right run jump`. Supported tokens are `left`, `right`, `down`, `jump`, `spin`, and `run`; `jump` and `spin` emit a pressed edge on the first frame of that line.
+For deterministic autoplay checks, pass `--smw-input-script=/path/to/script`. Each non-comment line starts with a frame count followed by held inputs separated by spaces, commas, colons, or semicolons, for example `8 right run` or `4 Right,Y`. Supported gameplay tokens are `left`, `right`, `down`, `jump`/`B`, `spin`/`A`, and `run`/`X`/`Y`; native `.input` directives and menu/shoulder tokens such as `Start`, `Select`, `Up`, `L`, and `R` are accepted as no-ops for compatibility with the current `smw/` TAS converter output.
 
 Pass `--smw-no-audio` or set `SMW_AUDIO=0` to disable the internal BRR/APU probe for quick performance A/B tests. Normal playtest runs keep audio enabled.
 
