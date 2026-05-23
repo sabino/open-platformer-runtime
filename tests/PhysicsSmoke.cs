@@ -450,6 +450,14 @@ public static class PhysicsSmoke
             return false;
         }
 
+        state = physics.MakeState(24, 84);
+        physics.Step(ref state, new SmwPhysics.FrameInput { Left = true }, [], slopes);
+        if (state.Y == 80 || state.YSpeed == 0)
+        {
+            Console.Error.WriteLine($"expected walking motion to ignore slope ceiling, got y={state.Y} ys={state.YSpeed}");
+            return false;
+        }
+
         return true;
     }
 }

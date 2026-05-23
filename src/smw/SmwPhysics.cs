@@ -531,7 +531,7 @@ public sealed class SmwPhysics
             var surfaceY = slope.Y0 + (slope.Y1 - slope.Y0) * t;
             if (slope.Ceiling)
             {
-                if (state.YSpeed > 0 || top < surfaceY - 16.0f || top > surfaceY + 6.0f)
+                if (state.YSpeed >= 0 || top < surfaceY - 16.0f || top > surfaceY + 6.0f)
                 {
                     continue;
                 }
