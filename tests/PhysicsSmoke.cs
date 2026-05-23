@@ -11,6 +11,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckDebugTraceState(physics))
+        {
+            return 1;
+        }
         if (!CheckFlatGroundHorizontalPhysics(physics))
         {
             return 1;
@@ -170,6 +174,40 @@ public static class PhysicsSmoke
                 Console.Error.WriteLine($"cape float y-speed table mismatch at {i}");
                 return false;
             }
+        }
+
+        return true;
+    }
+
+    private static bool CheckDebugTraceState(SmwPhysics physics)
+    {
+        if (SmwPhysics.JumpSpeedIndexFor(0x00, spin: false) != 0 ||
+            SmwPhysics.JumpYSpeedFor(0x00, spin: false) != -80 ||
+            SmwPhysics.JumpSpeedIndexFor(0x30, spin: false) != 12 ||
+            SmwPhysics.JumpYSpeedFor(0x30, spin: true) != -87)
+        {
+            Console.Error.WriteLine("expected public jump lookup helpers to mirror native jump table");
+            return false;
+        }
+
+        var state = physics.MakeState(12, 34, SmwPhysics.CapePowerup);
+        state.PMeter = 0x70;
+        state.SpinJump = true;
+        state.RunningTakeoff = true;
+        state.Ducking = true;
+        state.JumpHeldFrames = 5;
+        state.CapeFloatFrames = 3;
+        var trace = physics.CaptureTrace(state);
+        if (trace.PMeter != 0x70 ||
+            trace.Powerup != SmwPhysics.CapePowerup ||
+            !trace.SpinJump ||
+            !trace.RunningTakeoff ||
+            !trace.Ducking ||
+            trace.JumpHeldFrames != 5 ||
+            trace.CapeFloatFrames != 3)
+        {
+            Console.Error.WriteLine("expected trace state to preserve transient physics debug fields");
+            return false;
         }
 
         return true;

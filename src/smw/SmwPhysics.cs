@@ -103,7 +103,13 @@ public sealed class SmwPhysics
             SubXSpeed = state.SubXSpeed;
             SubYSpeed = state.SubYSpeed;
             OnGround = state.OnGround;
+            Facing = state.Facing;
+            PMeter = state.PMeter;
+            Powerup = state.Powerup;
+            SpinJump = state.SpinJump;
+            RunningTakeoff = state.RunningTakeoff;
             Ducking = state.Ducking;
+            JumpHeldFrames = state.JumpHeldFrames;
             CapeFloatFrames = state.CapeFloatFrames;
         }
 
@@ -116,7 +122,13 @@ public sealed class SmwPhysics
         public readonly int SubXSpeed;
         public readonly int SubYSpeed;
         public readonly bool OnGround;
+        public readonly int Facing;
+        public readonly int PMeter;
+        public readonly int Powerup;
+        public readonly bool SpinJump;
+        public readonly bool RunningTakeoff;
         public readonly bool Ducking;
+        public readonly int JumpHeldFrames;
         public readonly int CapeFloatFrames;
     }
 
@@ -303,6 +315,19 @@ public sealed class SmwPhysics
     public static int PlayerHeightForPowerup(int powerup)
     {
         return powerup == SmallPowerup ? SmallPlayerHeight : BigPlayerHeight;
+    }
+
+    public static int JumpSpeedIndexFor(int xSpeed, bool spin)
+    {
+        var speedIndex = Math.Clamp((Math.Abs(xSpeed) >> 2) & 0xFE, 0, JumpHeightTable.Length - 1);
+        return spin
+            ? Math.Min(speedIndex + 1, JumpHeightTable.Length - 1)
+            : speedIndex;
+    }
+
+    public static int JumpYSpeedFor(int xSpeed, bool spin)
+    {
+        return JumpHeightTable[JumpSpeedIndexFor(xSpeed, spin)];
     }
 
     public static bool TryResolveFloorSlope(
@@ -501,13 +526,7 @@ public sealed class SmwPhysics
         var jumpStarted = input.JumpPressed || input.SpinPressed;
         if (state.OnGround && jumpStarted)
         {
-            var speedIndex = Math.Clamp((Math.Abs(state.XSpeed) >> 2) & 0xFE, 0, JumpHeightTable.Length - 1);
-            if (input.SpinPressed)
-            {
-                speedIndex = Math.Min(speedIndex + 1, JumpHeightTable.Length - 1);
-            }
-
-            state.YSpeed = JumpHeightTable[speedIndex];
+            state.YSpeed = JumpYSpeedFor(state.XSpeed, input.SpinPressed);
             state.OnGround = false;
             state.RunningTakeoff = state.PMeter >= PMeterMax;
             state.SpinJump = input.SpinPressed;

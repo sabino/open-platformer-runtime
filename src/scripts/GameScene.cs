@@ -2924,7 +2924,9 @@ public partial class GameScene : Node2D
         }
         if (_playerDebugLabel != null)
         {
-            _playerDebugLabel.Text = $"pow={_state.Powerup} h={height} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)}";
+            _playerDebugLabel.Text =
+                $"p={_state.PMeter:X2} pow={_state.Powerup} h={height} g={(_state.OnGround ? 1 : 0)} " +
+                $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames}";
             _playerDebugLabel.Position = new Vector2(-8.0f, -18.0f);
         }
     }
@@ -4290,7 +4292,8 @@ public partial class GameScene : Node2D
 
         var footTile = DescribeFootTile();
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} cf={_state.CapeFloatFrames} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
+            $"g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} " +
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
             $"coins={_coinCount}/{_dragonCoinCount} tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
     }
@@ -4396,6 +4399,14 @@ public partial class GameScene : Node2D
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;
         GD.Print($"smw-test-velocity: xs={_state.XSpeed} ys={_state.YSpeed}");
+    }
+
+    public void DebugSetPlayerPMeter(int pMeter)
+    {
+        _state.PMeter = Math.Clamp(pMeter, 0, 0x70);
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print($"smw-test-pmeter: p={_state.PMeter:X2}");
     }
 
     public void DebugSetPlayerGrounded(bool grounded)
@@ -4744,6 +4755,12 @@ public partial class GameScene : Node2D
                     int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture),
                     int.Parse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture));
                 return BuildDebugState("velocity");
+            case "pmeter":
+            case "p_meter":
+            case "p":
+                RequirePartCount(parts, 2);
+                DebugSetPlayerPMeter(ParseHexOrDecimalDebug(parts[1]));
+                return BuildDebugState("pmeter");
             case "ground":
             case "onground":
                 RequirePartCount(parts, 2);
@@ -4776,6 +4793,9 @@ public partial class GameScene : Node2D
             case "fps":
             case "stats":
                 return PrintDebugPerformance(parts.Length >= 2 ? parts[1] : "status");
+            case "physics":
+            case "phys":
+                return PrintDebugPhysics(parts.Length >= 2 ? parts[1] : "manual");
             case "level":
                 RequirePartCount(parts, 2);
                 DebugEnterLevel(parts[1].ToUpperInvariant());
@@ -4927,7 +4947,9 @@ public partial class GameScene : Node2D
             $"frame={_debugFrameCounter} input={DescribeFrameInput(frameInput)} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} cf={_state.CapeFloatFrames} " +
+            $"p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
+            $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
+            $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
 
         _debugTraceFrames--;
@@ -4968,6 +4990,22 @@ public partial class GameScene : Node2D
             $"audio_enabled={(AudioEnabled ? 1 : 0)} audio_process={(_audio?.ProcessMode.ToString() ?? "none")} audio_{audioStatus}";
         GD.Print(perf);
         return perf;
+    }
+
+    private string PrintDebugPhysics(string tag)
+    {
+        var normalJumpIndex = SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, spin: false);
+        var spinJumpIndex = SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, spin: true);
+        var line =
+            $"smw-debug-physics: tag={tag} frame={_debugFrameCounter} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} subspd={_state.SubXSpeed:X2},{_state.SubYSpeed:X2} " +
+            $"p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} " +
+            $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
+            $"jump_idx={normalJumpIndex} jump_y={SmwPhysics.JumpYSpeedFor(_state.XSpeed, spin: false)} " +
+            $"spin_jump_idx={spinJumpIndex} spin_jump_y={SmwPhysics.JumpYSpeedFor(_state.XSpeed, spin: true)}";
+        GD.Print(line);
+        return line;
     }
 
     private static int CountNodes(Node node)
@@ -5173,7 +5211,8 @@ public partial class GameScene : Node2D
             $"smw-debug-state: tag={tag} frame={_debugFrameCounter} level={_currentLevelId} " +
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} cf={_state.CapeFloatFrames} " +
+            $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
+            $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount}";

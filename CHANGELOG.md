@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added RCON `physics`/`phys` and `pmeter` controls plus richer HUD/trace/state fields for P-meter, spin-jump, running-takeoff, jump-hold, facing, subpixels, and native jump-table lookup during unattended playtest debugging.
 - Synced left diagonal ledge bottom-row projection with the current Lunar Magic Universal renderer, removing a stale extra diagonal-line tile from the importer.
 - Snapped Mario's rendered OAM node to the native integer player position while preserving subpixel physics internally, reducing shimmer/stray edge pixels during movement.
 - Added RCON controller-latch commands for unattended debugging: `hold ...`, `tap ...`, and `release` let a live run be driven without keyboard focus while preserving first-frame jump/spin pressed-edge semantics.
