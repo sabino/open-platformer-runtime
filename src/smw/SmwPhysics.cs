@@ -10,6 +10,7 @@ public sealed class SmwPhysics
     public const int CapePowerup = 2;
     public const int FirePowerup = 3;
     public const int SmallPlayerHeight = 16;
+    public const int DuckingPlayerHeight = 16;
     public const int BigPlayerHeight = 32;
     public const int PlayerHeight = BigPlayerHeight;
 
@@ -62,6 +63,7 @@ public sealed class SmwPhysics
         public int Powerup;
         public bool SpinJump;
         public bool RunningTakeoff;
+        public bool Ducking;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -80,6 +82,7 @@ public sealed class SmwPhysics
             SubXSpeed = state.SubXSpeed;
             SubYSpeed = state.SubYSpeed;
             OnGround = state.OnGround;
+            Ducking = state.Ducking;
         }
 
         public readonly int X;
@@ -91,6 +94,7 @@ public sealed class SmwPhysics
         public readonly int SubXSpeed;
         public readonly int SubYSpeed;
         public readonly bool OnGround;
+        public readonly bool Ducking;
     }
 
     public struct FrameInput
@@ -121,9 +125,13 @@ public sealed class SmwPhysics
     public void SetPowerup(ref PlayerState state, int powerup)
     {
         powerup = Math.Clamp(powerup, SmallPowerup, FirePowerup);
-        var oldHeight = PlayerHeightForPowerup(state.Powerup);
+        var oldHeight = PlayerHeightFor(state);
         state.Powerup = powerup;
-        var newHeight = PlayerHeightForPowerup(state.Powerup);
+        if (state.Powerup == SmallPowerup)
+        {
+            state.Ducking = false;
+        }
+        var newHeight = PlayerHeightFor(state);
         state.Y += oldHeight - newHeight;
     }
 
@@ -138,6 +146,7 @@ public sealed class SmwPhysics
         IReadOnlyList<Rect2> solids,
         IReadOnlyList<SlopeSurface> slopes)
     {
+        ApplyDucking(ref state, input);
         ApplyJumpAndGravity(ref state, input);
         ApplyHorizontal(ref state, input);
 
@@ -205,7 +214,7 @@ public sealed class SmwPhysics
 
     public static int PlayerHeightFor(PlayerState state)
     {
-        return PlayerHeightForPowerup(state.Powerup);
+        return state.Ducking ? DuckingPlayerHeight : PlayerHeightForPowerup(state.Powerup);
     }
 
     public static int PlayerHeightForPowerup(int powerup)
@@ -213,14 +222,29 @@ public sealed class SmwPhysics
         return powerup == SmallPowerup ? SmallPlayerHeight : BigPlayerHeight;
     }
 
+    private static void ApplyDucking(ref PlayerState state, FrameInput input)
+    {
+        var shouldDuck = state.OnGround && input.Down && state.Powerup != SmallPowerup;
+        if (state.Ducking == shouldDuck)
+        {
+            return;
+        }
+
+        var oldHeight = PlayerHeightFor(state);
+        state.Ducking = shouldDuck;
+        var newHeight = PlayerHeightFor(state);
+        state.Y += oldHeight - newHeight;
+    }
+
     private static void ApplyHorizontal(ref PlayerState state, FrameInput input)
     {
         var dir = 0;
-        if (input.Left)
+        var duckingOnGround = state.Ducking && state.OnGround;
+        if (!duckingOnGround && input.Left)
         {
             dir--;
         }
-        if (input.Right)
+        if (!duckingOnGround && input.Right)
         {
             dir++;
         }
@@ -341,6 +365,7 @@ public sealed class SmwPhysics
         else if (state.OnGround)
         {
             state.RunningTakeoff = false;
+            state.SpinJump = false;
         }
 
         if (state.YSpeed < 0 && (input.Jump || input.Spin))

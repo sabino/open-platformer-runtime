@@ -96,6 +96,7 @@ public partial class GameScene : Node2D
     private int _lastPlayerPose = -1;
     private int _lastPlayerFacing = -1;
     private int _lastPlayerPowerup = -1;
+    private bool _lastPlayerDucking;
     private bool _pipeTransitionLatch;
     private int _playerHurtCooldown;
     private bool _courseClear;
@@ -1829,7 +1830,7 @@ public partial class GameScene : Node2D
         }
         if (_playerDebugLabel != null)
         {
-            _playerDebugLabel.Text = $"pow={_state.Powerup} h={height} g={(_state.OnGround ? 1 : 0)}";
+            _playerDebugLabel.Text = $"pow={_state.Powerup} h={height} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)}";
             _playerDebugLabel.Position = new Vector2(-8.0f, -18.0f);
         }
     }
@@ -2159,7 +2160,11 @@ public partial class GameScene : Node2D
 
         var pose = ChoosePlayerPose();
         var nativeFacing = _state.Facing == 0 ? 0 : 1;
-        if (!force && pose == _lastPlayerPose && nativeFacing == _lastPlayerFacing && _state.Powerup == _lastPlayerPowerup)
+        if (!force &&
+            pose == _lastPlayerPose &&
+            nativeFacing == _lastPlayerFacing &&
+            _state.Powerup == _lastPlayerPowerup &&
+            _state.Ducking == _lastPlayerDucking)
         {
             return;
         }
@@ -2167,6 +2172,7 @@ public partial class GameScene : Node2D
         _lastPlayerPose = pose;
         _lastPlayerFacing = nativeFacing;
         _lastPlayerPowerup = _state.Powerup;
+        _lastPlayerDucking = _state.Ducking;
         RenderPlayerOamPose(pose, _state.Powerup, nativeFacing);
     }
 
@@ -2175,6 +2181,11 @@ public partial class GameScene : Node2D
         if (!_state.OnGround)
         {
             return _state.SpinJump ? 4 : 6;
+        }
+
+        if (_state.Ducking)
+        {
+            return 60;
         }
 
         if (Math.Abs(_state.XSpeed) >= 4)
@@ -2337,6 +2348,7 @@ public partial class GameScene : Node2D
         _entranceMotionPixelsPerFrame = Vector2.Zero;
         state.Facing = EntranceFacing(entrance.EntranceSettings);
         state.SpinJump = false;
+        state.Ducking = false;
         state.OnGround = false;
         state.XSpeed = 0;
         state.YSpeed = 0;
@@ -2731,7 +2743,7 @@ public partial class GameScene : Node2D
 
         var footTile = DescribeFootTile();
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} " +
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
             $"coins={_coinCount}/{_dragonCoinCount} tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
     }
@@ -2884,6 +2896,7 @@ public partial class GameScene : Node2D
 
         _lastPlayerPose = -1;
         _lastPlayerPowerup = -1;
+        _lastPlayerDucking = false;
         UpdatePlayerGraphic(force: true);
         PrintRuntimeState();
     }

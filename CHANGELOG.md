@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added grounded big-form ducking to the C# physics/runtime state: holding down now switches to a 16px duck hitbox with foot preservation, suppresses grounded horizontal acceleration, updates debug HUD/gizmos, and renders native player pose `60`.
 - Matched the native no-horizontal-input branch more closely by skipping friction while airborne instead of applying a temporary air-friction approximation.
 - Ported the native P-meter update mode deltas into the C# physics core and moved jump processing before horizontal speed mode selection so full-P-meter running jumps can carry sprint acceleration through a tracked takeoff state.
 - Mirrored Lunar Magic Universal's latest left diagonal ledge notch behavior, removing the extra first fill-row dirt tile from generated Yoshi Island 1 layouts.

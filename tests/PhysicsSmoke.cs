@@ -15,6 +15,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckDuckingState(physics))
+        {
+            return 1;
+        }
         if (!CheckLevelHorizontalBounds(physics))
         {
             return 1;
@@ -210,6 +214,52 @@ public static class PhysicsSmoke
         if (state.XSpeed != 0x14 || state.SubXSpeed != 0x80 || state.PMeter != 0)
         {
             Console.Error.WriteLine($"expected no airborne no-input friction, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2} p=0x{state.PMeter:X2}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckDuckingState(SmwPhysics physics)
+    {
+        var floor = new List<Rect2> { new(0, 100, 256, 16) };
+        var state = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        state.OnGround = true;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Down = true, Right = true }, floor);
+        if (!state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.DuckingPlayerHeight || state.Y != 84)
+        {
+            Console.Error.WriteLine($"expected big Mario to duck with feet preserved, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)} y={state.Y}");
+            return false;
+        }
+        if (state.XSpeed != 0)
+        {
+            Console.Error.WriteLine($"expected grounded ducking to suppress horizontal acceleration, got xs=0x{state.XSpeed:X2}");
+            return false;
+        }
+
+        physics.Step(ref state, new SmwPhysics.FrameInput(), floor);
+        if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.BigPlayerHeight || state.Y != 68)
+        {
+            Console.Error.WriteLine($"expected releasing down to stand with feet preserved, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)} y={state.Y}");
+            return false;
+        }
+
+        state = physics.MakeState(16, 84, SmwPhysics.SmallPowerup);
+        state.OnGround = true;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Down = true }, floor);
+        if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.SmallPlayerHeight)
+        {
+            Console.Error.WriteLine($"expected small Mario down input to keep normal small hitbox, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)}");
+            return false;
+        }
+
+        state = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        state.OnGround = true;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Down = true }, floor);
+        physics.SetPowerup(ref state, SmwPhysics.SmallPowerup);
+        if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.SmallPlayerHeight || state.Y != 84)
+        {
+            Console.Error.WriteLine($"expected power-down to clear ducking while preserving feet, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)} y={state.Y}");
             return false;
         }
 
