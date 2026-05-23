@@ -9,7 +9,7 @@ The current first slice covers:
 - ROM validation and deterministic extraction for level `105` by default.
 - Layer 1/layer 2 raw object streams, Layer 2 RLE background previews, decoded placement metadata, screen exits, sprite stream, Map16, global palettes, per-level full CGRAM palettes, GFX32/GFX33, player PNG atlases, level tileset GFX atlases, sprite GFX VRAM atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables.
 - Raw SPC upload banks plus a few decoded BRR preview WAVs used only as importer verification artifacts while the full SPC/DSP sequencer is still pending.
-- A Godot .NET C# menu and minimal playable scene.
+- A Godot .NET C# menu and minimal playable scene; the initial menu uses generated Yoshi Island 1 preview art, exposes audio/debug-gizmo toggles, includes internal sound/music test buttons, and starts the playable first-level slice.
 - A SNES-sized `256x224` logical viewport that opens as a 3x Wayland window for normal graphical runs.
 - Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; the Godot runtime no longer depends on WAV/MP3 playback for these probes.
 - A menu audio panel for internal port-1 SFX command probes and BRR sample probes, plus imported music bank visibility while the full SPC/DSP command sequencer is still pending.

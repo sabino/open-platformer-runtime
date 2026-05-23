@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Upgraded the initial Godot menu from a placeholder panel into an asset-backed SMW start surface: it now uses the generated Yoshi Island 1 preview as a backdrop, shows a generated Mario/player preview when available, exposes audio and debug-gizmo toggles before launch, and logs a `smw-menu` smoke line covered by headless checks.
 - Added `docs/PHYSICS-REFERENCE.md`, recording the current SMW-unit runtime constants, Hamaluik walk/run/jump regression sanity checks, and the next native-table porting priorities for Mario movement.
 - Added live RCON debug toggles for long Wayland playtest sessions: `overlays/gizmos on|off` rebuilds collision and HUD gizmos without relaunching, `actors on|off` freezes runtime sprite actors, and `god on|off` suppresses actor damage while preserving interaction logs.
 - Fixed RCON viewport capture parsing for `res://` paths, added a synchronous `snapshot`/`capture_now` command, and verified it saves clean runtime PNGs without compositor/editor UI.

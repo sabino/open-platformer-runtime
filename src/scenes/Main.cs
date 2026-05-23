@@ -6,11 +6,15 @@ using System.Globalization;
 public partial class Main : Node2D
 {
     private static readonly Vector2I DefaultWindowSize = new(768, 672);
+    private const string MenuLevelPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
+    private const string MenuPlayerPreviewPath = "res://generated/smw/player/gfx32_player_palette0.png";
 
     private Control? _menu;
     private GameScene? _game;
     private SmwAudio? _audio;
     private ColorRect? _gameBackground;
+    private CheckBox? _audioToggle;
+    private CheckBox? _debugToggle;
     private bool _debugOverlays;
     private bool _audioEnabled = true;
 
@@ -267,38 +271,183 @@ public partial class Main : Node2D
 
         var background = new ColorRect
         {
-            Color = new Color(0.04f, 0.06f, 0.08f, 1.0f),
+            Color = new Color(0.00f, 0.25f, 0.46f, 1.0f),
         };
         background.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _menu.AddChild(background);
 
+        AddMenuLevelPreview(_menu);
+
+        var shade = new ColorRect
+        {
+            Color = new Color(0.0f, 0.0f, 0.0f, 0.42f),
+        };
+        shade.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _menu.AddChild(shade);
+
+        var root = new HBoxContainer
+        {
+            Position = new Vector2(22, 22),
+            CustomMinimumSize = new Vector2(724, 604),
+        };
+        _menu.AddChild(root);
+
         var panel = new VBoxContainer
         {
-            Position = new Vector2(12, 10),
-            CustomMinimumSize = new Vector2(232, 196),
+            CustomMinimumSize = new Vector2(300, 0),
         };
-        _menu.AddChild(panel);
+        root.AddChild(panel);
 
         var title = new Label { Text = "Open Platformer Runtime" };
-        title.AddThemeFontSizeOverride("font_size", 14);
+        title.AddThemeFontSizeOverride("font_size", 22);
+        title.AddThemeColorOverride("font_color", new Color(1.0f, 0.95f, 0.62f, 1.0f));
+        title.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 1.0f));
+        title.AddThemeConstantOverride("shadow_offset_x", 2);
+        title.AddThemeConstantOverride("shadow_offset_y", 2);
         panel.AddChild(title);
 
         var status = new Label { Text = AssetStatusText() };
-        status.AddThemeFontSizeOverride("font_size", 8);
+        status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        status.CustomMinimumSize = new Vector2(280, 34);
+        status.AddThemeFontSizeOverride("font_size", 10);
+        status.AddThemeColorOverride("font_color", new Color(0.88f, 0.96f, 1.0f, 1.0f));
         panel.AddChild(status);
 
-        var start = new Button { Text = "Start YI1 Slice" };
+        AddMenuToggles(panel);
+
+        var start = new Button
+        {
+            Text = "Start Yoshi Island 1",
+            CustomMinimumSize = new Vector2(240, 34),
+        };
         start.Pressed += StartGame;
         panel.AddChild(start);
+        start.GrabFocus();
 
         AddAudioTester(panel);
+
+        var previewPanel = new VBoxContainer
+        {
+            CustomMinimumSize = new Vector2(390, 0),
+        };
+        root.AddChild(previewPanel);
+        AddMenuPlayerPreview(previewPanel);
+        GD.Print($"smw-menu: assets={(HasGeneratedAssetPack() ? 1 : 0)} audio={(_audioEnabled ? 1 : 0)} level_preview={(FileAccess.FileExists(MenuLevelPreviewPath) ? 1 : 0)} player_preview={(FileAccess.FileExists(MenuPlayerPreviewPath) ? 1 : 0)}");
+    }
+
+    private static bool HasGeneratedAssetPack()
+    {
+        return FileAccess.FileExists("res://generated/smw/manifest.json");
     }
 
     private static string AssetStatusText()
     {
-        return FileAccess.FileExists("res://generated/smw/manifest.json")
+        return HasGeneratedAssetPack()
             ? "Generated SMW asset pack found."
             : "No generated asset pack found. The playable slice will use a placeholder level.";
+    }
+
+    private void AddMenuLevelPreview(Control menu)
+    {
+        var texture = LoadTexture(MenuLevelPreviewPath);
+        if (texture == null)
+        {
+            return;
+        }
+
+        var preview = new TextureRect
+        {
+            Name = "MenuLevelPreview",
+            Texture = texture,
+            Position = Vector2.Zero,
+            Size = new Vector2(DefaultWindowSize.X, DefaultWindowSize.Y),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+        };
+        menu.AddChild(preview);
+    }
+
+    private void AddMenuPlayerPreview(VBoxContainer panel)
+    {
+        var title = new Label { Text = "Yoshi Island 1" };
+        title.AddThemeFontSizeOverride("font_size", 14);
+        title.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
+        title.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 1.0f));
+        title.AddThemeConstantOverride("shadow_offset_x", 1);
+        title.AddThemeConstantOverride("shadow_offset_y", 1);
+        panel.AddChild(title);
+
+        var texture = LoadTexture(MenuPlayerPreviewPath);
+        if (texture == null)
+        {
+            return;
+        }
+
+        var frame = new TextureRect
+        {
+            Name = "MenuPlayerPreview",
+            Texture = texture,
+            CustomMinimumSize = new Vector2(192, 192),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+        };
+        panel.AddChild(frame);
+    }
+
+    private void AddMenuToggles(VBoxContainer panel)
+    {
+        var row = new HBoxContainer();
+        panel.AddChild(row);
+
+        _audioToggle = new CheckBox
+        {
+            Text = "Audio",
+            ButtonPressed = _audioEnabled,
+        };
+        _audioToggle.Toggled += SetAudioEnabled;
+        row.AddChild(_audioToggle);
+
+        _debugToggle = new CheckBox
+        {
+            Text = "Gizmos",
+            ButtonPressed = _debugOverlays,
+        };
+        _debugToggle.Toggled += enabled => _debugOverlays = enabled;
+        row.AddChild(_debugToggle);
+    }
+
+    private static Texture2D? LoadTexture(string path)
+    {
+        if (!FileAccess.FileExists(path))
+        {
+            return null;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(path));
+        return image == null || image.IsEmpty()
+            ? null
+            : ImageTexture.CreateFromImage(image);
+    }
+
+    private void SetAudioEnabled(bool enabled)
+    {
+        _audioEnabled = enabled;
+        if (!_audioEnabled)
+        {
+            _audio?.QueueFree();
+            _audio = null;
+            return;
+        }
+
+        if (_audio == null)
+        {
+            _audio = new SmwAudio { Name = "SmwAudio" };
+            AddChild(_audio);
+        }
     }
 
     private void AddAudioTester(VBoxContainer panel)

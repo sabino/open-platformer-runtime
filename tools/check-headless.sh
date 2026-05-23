@@ -35,6 +35,11 @@ cat >"$INPUT_SCRIPT" <<'EOF'
 1 right run jump
 EOF
 printf '1 down\n' >"$PIPE_SCRIPT"
+
+"$GODOT_BIN" --headless --path . --quit-after 1 2>&1 | tee "$LOG_FILE"
+grep -q "smw-menu: assets=1 audio=1 level_preview=1 player_preview=1" "$LOG_FILE"
+! grep -q "smw-runtime: level=" "$LOG_FILE"
+
 cat >"$DEBUG_COMMAND_FILE" <<'EOF'
 pause
 spawn 880 304
