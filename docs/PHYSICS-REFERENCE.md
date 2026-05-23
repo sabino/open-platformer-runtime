@@ -1,0 +1,55 @@
+# SMW Physics Reference Notes
+
+This file captures external and native-reference physics facts used by the Godot port. The target remains native SMW table behavior, not a hand-tuned platformer feel.
+
+## Runtime Units
+
+The current C# runtime stores horizontal and vertical velocity in SMW-style signed byte units where one whole velocity unit contributes `1/16 px` per frame. For example:
+
+- `XSpeed = 0x14` is `1.25 px/frame`, the current walk cap.
+- `XSpeed = 0x24` is `2.25 px/frame`, the current run cap before full P-meter sprint.
+- `XSpeed = 0x30` is `3.00 px/frame`, the current sprint cap.
+- `YSpeed < 0` moves Mario upward; `YSpeed > 0` falls downward.
+- `MaxFall = 0x40` is `4.00 px/frame`.
+
+The runtime also carries separate subpixel accumulators for position and acceleration. This is important because many native constants are fractional in practice, even when the visible pixel position changes only by whole pixels.
+
+## Current Native-Style Constants
+
+These are the values currently implemented in `SmwPhysics.cs`:
+
+| Concept | Value |
+| --- | ---: |
+| Walk cap | `0x14` |
+| Run cap | `0x24` |
+| Sprint cap | `0x30` |
+| Walk acceleration | `0x0180` |
+| Run acceleration | `0x0180` |
+| Turn acceleration | `0x0600` |
+| Ground friction | `0x0020` |
+| Air acceleration | `0x0100` |
+| P-meter max | `0x70` |
+| Max fall speed | `0x40` |
+
+The current jump table is a temporary native-shaped bridge indexed from horizontal speed and spin state. It must be replaced with a fuller port of the native jump velocity selection, jump-hold gravity, flying/cape branches, and player-state-specific tables.
+
+## Hamaluik Regression Sanity Checks
+
+Hamaluik's video-analysis article is not native code and should not override the tables above, but it provides useful high-level checks for how movement should feel. The measurements assume small Mario is one meter tall:
+
+| Motion | Regression | Derived value |
+| --- | --- | --- |
+| Walking | `x = 3.698t - 0.229` | about `3.7 m/s` |
+| Running | `x = 9.091t + 0.039` | about `9.1 m/s` |
+| Small jump | `y = -33.910t^2 + 17.361t - 0.018` | gravity about `67.82 m/s^2`, push-off about `17.36 m/s` |
+| High jump | `y = -17.396t^2 + 15.209t + 0.007` | gravity about `34.79 m/s^2`, push-off about `15.21 m/s` |
+| Falling | `y = -27.940t^2 - 1.057t + 2.477` | gravity about `55.88 m/s^2` |
+
+Those curves explain why a plain "realistic" platformer controller feels wrong here: SMW uses very high acceleration/gravity, strong horizontal caps, and variable jump gravity rather than real-world motion.
+
+## Porting Priorities
+
+1. Replace temporary jump velocities with the native vertical-speed tables and branch conditions for normal jump, spin jump, running jump, cape, flight, underwater, climbing, riding Yoshi, and damage/knockback states.
+2. Keep all player-motion tests in native units (`XSpeed`, `YSpeed`, subpixel position), then add pixel-trajectory golden tests for short scripted input sequences.
+3. Treat the Hamaluik curves as visual sanity checks only after native-unit tests pass.
+4. Move slope handling toward native Map16 act-as and block interaction code instead of treating modern collision lines as authoritative.

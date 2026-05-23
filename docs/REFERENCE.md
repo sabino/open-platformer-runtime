@@ -8,6 +8,7 @@ Reference inputs used for this port:
 - Older Godot source tree available locally: `<local Godot source checkout>`
 - Local ROM used for validation: `/path/to/compatible-rom.sfc`
 - Expected unheadered SMW USA SHA1: `6B47BB75D16514B6A476AA0C73A683A2A4C18765`
+- Physics working notes and regression sanity checks: `docs/PHYSICS-REFERENCE.md`
 
 Importer references translated into `tools/smw_import.py`:
 

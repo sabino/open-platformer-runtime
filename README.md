@@ -32,7 +32,7 @@ The current first slice covers:
 - Vanilla GFX preview extraction expands SMW 3bpp slots into 4bpp and fills the full 512-tile BG/sprite VRAM windows used by Map16 and OAM tile numbers.
 - Level Map16 previews are resolved through the native per-tileset Map16 pointer table, so level `105` uses its grassland/YI1 tile definitions instead of treating `$0D8000` as a flat linear Map16 page.
 - Mario runtime rendering now uses imported `PlayerGFXRt` OAM placement tables, signed X/Y displacement tables, dynamic head/body tile upload pointer mapping, native facing flips, native walking animation timer data, and the proper OBJ row 8 player palette layout for the first big-Mario pose set. The runtime also tracks explicit small/big/cape/fire power-up state and adjusts the collision height when forms change.
-- A C# fixed-step Mario movement prototype using SMW velocity units, native flat-ground walk/run/P-meter caps, native ground friction, and jump/gravity constants from the native reference.
+- A C# fixed-step Mario movement prototype using SMW velocity units, native flat-ground walk/run/P-meter caps, native ground friction, and jump/gravity constants from the native reference. See `docs/PHYSICS-REFERENCE.md` for the current native-unit notes and the Hamaluik regression sanity checks.
 - Headless/import/build validation scripts that avoid opening a Wayland window and assert audio, Map16, collision, and player sprite loading.
 - Wayland/Sway graphical wrappers default to workspace `6` through `SMW_SWAY_WORKSPACE`, and the capture wrapper can grab a compositor screenshot of the Godot PID for visual inspection.
 

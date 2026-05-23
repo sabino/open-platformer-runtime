@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added `docs/PHYSICS-REFERENCE.md`, recording the current SMW-unit runtime constants, Hamaluik walk/run/jump regression sanity checks, and the next native-table porting priorities for Mario movement.
 - Added live RCON debug toggles for long Wayland playtest sessions: `overlays/gizmos on|off` rebuilds collision and HUD gizmos without relaunching, `actors on|off` freezes runtime sprite actors, and `god on|off` suppresses actor damage while preserving interaction logs.
 - Fixed RCON viewport capture parsing for `res://` paths, added a synchronous `snapshot`/`capture_now` command, and verified it saves clean runtime PNGs without compositor/editor UI.
 - Synced several runtime sprite preview OAM recipes with the current Lunar Magic Universal code path: flying question block wings now use the correct sprite bank, the flying block face uses the sprite question-block tile while unused, and Clappin' Chuck/jumping Piranha use the fuller editor-preview tile sets.
