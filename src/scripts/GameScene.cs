@@ -30,6 +30,12 @@ public partial class GameScene : Node2D
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
     private const int PlayerHurtCooldownFrames = 90;
+    private const int JumpingPiranhaCycleFrames = 192;
+    private const int JumpingPiranhaHiddenFrames = 48;
+    private const int JumpingPiranhaRiseFrames = 24;
+    private const int JumpingPiranhaExtendedFrames = 48;
+    private const int JumpingPiranhaFallFrames = 24;
+    private const float JumpingPiranhaTravelPixels = 32.0f;
     private const int GoalTapeSpriteId = 0x7B;
     private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
@@ -289,8 +295,10 @@ public partial class GameScene : Node2D
         public int SpriteId { get; init; }
         public float X { get; set; }
         public float Y { get; set; }
+        public float HomeY { get; init; }
         public float XSpeed { get; set; }
         public float YSpeed { get; set; }
+        public int MotionFrame { get; set; }
         public bool Alive { get; set; } = true;
         public bool OnGround { get; set; }
         public int WakeScreen { get; init; }
@@ -1024,6 +1032,11 @@ public partial class GameScene : Node2D
         return spriteId is 0x4F or 0x83 or 0x8E or 0x95 or 0x9F or 0xAB or 0xB9 or 0xBD or 0xC7 or 0xDA or 0xDB or 0xDC or 0xDD or 0xDF;
     }
 
+    private static bool IsJumpingPiranhaSprite(int spriteId)
+    {
+        return spriteId is 0x4F or 0x50;
+    }
+
     private RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn, bool debugOverlays)
     {
         var color = SpriteActorColor(spawn.SpriteId);
@@ -1062,8 +1075,12 @@ public partial class GameScene : Node2D
             SpriteId = spawn.SpriteId,
             X = spawn.X,
             Y = spawn.Y - SpriteActorHeight,
+            HomeY = spawn.Y - SpriteActorHeight,
             XSpeed = behavior.InitialXSpeed,
             WakeScreen = spawn.Screen,
+            MotionFrame = IsJumpingPiranhaSprite(spawn.SpriteId)
+                ? (spawn.Offset * 7) % JumpingPiranhaCycleFrames
+                : 0,
             Visuals = visuals,
             Behavior = behavior,
         };
@@ -2729,6 +2746,12 @@ public partial class GameScene : Node2D
             return;
         }
 
+        if (IsJumpingPiranhaSprite(actor.SpriteId))
+        {
+            UpdateJumpingPiranhaMotion(actor);
+            return;
+        }
+
         actor.X += actor.XSpeed;
         var rect = actor.Rect;
         if (actor.Behavior.TerrainCollision)
@@ -2812,10 +2835,53 @@ public partial class GameScene : Node2D
         }
     }
 
+    private static void UpdateJumpingPiranhaMotion(RuntimeSpriteActor actor)
+    {
+        var frame = actor.MotionFrame % JumpingPiranhaCycleFrames;
+        actor.MotionFrame = (actor.MotionFrame + 1) % JumpingPiranhaCycleFrames;
+
+        var riseStart = JumpingPiranhaHiddenFrames;
+        var extendedStart = riseStart + JumpingPiranhaRiseFrames;
+        var fallStart = extendedStart + JumpingPiranhaExtendedFrames;
+        var hiddenReturnStart = fallStart + JumpingPiranhaFallFrames;
+        var hiddenY = actor.HomeY + JumpingPiranhaTravelPixels;
+
+        if (frame < riseStart || frame >= hiddenReturnStart)
+        {
+            actor.State = 0;
+            actor.Y = hiddenY;
+            actor.Node.Visible = false;
+            return;
+        }
+
+        actor.Node.Visible = true;
+        if (frame < extendedStart)
+        {
+            actor.State = 1;
+            var t = (frame - riseStart + 1) / (float)JumpingPiranhaRiseFrames;
+            actor.Y = Mathf.Lerp(hiddenY, actor.HomeY, Math.Clamp(t, 0.0f, 1.0f));
+            return;
+        }
+
+        if (frame < fallStart)
+        {
+            actor.State = 2;
+            actor.Y = actor.HomeY;
+            return;
+        }
+
+        actor.State = 3;
+        var fallT = (frame - fallStart + 1) / (float)JumpingPiranhaFallFrames;
+        actor.Y = Mathf.Lerp(actor.HomeY, hiddenY, Math.Clamp(fallT, 0.0f, 1.0f));
+    }
+
     private bool ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect)
     {
         var actorRect = actor.Rect;
-        if (!actor.Alive || !actor.Behavior.CanInteract || !playerRect.Intersects(actorRect))
+        if (!actor.Alive ||
+            !actor.Behavior.CanInteract ||
+            (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0) ||
+            !playerRect.Intersects(actorRect))
         {
             return false;
         }

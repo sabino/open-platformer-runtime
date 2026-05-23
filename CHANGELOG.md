@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a first timed sprite state machine for imported jumping Piranha plants: the Godot runtime now cycles sprite `0x4F/0x50` through hidden, rising, extended, and falling states, suppressing its hurtbox while hidden and covering both hidden/visible branches in headless debug checks.
 - Started level music automatically from imported level-header `music_index` metadata, so normal gameplay entry and pipe transitions now drive the C# internal music sequencer instead of requiring menu button probes.
 - Added a first imported-block interaction: non-small spin-jumping onto Yoshi Island 1 `std_generic_08`/Map16 `0x11E` turn blocks now removes the tile sprite, rebuilds runtime collision, logs `smw-runtime: block_break`, and is covered by headless debug-command regression.
 - Ported more Lunar Magic Universal sprite draw recipes into Godot: Clappin' Chuck now appears as an atlas-backed runtime actor, the flying question block uses real wing tiles, red shells use the native shell tile, and jumping Piranha uses LMU's two-tile OAM preview.
