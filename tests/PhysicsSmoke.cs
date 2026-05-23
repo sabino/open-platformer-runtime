@@ -39,6 +39,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckNativeVerticalGravity(physics))
+        {
+            return 1;
+        }
         if (!CheckCapeFloatFallCap(physics))
         {
             return 1;
@@ -274,6 +278,7 @@ public static class PhysicsSmoke
         state.Ducking = true;
         state.JumpHeldFrames = 5;
         state.CapeFloatFrames = 3;
+        state.InAirState = 0x0B;
         var trace = physics.CaptureTrace(state);
         if (trace.PMeter != 0x70 ||
             trace.Powerup != SmwPhysics.CapePowerup ||
@@ -281,7 +286,8 @@ public static class PhysicsSmoke
             !trace.RunningTakeoff ||
             !trace.Ducking ||
             trace.JumpHeldFrames != 5 ||
-            trace.CapeFloatFrames != 3)
+            trace.CapeFloatFrames != 3 ||
+            trace.InAirState != 0x0B)
         {
             Console.Error.WriteLine("expected trace state to preserve transient physics debug fields");
             return false;
@@ -564,9 +570,9 @@ public static class PhysicsSmoke
         state = physics.MakeState(280, 68, SmwPhysics.BigPowerup);
         state.OnGround = true;
         physics.Step(ref state, new SmwPhysics.FrameInput(), floor);
-        if (state.OnGround || state.Y != 68 || state.YSpeed != 0)
+        if (state.OnGround || state.Y != 68 || state.YSpeed != 0 || state.InAirState != 0x24)
         {
-            Console.Error.WriteLine($"expected first ledge frame to clear grounded state without gravity, got g={state.OnGround} y={state.Y} ys={state.YSpeed}");
+            Console.Error.WriteLine($"expected first ledge frame to clear grounded state without gravity, got g={state.OnGround} y={state.Y} ys={state.YSpeed} air=0x{state.InAirState:X2}");
             return false;
         }
 
@@ -574,6 +580,51 @@ public static class PhysicsSmoke
         if (state.YSpeed != 6)
         {
             Console.Error.WriteLine($"expected gravity one frame after ledge clear, got ys={state.YSpeed}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckNativeVerticalGravity(SmwPhysics physics)
+    {
+        var state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Jump = true, JumpPressed = true }, []);
+        if (state.InAirState != 0x0B || state.YSpeed != -77)
+        {
+            Console.Error.WriteLine($"expected normal jump to start native in-air state 0x0B with held gravity, got air=0x{state.InAirState:X2} ys={state.YSpeed}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.PMeter = 0x70;
+        state.XSpeed = 0x30;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Jump = true, JumpPressed = true, Right = true, Run = true }, []);
+        if (state.InAirState != 0x0C || !state.RunningTakeoff)
+        {
+            Console.Error.WriteLine($"expected full-P-meter jump to start native in-air state 0x0C, got air=0x{state.InAirState:X2} rt={state.RunningTakeoff}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.InAirState = 0x0B;
+        state.YSpeed = 0x3F;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.InAirState != 0x24 || state.YSpeed != 0x45)
+        {
+            Console.Error.WriteLine($"expected normal jump to switch to falling state before native gravity add, got air=0x{state.InAirState:X2} ys=0x{state.YSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.InAirState = 0x24;
+        state.YSpeed = 0x40;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.YSpeed != 0x46)
+        {
+            Console.Error.WriteLine($"expected native terminal fall cap before gravity add, got ys=0x{state.YSpeed:X2}");
             return false;
         }
 

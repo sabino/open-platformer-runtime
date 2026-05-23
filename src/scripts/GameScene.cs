@@ -3326,7 +3326,7 @@ public partial class GameScene : Node2D
         {
             _playerDebugLabel.Text =
                 $"p={_state.PMeter:X2} pow={_state.Powerup} h={height} g={(_state.OnGround ? 1 : 0)} " +
-                $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames}";
+                $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} air={_state.InAirState:X2}";
             _playerDebugLabel.Position = new Vector2(-8.0f, -18.0f);
         }
     }
@@ -4978,7 +4978,7 @@ public partial class GameScene : Node2D
         var footTile = DescribeFootTile();
         _hud.Text = $"x={_state.XFloat:000000.00} y={_state.YFloat:000000.00} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
-            $"g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} " +
+            $"g={(_state.OnGround ? 1 : 0)} d={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} " +
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
             $"score={_score} lives={_lives} time={LevelTimerSecondsRemaining()} pause={(_gamePaused ? 1 : 0)} coins={_coinCount}/{_dragonCoinCount} deaths={_deathCount} " +
             $"tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
@@ -5073,6 +5073,7 @@ public partial class GameScene : Node2D
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;
         _state.OnGround = false;
+        ClearTransientJumpState();
         _cameraInitialized = false;
         UpdateCamera();
         if (_player != null)
@@ -5107,6 +5108,10 @@ public partial class GameScene : Node2D
         _state.YSpeed = ySpeed;
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;
+        if (!_state.OnGround && _state.YSpeed != 0 && _state.InAirState == 0)
+        {
+            _state.InAirState = SmwPhysics.NativeFallingInAirState;
+        }
         GD.Print($"smw-test-velocity: xs={_state.XSpeed} ys={_state.YSpeed}");
     }
 
@@ -5156,9 +5161,27 @@ public partial class GameScene : Node2D
         {
             _state.YSpeed = 0;
             _state.SubYSpeed = 0;
+            _state.InAirState = 0;
+            _state.RunningTakeoff = false;
+            _state.SpinJump = false;
+            _state.JumpHeldFrames = 0;
+            _state.CapeFloatFrames = 0;
+        }
+        else if (_state.InAirState == 0)
+        {
+            _state.InAirState = SmwPhysics.NativeFallingInAirState;
         }
 
         GD.Print($"smw-test-ground: grounded={(grounded ? 1 : 0)}");
+    }
+
+    private void ClearTransientJumpState()
+    {
+        _state.JumpHeldFrames = 0;
+        _state.CapeFloatFrames = 0;
+        _state.InAirState = 0;
+        _state.RunningTakeoff = false;
+        _state.SpinJump = false;
     }
 
     public void DebugSetPlayerSpinJump(bool spinJump)
@@ -5842,7 +5865,7 @@ public partial class GameScene : Node2D
             $"xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
-            $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
+            $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
             $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
             $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
@@ -5984,7 +6007,7 @@ public partial class GameScene : Node2D
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} subspd={_state.SubXSpeed:X2},{_state.SubYSpeed:X2} " +
             $"p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} " +
-            $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
+            $"duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"jump_idx={normalJumpIndex} jump_y={SmwPhysics.JumpYSpeedFor(_state.XSpeed, spin: false)} " +
             $"spin_jump_idx={spinJumpIndex} spin_jump_y={SmwPhysics.JumpYSpeedFor(_state.XSpeed, spin: true)}";
@@ -6553,7 +6576,7 @@ public partial class GameScene : Node2D
             $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
-            $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
+            $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +

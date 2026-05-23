@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Moved vertical jump/fall physics closer to the native `HandlePlayerPhysics_InAir` path by tracking the SMW `$72` in-air states for normal jumps, running/cape takeoff, and falling, applying the max-fall cap before the frame's gravity add like the original routine, and clearing those transient jump states during RCON spawn/ground setup.
 - Moved the internal APU SFX probe closer to native SMW by decoding the SPC RAM SFX pointer streams for channel-1/channel-3 commands before falling back to hand-authored notes; RCON/audio status now reports whether the last SFX came from a native stream plus its SPC pointer and decoded note count.
 - Wired named internal APU SFX probes into gameplay events: coins, dragon coins, one-ups, sprite stomps, spin-jump block breaks, flying-block power-up rewards, hurt/death, and course clear now use explicit `SmwAudio` methods with native port/command diagnostics, and RCON can trigger the same `audio coin|stomp|1up|...` probes.
 - Added first-pass native-table-backed stomp scoring for runtime sprite actors: Rex's first stomp now uses the SMW 200-point reward slot, logs `smw-runtime: sprite_stomp`, and exposes `stomp_chain` through debug state.

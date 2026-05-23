@@ -10,7 +10,7 @@ The current C# runtime stores horizontal and vertical velocity in SMW-style sign
 - `XSpeed = 0x24` is `2.25 px/frame`, the current run cap before full P-meter sprint.
 - `XSpeed = 0x30` is `3.00 px/frame`, the current sprint cap.
 - `YSpeed < 0` moves Mario upward; `YSpeed > 0` falls downward.
-- `MaxFall = 0x40` is `4.00 px/frame`.
+- The native gravity path clamps downward `YSpeed` to the selected max-fall table value before adding that frame's gravity, so a stored post-step falling speed can temporarily read as `0x46` for the normal `0x40 + 0x06` branch.
 
 The runtime also carries separate subpixel accumulators for position and acceleration. This is important because many native constants are fractional in practice, even when the visible pixel position changes only by whole pixels.
 
@@ -37,8 +37,10 @@ These are the values currently implemented in `SmwPhysics.cs`:
 | Jump-held gravity | `0x03` |
 | Normal max fall speed | `0x40` |
 | Cape float/fall cap while holding jump | `0x10` |
+| Normal jump in-air state | `0x0B`, switching to `0x24` once falling |
+| Running/cape takeoff in-air state | `0x0C` |
 
-The current jump table is a temporary native-shaped bridge indexed from horizontal speed and spin state. Vertical gravity/max-fall tables and the first cape hold-jump falling cap are now exposed in `SmwPhysics.cs`, but the full cape flight/diving state machine, native jump velocity selection, and player-state-specific branch conditions still need to be ported directly.
+The current jump table is a native table bridge indexed from horizontal speed and spin state, and the runtime now tracks the first native `$72` in-air state values used by normal jumps, running/cape takeoff, and ledge/falling transitions. Vertical gravity/max-fall tables and the first cape hold-jump falling cap are exposed in `SmwPhysics.cs`, but the full cape flight/diving state machine, underwater/climbing branches, and the remaining player-state-specific branch conditions still need to be ported directly.
 
 ## Hamaluik Regression Sanity Checks
 

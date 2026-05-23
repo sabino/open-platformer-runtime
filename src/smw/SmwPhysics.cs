@@ -23,6 +23,9 @@ public sealed class SmwPhysics
     public const int NativeFlatRunTurnAcceleration = 0x0500;
     private const int PMeterMax = 0x70;
     private const int PMeterSprintThreshold = 0x23;
+    public const int NativeNormalJumpInAirState = 0x0B;
+    public const int NativeRunningJumpInAirState = 0x0C;
+    public const int NativeFallingInAirState = 0x24;
     private const int CapeFloatFrameCount = 0x10;
     private const float StepUpTolerance = 12.0f;
     private const float MaxHorizontalCollisionCorrection = 64.0f;
@@ -214,6 +217,7 @@ public sealed class SmwPhysics
         public bool RunningTakeoff;
         public bool Ducking;
         public int CapeFloatFrames;
+        public int InAirState;
         public int SlopeKind;
         public int SlopePlayer;
         public int SlopeType;
@@ -243,6 +247,7 @@ public sealed class SmwPhysics
             Ducking = state.Ducking;
             JumpHeldFrames = state.JumpHeldFrames;
             CapeFloatFrames = state.CapeFloatFrames;
+            InAirState = state.InAirState;
             SlopeKind = state.SlopeKind;
             SlopePlayer = state.SlopePlayer;
             SlopeType = state.SlopeType;
@@ -265,6 +270,7 @@ public sealed class SmwPhysics
         public readonly bool Ducking;
         public readonly int JumpHeldFrames;
         public readonly int CapeFloatFrames;
+        public readonly int InAirState;
         public readonly int SlopeKind;
         public readonly int SlopePlayer;
         public readonly int SlopeType;
@@ -377,6 +383,14 @@ public sealed class SmwPhysics
         if (steppedOntoSolid && state.YSpeed >= 0)
         {
             state.OnGround = true;
+        }
+        if (state.OnGround)
+        {
+            state.InAirState = 0;
+        }
+        else if (state.InAirState == 0)
+        {
+            state.InAirState = NativeFallingInAirState;
         }
     }
 
@@ -814,6 +828,9 @@ public sealed class SmwPhysics
             state.SpinJump = input.SpinPressed;
             state.JumpHeldFrames = 0;
             state.CapeFloatFrames = 0;
+            state.InAirState = state.RunningTakeoff
+                ? NativeRunningJumpInAirState
+                : NativeNormalJumpInAirState;
         }
         else if (state.OnGround)
         {
@@ -821,6 +838,7 @@ public sealed class SmwPhysics
             state.SpinJump = false;
             state.JumpHeldFrames = 0;
             state.CapeFloatFrames = 0;
+            state.InAirState = 0;
             state.YSpeed = 0;
             state.SubYSpeed = 0;
             return;
@@ -870,11 +888,16 @@ public sealed class SmwPhysics
     private static void ApplyVerticalGravity(ref PlayerState state, int tableIndex)
     {
         tableIndex = Math.Clamp(tableIndex, 0, VerticalGravityTable.Length - 1);
-        state.YSpeed += VerticalGravityTable[tableIndex];
-        if (state.YSpeed > VerticalMaxFallTable[tableIndex])
+        if (state.YSpeed >= 0 && state.YSpeed >= VerticalMaxFallTable[tableIndex])
         {
             state.YSpeed = VerticalMaxFallTable[tableIndex];
         }
+        if (state.YSpeed >= 0 && state.InAirState == NativeNormalJumpInAirState)
+        {
+            state.InAirState = NativeFallingInAirState;
+        }
+
+        state.YSpeed = ToS8(state.YSpeed + VerticalGravityTable[tableIndex]);
     }
 
     private bool ResolveAxis(
@@ -958,6 +981,7 @@ public sealed class SmwPhysics
                 {
                     state.Y = (int)MathF.Round(solid.Position.Y - PlayerHeightFor(state));
                     state.OnGround = true;
+                    state.InAirState = 0;
                     state.RunningTakeoff = false;
                 }
                 else if (state.YSpeed < 0)
@@ -1107,6 +1131,7 @@ public sealed class SmwPhysics
         state.SubYSpeed = 0;
         ApplyNativeSlopeContact(ref state, floorSlope);
         state.OnGround = true;
+        state.InAirState = 0;
         state.RunningTakeoff = false;
     }
 
