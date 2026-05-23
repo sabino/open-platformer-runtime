@@ -33,6 +33,8 @@ public partial class Main : Node2D
         string? capturePath = null;
         string? audioPreview = null;
         string? inputScriptPath = null;
+        string? debugCommandPath = null;
+        int? debugRconPort = null;
         Vector2? testSpawn = null;
         int? testPowerup = null;
         int? testScreenExit = null;
@@ -63,6 +65,17 @@ public partial class Main : Node2D
             else if (arg.StartsWith("--smw-input-script=", StringComparison.Ordinal))
             {
                 inputScriptPath = arg["--smw-input-script=".Length..];
+                autostart = true;
+            }
+            else if (arg.StartsWith("--smw-debug-command-file=", StringComparison.Ordinal))
+            {
+                debugCommandPath = arg["--smw-debug-command-file=".Length..];
+                autostart = true;
+            }
+            else if (arg.StartsWith("--smw-debug-rcon=", StringComparison.Ordinal) &&
+                int.TryParse(arg["--smw-debug-rcon=".Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedRconPort))
+            {
+                debugRconPort = parsedRconPort;
                 autostart = true;
             }
             else if (arg.StartsWith("--smw-test-spawn=", StringComparison.Ordinal))
@@ -110,6 +123,14 @@ public partial class Main : Node2D
         if (inputScriptPath != null)
         {
             _game?.DebugLoadInputScript(inputScriptPath);
+        }
+        if (debugCommandPath != null)
+        {
+            _game?.DebugUseCommandFile(debugCommandPath);
+        }
+        if (debugRconPort != null)
+        {
+            _game?.DebugStartRcon(debugRconPort.Value);
         }
         if (capturePath != null)
         {

@@ -413,6 +413,7 @@ public static class PhysicsSmoke
             probeX: 64.0f,
             top: 112.0f,
             bottom: 128.0f,
+            previousBottom: 128.0f,
             ySpeed: 2.0f,
             slopes,
             aboveTolerance: 8.0f,

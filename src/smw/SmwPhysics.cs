@@ -169,6 +169,7 @@ public sealed class SmwPhysics
         IReadOnlyList<SlopeSurface> slopes)
     {
         ApplyDucking(ref state, input);
+        var previousBottom = state.YFloat + PlayerHeightFor(state);
         ApplyJumpAndGravity(ref state, input);
         ApplyHorizontal(ref state, input);
 
@@ -178,7 +179,7 @@ public sealed class SmwPhysics
         IntegrateY(ref state);
         state.OnGround = false;
         ResolveAxis(ref state, solids, solidStepUpEnabled, solidVerticalEnabled, horizontal: false);
-        ResolveSlopes(ref state, slopes);
+        ResolveSlopes(ref state, slopes, previousBottom);
         if (steppedOntoSolid && state.YSpeed >= 0)
         {
             state.OnGround = true;
@@ -317,6 +318,7 @@ public sealed class SmwPhysics
         float probeX,
         float top,
         float bottom,
+        float previousBottom,
         float ySpeed,
         IReadOnlyList<SlopeSurface> slopes,
         float aboveTolerance,
@@ -335,7 +337,7 @@ public sealed class SmwPhysics
             return false;
         }
 
-        return top < surfaceY - 1.0f;
+        return top < surfaceY - 1.0f && previousBottom <= surfaceY + belowTolerance;
     }
 
     private static void ApplyDucking(ref PlayerState state, FrameInput input)
@@ -618,7 +620,7 @@ public sealed class SmwPhysics
         return true;
     }
 
-    private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes)
+    private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes, float previousBottom)
     {
         if (slopes.Count == 0)
         {
@@ -663,7 +665,7 @@ public sealed class SmwPhysics
             }
         }
 
-        if (!TryResolveFloorSlopeFromAbove(probeX, top, bottom, state.YSpeed, slopes, 6.0f, 16.0f, out var floorY))
+        if (!TryResolveFloorSlopeFromAbove(probeX, top, bottom, previousBottom, state.YSpeed, slopes, 6.0f, 16.0f, out var floorY))
         {
             return;
         }

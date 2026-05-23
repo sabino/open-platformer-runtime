@@ -18,16 +18,26 @@ dotnet build SmwGodotNative.csproj
 LOG_FILE="$(mktemp)"
 INPUT_SCRIPT="$(mktemp)"
 PIPE_SCRIPT="$(mktemp)"
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT"' EXIT
+DEBUG_COMMAND_FILE="$(mktemp)"
+RCON_LOG="$(mktemp)"
+RCON_PORT=4617
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 1 right run
 1 right run jump
 EOF
 printf '1 down\n' >"$PIPE_SCRIPT"
+cat >"$DEBUG_COMMAND_FILE" <<'EOF'
+pause
+spawn 880 304
+powerup small
+state before
+step 1
+EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474 collision_rects=35 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474 collision_rects=25 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
 grep -q "sprite_actors=31" "$LOG_FILE"
@@ -50,7 +60,7 @@ grep -q "goal_tapes=0" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-level=1CB --smw-test-screen-exit=1 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: entrance_motion action=6 frames=32 dx=4.00 dy=-4.00" "$LOG_FILE"
 grep -q "smw-runtime: entrance level=105 source=1CB secondary=1 settings=6 spawn=24,242" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474 collision_rects=35 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1474 collision_rects=25 slope_surfaces=42 pipe_cells=38/10 coin_pickups=4" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=272,176 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=1 dragon_coins=1" "$LOG_FILE"
@@ -76,6 +86,43 @@ grep -q "x=2064.00 y=288.00" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2072,240 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
 ! grep -q "pipe-debug screen=07" "$LOG_FILE"
 grep -q "smw-input-script: done name=$PIPE_SCRIPT frames=1" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$DEBUG_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$DEBUG_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-state: tag=before" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "x=896.00 y=304.00" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 600 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
+RCON_PID="$!"
+for _ in $(seq 1 80); do
+  if grep -q "smw-rcon: listening=127.0.0.1:$RCON_PORT" "$LOG_FILE"; then
+    break
+  fi
+  if ! kill -0 "$RCON_PID" 2>/dev/null; then
+    wait "$RCON_PID"
+  fi
+  sleep 0.05
+done
+grep -q "smw-rcon: listening=127.0.0.1:$RCON_PORT" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh pause | tee "$RCON_LOG"
+grep -q "ok paused=1" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 880 304 | tee "$RCON_LOG"
+grep -q "x=880.00" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh powerup small | tee "$RCON_LOG"
+grep -q "pow=0" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
+grep -q "ok step_queued=1" "$RCON_LOG"
+for _ in $(seq 1 80); do
+  if grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"; then
+    break
+  fi
+  sleep 0.05
+done
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "x=896.00 y=304.00" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh quit >/dev/null || true
+wait "$RCON_PID" || true
 
 "$GODOT_BIN" --headless --audio-driver Dummy --path . --quit-after 1 --smw-audio-preview=Level 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: music_preview=Level events=12 loop_frames=96" "$LOG_FILE"

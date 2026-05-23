@@ -1,7 +1,11 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using IoFile = System.IO.File;
 using IoPath = System.IO.Path;
 
@@ -140,6 +144,18 @@ public partial class GameScene : Node2D
     private SmwPhysics.FrameInput _lastFrameInput;
     private int _playerWalkingFrame;
     private int _playerAnimTimer;
+    private string? _debugCommandPath;
+    private long _debugCommandOffset;
+    private bool _debugPaused;
+    private int _debugStepFrames;
+    private int _debugFrameCounter;
+    private int _debugCommandInputFrames;
+    private int _debugCommandInputFrame;
+    private SmwPhysics.FrameInput _debugCommandInput;
+    private TcpListener? _debugRconListener;
+    private readonly List<TcpClient> _debugRconClients = [];
+    private readonly Dictionary<TcpClient, StringBuilder> _debugRconBuffers = [];
+    private readonly byte[] _debugRconReadBuffer = new byte[4096];
 
     public bool DebugOverlays { get; set; }
 
@@ -160,6 +176,16 @@ public partial class GameScene : Node2D
 
     public override void _PhysicsProcess(double delta)
     {
+        PollDebugCommands();
+        PollDebugRcon();
+        if (_debugPaused && _debugStepFrames <= 0)
+        {
+            UpdateHud();
+            UpdateDebugGizmos();
+            return;
+        }
+
+        var isDebugStep = _debugStepFrames > 0;
         var frameInput = _courseClear
             ? new SmwPhysics.FrameInput()
             : ReadFrameInput();
@@ -210,6 +236,16 @@ public partial class GameScene : Node2D
         {
             CheckPipeDebug(frameInput);
         }
+
+        _debugFrameCounter++;
+        if (isDebugStep)
+        {
+            _debugStepFrames--;
+            if (_debugStepFrames <= 0 && _debugPaused)
+            {
+                PrintDebugState("step_done");
+            }
+        }
     }
 
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
@@ -247,6 +283,26 @@ public partial class GameScene : Node2D
 
     private SmwPhysics.FrameInput ReadFrameInput()
     {
+        if (_debugCommandInputFrames > 0)
+        {
+            var input = _debugCommandInput;
+            if (_debugCommandInputFrame > 0)
+            {
+                input.JumpPressed = false;
+                input.SpinPressed = false;
+            }
+
+            _debugCommandInputFrame++;
+            _debugCommandInputFrames--;
+            if (_debugCommandInputFrames <= 0)
+            {
+                _debugCommandInputFrame = 0;
+                _debugCommandInput = default;
+            }
+
+            return input;
+        }
+
         if (_inputScript.Count > 0)
         {
             return ReadScriptedFrameInput();
@@ -1032,7 +1088,6 @@ public partial class GameScene : Node2D
     private void AddGeneratedCollision()
     {
         var solidTiles = new HashSet<(int X, int Y)>();
-        var noStepSolidTiles = new HashSet<(int X, int Y)>();
         var slopeTileKeys = new HashSet<(int X, int Y, int Map16, bool Ceiling)>();
         var slopeTiles = new List<PlacedMap16Tile>();
         foreach (var tile in _placedTiles)
@@ -1044,10 +1099,6 @@ public partial class GameScene : Node2D
             if (IsSlopeSurfaceTile(tile) && slopeTileKeys.Add(SlopeTileKey(tile)))
             {
                 slopeTiles.Add(tile);
-            }
-            else if (IsDiagonalPipeBodySolidTile(tile))
-            {
-                noStepSolidTiles.Add((tile.X, tile.Y));
             }
             else if (IsSolidMap16Source(tile.Source))
             {
@@ -1073,23 +1124,12 @@ public partial class GameScene : Node2D
             if (IsDiagonalPipeBodySolidTile(tile))
             {
                 _diagonalPipeBodyCells.Add((tile.X, tile.Y));
-                noStepSolidTiles.Add((tile.X, tile.Y));
             }
         }
 
         foreach (var rect in BuildMergedSolidRects(solidTiles))
         {
             AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), DebugOverlays);
-        }
-
-        foreach (var rect in BuildMergedSolidRects(noStepSolidTiles))
-        {
-            AddSolid(
-                rect,
-                new Color(0.05f, 0.70f, 1.0f, 0.12f),
-                DebugOverlays,
-                allowStepUp: false,
-                allowVertical: false);
         }
 
         foreach (var slope in BuildSlopeSurfaces(slopeTiles))
@@ -2245,6 +2285,7 @@ public partial class GameScene : Node2D
             probeX,
             actor.Y,
             bottom,
+            bottom,
             actor.YSpeed,
             _slopes,
             aboveTolerance: 8.0f,
@@ -3223,6 +3264,359 @@ public partial class GameScene : Node2D
         GD.Print($"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} render_y={PlayerRenderYOffsetForState(_state.Powerup, _state.Ducking)}");
     }
 
+    public void DebugUseCommandFile(string path)
+    {
+        _debugCommandPath = path.StartsWith("res://", StringComparison.Ordinal) ||
+            path.StartsWith("user://", StringComparison.Ordinal)
+                ? ProjectSettings.GlobalizePath(path)
+                : IoPath.IsPathRooted(path)
+                    ? path
+                    : IoPath.GetFullPath(path);
+        _debugCommandOffset = 0;
+        var directory = IoPath.GetDirectoryName(_debugCommandPath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            System.IO.Directory.CreateDirectory(directory);
+        }
+        if (!IoFile.Exists(_debugCommandPath))
+        {
+            IoFile.WriteAllText(_debugCommandPath, string.Empty);
+        }
+
+        GD.Print($"smw-debug: command_file={_debugCommandPath}");
+    }
+
+    public void DebugStartRcon(int port)
+    {
+        StopDebugRcon();
+        _debugRconListener = new TcpListener(IPAddress.Loopback, port);
+        _debugRconListener.Start();
+        var boundPort = ((IPEndPoint)_debugRconListener.LocalEndpoint).Port;
+        GD.Print($"smw-rcon: listening=127.0.0.1:{boundPort}");
+    }
+
+    private void StopDebugRcon()
+    {
+        foreach (var client in _debugRconClients)
+        {
+            client.Dispose();
+        }
+
+        _debugRconClients.Clear();
+        _debugRconBuffers.Clear();
+        _debugRconListener?.Stop();
+        _debugRconListener = null;
+    }
+
+    private void PollDebugRcon()
+    {
+        if (_debugRconListener == null)
+        {
+            return;
+        }
+
+        try
+        {
+            while (_debugRconListener.Pending())
+            {
+                var client = _debugRconListener.AcceptTcpClient();
+                client.NoDelay = true;
+                _debugRconClients.Add(client);
+                _debugRconBuffers[client] = new StringBuilder();
+                WriteRcon(client, "smw-rcon ready\n");
+            }
+
+            for (var i = _debugRconClients.Count - 1; i >= 0; i--)
+            {
+                PollDebugRconClient(_debugRconClients[i]);
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"smw-rcon: error={ex.Message}");
+        }
+    }
+
+    private void PollDebugRconClient(TcpClient client)
+    {
+        if (!client.Connected)
+        {
+            DropDebugRconClient(client);
+            return;
+        }
+
+        var stream = client.GetStream();
+        while (stream.DataAvailable)
+        {
+            var read = stream.Read(_debugRconReadBuffer, 0, _debugRconReadBuffer.Length);
+            if (read <= 0)
+            {
+                DropDebugRconClient(client);
+                return;
+            }
+
+            _debugRconBuffers[client].Append(Encoding.UTF8.GetString(_debugRconReadBuffer, 0, read));
+        }
+
+        ProcessDebugRconLines(client);
+    }
+
+    private void ProcessDebugRconLines(TcpClient client)
+    {
+        var builder = _debugRconBuffers[client];
+        var text = builder.ToString();
+        var consumed = 0;
+        while (true)
+        {
+            var newline = text.IndexOf('\n', consumed);
+            if (newline < 0)
+            {
+                break;
+            }
+
+            var line = text[consumed..newline].TrimEnd('\r');
+            consumed = newline + 1;
+            var response = ExecuteDebugCommand(line);
+            if (!string.IsNullOrWhiteSpace(response))
+            {
+                WriteRcon(client, response + "\n");
+            }
+        }
+
+        if (consumed <= 0)
+        {
+            return;
+        }
+
+        builder.Clear();
+        if (consumed < text.Length)
+        {
+            builder.Append(text[consumed..]);
+        }
+    }
+
+    private void DropDebugRconClient(TcpClient client)
+    {
+        _debugRconBuffers.Remove(client);
+        _debugRconClients.Remove(client);
+        client.Dispose();
+    }
+
+    private static void WriteRcon(TcpClient client, string text)
+    {
+        if (!client.Connected)
+        {
+            return;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(text);
+        client.GetStream().Write(bytes, 0, bytes.Length);
+    }
+
+    private void PollDebugCommands()
+    {
+        if (_debugCommandPath == null || !IoFile.Exists(_debugCommandPath))
+        {
+            return;
+        }
+
+        try
+        {
+            using var stream = IoFile.Open(_debugCommandPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite);
+            if (stream.Length < _debugCommandOffset)
+            {
+                _debugCommandOffset = 0;
+            }
+            stream.Seek(_debugCommandOffset, System.IO.SeekOrigin.Begin);
+            using var reader = new System.IO.StreamReader(stream);
+            while (reader.ReadLine() is { } line)
+            {
+                _ = ExecuteDebugCommand(line);
+            }
+            _debugCommandOffset = stream.Position;
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"smw-debug: command_file_error path={_debugCommandPath} error={ex.Message}");
+        }
+    }
+
+    private string ExecuteDebugCommand(string rawLine)
+    {
+        var commentIndex = rawLine.IndexOf('#');
+        var line = commentIndex >= 0 ? rawLine[..commentIndex] : rawLine;
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return string.Empty;
+        }
+
+        var parts = line.Split(
+            [' ', '\t', ',', ':', ';'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return ExecuteDebugCommandParts(parts);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"smw-debug: command_error line=\"{line}\" error={ex.Message}");
+            return $"error {ex.Message}";
+        }
+    }
+
+    private string ExecuteDebugCommandParts(string[] parts)
+    {
+        switch (parts[0].ToLowerInvariant())
+        {
+            case "pause":
+                _debugPaused = true;
+                GD.Print("smw-debug: paused=1");
+                return "ok paused=1";
+            case "resume":
+            case "run":
+                _debugPaused = false;
+                _debugStepFrames = 0;
+                GD.Print("smw-debug: paused=0");
+                return "ok paused=0";
+            case "step":
+            case "frame":
+                _debugPaused = true;
+                _debugStepFrames += parts.Length >= 2 && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var stepFrames)
+                    ? Math.Max(1, stepFrames)
+                    : 1;
+                GD.Print($"smw-debug: step queued={_debugStepFrames}");
+                return $"ok step_queued={_debugStepFrames}";
+            case "input":
+            case "press":
+                QueueDebugInput(parts);
+                return $"ok input_frames={_debugCommandInputFrames}";
+            case "spawn":
+            case "pos":
+                RequirePartCount(parts, 3);
+                DebugSetPlayerPosition(new Vector2(ParseFloat(parts[1]), ParseFloat(parts[2])));
+                return BuildDebugState("spawn");
+            case "powerup":
+            case "pow":
+                RequirePartCount(parts, 2);
+                DebugSetPlayerPowerup(ParseDebugPowerup(parts[1]));
+                return BuildDebugState("powerup");
+            case "level":
+                RequirePartCount(parts, 2);
+                DebugEnterLevel(parts[1].ToUpperInvariant());
+                return BuildDebugState("level");
+            case "screen_exit":
+            case "exit":
+                RequirePartCount(parts, 2);
+                DebugEnterScreenExit(ParseHexOrDecimalDebug(parts[1]));
+                return BuildDebugState("screen_exit");
+            case "script":
+                RequirePartCount(parts, 2);
+                DebugLoadInputScript(parts[1]);
+                return "ok script_loaded";
+            case "capture":
+                RequirePartCount(parts, 2);
+                var frames = parts.Length >= 3 && int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var captureFrames)
+                    ? Math.Max(1, captureFrames)
+                    : 1;
+                DebugCaptureViewport(parts[1], frames, quitAfterCapture: false);
+                return $"ok capture_scheduled={parts[1]} frames={frames}";
+            case "state":
+                return PrintDebugState(parts.Length >= 2 ? parts[1] : "manual");
+            case "quit":
+                GD.Print("smw-debug: quit");
+                GetTree().Quit();
+                return "ok quit";
+            default:
+                throw new FormatException($"unknown command '{parts[0]}'");
+        }
+    }
+
+    private void QueueDebugInput(string[] parts)
+    {
+        RequirePartCount(parts, 2);
+        var frames = Math.Max(1, int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture));
+        var input = new SmwPhysics.FrameInput();
+        for (var i = 2; i < parts.Length; i++)
+        {
+            ApplyScriptedInputToken("smw-debug", 0, parts[i], ref input);
+        }
+
+        _debugCommandInput = input;
+        _debugCommandInputFrames = frames;
+        _debugCommandInputFrame = 0;
+        if (_debugPaused)
+        {
+            _debugStepFrames += frames;
+        }
+        GD.Print($"smw-debug: input frames={frames} left={(input.Left ? 1 : 0)} right={(input.Right ? 1 : 0)} down={(input.Down ? 1 : 0)} jump={(input.Jump ? 1 : 0)} spin={(input.Spin ? 1 : 0)} run={(input.Run ? 1 : 0)}");
+    }
+
+    private string PrintDebugState(string tag)
+    {
+        var state = BuildDebugState(tag);
+        GD.Print(state);
+        return state;
+    }
+
+    private string BuildDebugState(string tag)
+    {
+        return
+            $"smw-debug-state: tag={tag} frame={_debugFrameCounter} level={_currentLevelId} " +
+            $"paused={(_debugPaused ? 1 : 0)} queued={_debugStepFrames} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
+            $"pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} " +
+            $"cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count}";
+    }
+
+    private static void RequirePartCount(string[] parts, int minimum)
+    {
+        if (parts.Length < minimum)
+        {
+            throw new FormatException($"{parts[0]} expects at least {minimum - 1} argument(s)");
+        }
+    }
+
+    private static float ParseFloat(string value)
+    {
+        return float.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture);
+    }
+
+    private static int ParseDebugPowerup(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        if (int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out var powerup))
+        {
+            return powerup;
+        }
+
+        return normalized switch
+        {
+            "small" => SmwPhysics.SmallPowerup,
+            "big" => SmwPhysics.BigPowerup,
+            "cape" => SmwPhysics.CapePowerup,
+            "fire" => SmwPhysics.FirePowerup,
+            _ => throw new FormatException($"unknown powerup '{value}'"),
+        };
+    }
+
+    private static int ParseHexOrDecimalDebug(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return int.Parse(trimmed[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        }
+
+        return int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var dec)
+            ? dec
+            : int.Parse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+    }
+
     public void DebugLoadInputScript(string path)
     {
         _inputScript.Clear();
@@ -3430,6 +3824,11 @@ public partial class GameScene : Node2D
         _lastPlayerDucking = false;
         UpdatePlayerGraphic(force: true);
         PrintRuntimeState();
+    }
+
+    public override void _ExitTree()
+    {
+        StopDebugRcon();
     }
 
     private void CheckPipeDebug(SmwPhysics.FrameInput frameInput)

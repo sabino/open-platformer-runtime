@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added a loopback-only TCP debug RCON server (`--smw-debug-rcon=PORT`) with live pause/resume, frame-step, injected input, spawn, powerup, level, capture, state, and quit commands.
+- Added `tools/run-debug-wayland.sh`, `tools/smw-rcon.sh`, and `tools/smw-control.sh` so visible Wayland runs can be driven and inspected from the terminal without stealing focus.
+- Added headless coverage for the debug command file and RCON paths, including a one-frame reproduction of the diagonal-pipe recovery case.
+- Removed merged rectangular collision from diagonal-pipe body cells now that those cells are sampled directly, eliminating fake debug-block solids around the sloped pipe volume.
+- Made floor-slope resolution depend on the previous-frame foot position so a slope catches Mario only when he was above/crossing it, not when the current frame starts inside the pipe side.
 - Added raw Map16 sampling for diagonal-pipe body and underside tiles, including recovery when Mario starts inside the sloped pipe cell and focused headless checks around the `x=896` boundary.
 - Disabled generated player entrances on the Yoshi Island 1 sloped exit pipe; only imported entrance pipe mouths can trigger the screen-exit path now.
 - Added runtime collision for diagonal-pipe body and mouth Map16 cells while preserving their outer floor/ceiling slope surfaces, so Mario can no longer walk through the sloped pipe volume and the pipe mouth has a walkable top segment.
