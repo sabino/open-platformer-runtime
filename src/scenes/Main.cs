@@ -469,6 +469,9 @@ public partial class Main : Node2D
         panel.AddChild(samples);
         AddCommandButton(samples, "Jump", () => _audio?.PlayJump());
         AddCommandButton(samples, "2-note", () => _audio?.PlaySpinJump());
+        AddCommandButton(samples, "Coin", () => _audio?.PlayCoin());
+        AddCommandButton(samples, "Stomp", () => _audio?.PlayStomp(0));
+        AddCommandButton(samples, "1UP", () => _audio?.PlayOneUp());
         foreach (var sampleId in SmwAudio.ProbeSampleIds)
         {
             AddSampleButton(samples, sampleId, $"BRR{sampleId:X2}");

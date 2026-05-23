@@ -32,6 +32,9 @@ public partial class SmwAudio : Node
     private double _debugMixMilliseconds;
     private int _debugLastMixFrames;
     private double _debugLastMixMilliseconds;
+    private string _lastSfxName = "none";
+    private int _lastSfxPort;
+    private int _lastSfxCommand;
 
     public static readonly int[] ProbeSampleIds = [9, 14, 16];
 
@@ -58,17 +61,165 @@ public partial class SmwAudio : Node
 
     public void PlayMenuStart()
     {
-        PlaySample(9);
+        PlayNativeSfxProbe(
+            "menu_start",
+            port: 3,
+            command: 0x29,
+            [new SfxProbeNote(9, 0x80, 0x0C, 0.38f, 0, 0.0f)]);
     }
 
     public void PlayJump()
     {
+        RecordSfx("jump", port: 1, command: 0x01);
         PlayPort1JumpCommand();
     }
 
     public void PlaySpinJump()
     {
+        RecordSfx("spin_jump", port: 1, command: 0x04);
         PlayPort1TwoNoteCommand();
+    }
+
+    public void PlayCoin()
+    {
+        PlayNativeSfxProbe(
+            "coin",
+            port: 3,
+            command: 0x01,
+            [new SfxProbeNote(7, 0x9E, 0x08, 0.30f, 0, 0.0f)]);
+    }
+
+    public void PlayDragonCoin()
+    {
+        PlayNativeSfxProbe(
+            "dragon_coin",
+            port: 3,
+            command: 0x01,
+            [
+                new SfxProbeNote(7, 0x9E, 0x08, 0.26f, 0, -0.10f),
+                new SfxProbeNote(7, 0xA7, 0x0A, 0.24f, 4, 0.10f),
+            ]);
+    }
+
+    public void PlayOneUp()
+    {
+        PlayNativeSfxProbe(
+            "one_up",
+            port: 3,
+            command: 0x02,
+            [
+                new SfxProbeNote(12, 0x60, 0x08, 0.24f, 0, -0.12f),
+                new SfxProbeNote(12, 0x64, 0x08, 0.24f, 5, -0.04f),
+                new SfxProbeNote(12, 0x67, 0x08, 0.24f, 10, 0.04f),
+                new SfxProbeNote(12, 0x70, 0x10, 0.26f, 15, 0.12f),
+            ]);
+    }
+
+    public void PlayStomp(int rewardIndex)
+    {
+        var clamped = Math.Clamp(rewardIndex, 0, 6);
+        PlayNativeSfxProbe(
+            "stomp",
+            port: 1,
+            command: 0x13 + clamped,
+            [new SfxProbeNote(7, 0x78 + clamped * 2, 0x08, 0.36f, 0, 0.0f)]);
+    }
+
+    public void PlayBlockBreak()
+    {
+        PlayNativeSfxProbe(
+            "block_break",
+            port: 1,
+            command: 0x08,
+            [
+                new SfxProbeNote(7, 0x84, 0x06, 0.30f, 0, -0.18f),
+                new SfxProbeNote(7, 0x78, 0x06, 0.28f, 3, 0.18f),
+            ]);
+    }
+
+    public void PlayBlockReward()
+    {
+        PlayNativeSfxProbe(
+            "powerup_reward",
+            port: 3,
+            command: 0x0A,
+            [
+                new SfxProbeNote(12, 0x68, 0x08, 0.22f, 0, -0.08f),
+                new SfxProbeNote(12, 0x70, 0x10, 0.24f, 6, 0.08f),
+            ]);
+    }
+
+    public void PlayPlayerHurt()
+    {
+        PlayNativeSfxProbe(
+            "hurt",
+            port: 1,
+            command: 0x04,
+            [new SfxProbeNote(7, 0x72, 0x0E, 0.32f, 0, 0.0f)]);
+    }
+
+    public void PlayDeath()
+    {
+        PlayNativeSfxProbe(
+            "death",
+            port: 3,
+            command: 0x09,
+            [
+                new SfxProbeNote(12, 0x54, 0x12, 0.20f, 0, -0.08f),
+                new SfxProbeNote(12, 0x50, 0x18, 0.18f, 14, 0.08f),
+            ]);
+    }
+
+    public void PlayCourseClear()
+    {
+        PlayNativeSfxProbe(
+            "course_clear",
+            port: 3,
+            command: 0x17,
+            [new SfxProbeNote(12, 0x70, 0x18, 0.20f, 0, 0.0f)]);
+    }
+
+    public bool PlayNamedSfx(string name)
+    {
+        switch (name.ToLowerInvariant())
+        {
+            case "coin":
+                PlayCoin();
+                return true;
+            case "dragon":
+            case "dragon_coin":
+                PlayDragonCoin();
+                return true;
+            case "oneup":
+            case "one-up":
+            case "1up":
+                PlayOneUp();
+                return true;
+            case "stomp":
+                PlayStomp(0);
+                return true;
+            case "block":
+            case "break":
+            case "block_break":
+                PlayBlockBreak();
+                return true;
+            case "reward":
+            case "powerup":
+                PlayBlockReward();
+                return true;
+            case "hurt":
+                PlayPlayerHurt();
+                return true;
+            case "death":
+                PlayDeath();
+                return true;
+            case "clear":
+            case "course_clear":
+                PlayCourseClear();
+                return true;
+            default:
+                return false;
+        }
     }
 
     public bool HasSample(int sampleId)
@@ -134,7 +285,8 @@ public partial class SmwAudio : Node
             $"loop_frames={_musicLoopFrames} frames_available={framesAvailable} " +
             $"mix_chunk={AudioMixChunkFrames} mix_max_chunks={MaxAudioMixChunksPerProcess} " +
             $"mix_frames={_debugMixFrames} mix_calls={_debugMixCalls} mix_ms={_debugMixMilliseconds:0.000} " +
-            $"mix_last_frames={_debugLastMixFrames} mix_last_ms={_debugLastMixMilliseconds:0.000} mix_avg_ms={averageMixMilliseconds:0.000}";
+            $"mix_last_frames={_debugLastMixFrames} mix_last_ms={_debugLastMixMilliseconds:0.000} mix_avg_ms={averageMixMilliseconds:0.000} " +
+            $"last_sfx={_lastSfxName} last_sfx_port={_lastSfxPort} last_sfx_cmd={_lastSfxCommand:X2}";
     }
 
     private void EnsureLoaded()
@@ -313,6 +465,23 @@ public partial class SmwAudio : Node
     {
         PlayInstrumentNote(instrument: 7, note: 0xA4, durationFrames: 0x0C, volume: 0.42f, delayFrames: 4);
         PlayInstrumentNote(instrument: 7, note: 0xA4, durationFrames: 0x0C, volume: 0.42f, delayFrames: 0x10);
+    }
+
+    private void PlayNativeSfxProbe(string name, int port, int command, IReadOnlyList<SfxProbeNote> notes)
+    {
+        RecordSfx(name, port, command);
+        foreach (var note in notes)
+        {
+            PlayInstrumentNote(note.Instrument, note.Note, note.DurationFrames, note.Volume, note.DelayFrames, note.Pan);
+        }
+    }
+
+    private void RecordSfx(string name, int port, int command)
+    {
+        _lastSfxName = name;
+        _lastSfxPort = port;
+        _lastSfxCommand = command & 0xFF;
+        GD.Print($"smw-audio: sfx={name} port={port} command={_lastSfxCommand:X2}");
     }
 
     private void PlayInstrumentNote(int instrument, int note, int durationFrames, float volume, int delayFrames, float pan = 0.0f)
@@ -528,6 +697,14 @@ public partial class SmwAudio : Node
         int Note,
         int DurationFrames,
         float Volume,
+        float Pan);
+
+    private readonly record struct SfxProbeNote(
+        int Instrument,
+        int Note,
+        int DurationFrames,
+        float Volume,
+        int DelayFrames,
         float Pan);
 
     private static readonly MusicEvent[] LevelPreviewPattern =

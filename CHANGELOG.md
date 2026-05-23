@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Wired named internal APU SFX probes into gameplay events: coins, dragon coins, one-ups, sprite stomps, spin-jump block breaks, flying-block power-up rewards, hurt/death, and course clear now use explicit `SmwAudio` methods with native port/command diagnostics, and RCON can trigger the same `audio coin|stomp|1up|...` probes.
 - Added first-pass native-table-backed stomp scoring for runtime sprite actors: Rex's first stomp now uses the SMW 200-point reward slot, logs `smw-runtime: sprite_stomp`, and exposes `stomp_chain` through debug state.
 - Added the first fifth-dragon-coin extra-life rule and RCON/debug `dragon <n>` setup command so imported Yoshi/dragon coin state can be tested independently from normal coin rollover.
 - Added the first 100-coin extra-life rule: normal coins, dragon coins, and coin block rewards now roll `COIN 99` to `COIN 00`, increment lives/one-up diagnostics, and can be tested deterministically through RCON/debug `coins <n>`.

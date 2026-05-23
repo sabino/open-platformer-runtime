@@ -2123,7 +2123,7 @@ public partial class GameScene : Node2D
         _state.SubYSpeed = 0;
         _blockBreakCount += broken;
         AddGeneratedCollision(debugVisible: false);
-        _audio?.PlaySpinJump();
+        _audio?.PlayBlockBreak();
         GD.Print(
             $"smw-runtime: block_break level={_currentLevelId} count={broken} total={_blockBreakCount} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} tile_y={tileY}");
@@ -3712,6 +3712,7 @@ public partial class GameScene : Node2D
         {
             case 0:
                 AddScore(CoinScore);
+                _audio?.PlayCoin();
                 AddCoin("block:83");
                 break;
             case 1:
@@ -3721,12 +3722,14 @@ public partial class GameScene : Node2D
                     _state.Powerup == SmwPhysics.SmallPowerup ? SmwPhysics.BigPowerup : SmwPhysics.FirePowerup);
                 _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
                 UpdatePlayerGraphic(force: true);
+                _audio?.PlayBlockReward();
                 break;
             case 2:
                 AddScore(PowerupRewardScore);
                 _physics.SetPowerup(ref _state, SmwPhysics.CapePowerup);
                 _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
                 UpdatePlayerGraphic(force: true);
+                _audio?.PlayBlockReward();
                 break;
             case 3:
                 AddOneUp("block:83");
@@ -3734,7 +3737,6 @@ public partial class GameScene : Node2D
         }
 
         ReplaceSpriteActorVisuals(actor);
-        _audio?.PlaySample(9);
         _lastActorEvent = $"block:{actor.SpriteId:X2}:reward:{reward}";
         GD.Print(
             $"smw-runtime: block_reward level={_currentLevelId} sprite={actor.SpriteId:X2} reward={reward} " +
@@ -3829,6 +3831,7 @@ public partial class GameScene : Node2D
         else
         {
             AddScore(StompScoreByNativeGivePointsIndex[rewardIndex]);
+            _audio?.PlayStomp(rewardIndex);
         }
 
         GD.Print(
@@ -3886,7 +3889,7 @@ public partial class GameScene : Node2D
         _state.SubXSpeed = 0;
         _state.SubYSpeed = 0;
         _state.OnGround = false;
-        _audio?.PlayJump();
+        _audio?.PlayPlayerHurt();
     }
 
     private void CheckCoinPickups()
@@ -3921,14 +3924,20 @@ public partial class GameScene : Node2D
         {
             _dragonCoinCount++;
         }
+        if (pickup.DragonCoin)
+        {
+            _audio?.PlayDragonCoin();
+        }
+        else
+        {
+            _audio?.PlayCoin();
+        }
         AddScore(pickup.DragonCoin ? DragonCoinScore : CoinScore);
         AddCoin(pickup.DragonCoin ? "dragon_coin" : "coin");
         if (pickup.DragonCoin && _dragonCoinCount == DragonCoinLifeThreshold)
         {
             AddOneUp("dragon_coin_5");
         }
-
-        _audio?.PlaySample(9);
         GD.Print(
             $"smw-runtime: coin_pickup level={_currentLevelId} " +
             $"dragon={(pickup.DragonCoin ? 1 : 0)} coins={_coinCount} dragon_coins={_dragonCoinCount} score={_score} " +
@@ -3953,6 +3962,7 @@ public partial class GameScene : Node2D
             _lives++;
         }
 
+        _audio?.PlayOneUp();
         GD.Print(
             $"smw-runtime: one_up level={_currentLevelId} source={source} " +
             $"lives={_lives} oneups={_oneUpCount} coins={_coinCount} score={_score}");
@@ -3991,6 +4001,7 @@ public partial class GameScene : Node2D
         _state.XSpeed = 0;
         _state.SubXSpeed = 0;
         _audio?.PlayMusicPreview("Credits");
+        _audio?.PlayCourseClear();
         HidePauseLabel();
         ShowCourseClearLabel();
         GD.Print($"smw-runtime: course_clear level={_currentLevelId} walkout=right");
@@ -6423,6 +6434,14 @@ public partial class GameScene : Node2D
             GD.Print(line);
             return line;
         }
+        if (command is "coin" or "dragon" or "dragon_coin" or "oneup" or "one-up" or "1up" or "stomp" or "block" or "break" or "block_break" or "reward" or "powerup" or "hurt" or "death" or "clear" or "course_clear")
+        {
+            EnsureDebugAudioEnabled();
+            var played = _audio?.PlayNamedSfx(command) ?? false;
+            var line = $"{BuildDebugAudioState("sfx")} command={command} played={(played ? 1 : 0)}";
+            GD.Print(line);
+            return line;
+        }
         if (command is "music" or "preview")
         {
             RequirePartCount(parts, 3);
@@ -7103,6 +7122,7 @@ public partial class GameScene : Node2D
         _deathCount++;
         _stompChainCounter = 0;
         _lives = Math.Max(0, _lives - 1);
+        _audio?.PlayDeath();
         GD.Print(
             $"smw-runtime: player_death level={_currentLevelId} cause={cause} count={_deathCount} " +
             $"lives={_lives} x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
