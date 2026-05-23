@@ -4957,6 +4957,10 @@ public partial class GameScene : Node2D
             case "spawn":
             case "pos":
                 RequirePartCount(parts, 3);
+                if (parts.Length >= 4)
+                {
+                    DebugSetPlayerPowerup(ParseDebugPowerup(parts[3]));
+                }
                 DebugSetPlayerPosition(new Vector2(ParseFloat(parts[1]), ParseFloat(parts[2])));
                 return BuildDebugState("spawn");
             case "powerup":
