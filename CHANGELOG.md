@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a first game-over flow: when the temporary life counter reaches zero, gameplay freezes on a visible `GAME OVER` prompt, music stops, HUD/RCON state reports `gameover=1`, and pressing Start or RCON `continue` restarts the first-level slice with fresh lives.
 - Made the visible level timer affect gameplay: when it reaches zero, the runtime logs a `time_up` player death, decrements the temporary life counter, restarts the current level, and exposes RCON `timer`/`time` controls for deterministic clock probes.
 - Added a normal-play status bar and RCON `hud`/`status` probe for score, lives, coins, dragon coins, timer, level, and course-clear state, with score increments for imported coins and the first block rewards.
 - Added a course-clear control-lock slice: after touching the imported goal tape, Mario now enters a rightward autowalk state with RCON/trace `clear` and `walkout` diagnostics instead of freezing in place at the tape.

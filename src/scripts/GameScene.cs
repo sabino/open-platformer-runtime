@@ -144,6 +144,7 @@ public partial class GameScene : Node2D
     private CanvasLayer? _hudLayer;
     private CanvasLayer? _courseClearLayer;
     private Node2D? _worldRoot;
+    private Label? _gameOverLabel;
     private SmwAudio? _audio;
     private readonly ImageTexture?[] _playerTextures = new ImageTexture?[4];
     private ImageTexture? _spriteTexture;
@@ -175,6 +176,7 @@ public partial class GameScene : Node2D
     private int _playerHurtCooldown;
     private string _lastActorEvent = "none";
     private bool _courseClear;
+    private bool _gameOver;
     private int _courseClearWalkoutFrames;
     private int _entranceMotionFrames;
     private int _entranceMotionAction;
@@ -249,6 +251,13 @@ public partial class GameScene : Node2D
     {
         PollDebugCommands();
         PollDebugRcon();
+        var isDebugStep = _debugStepFrames > 0;
+        if (_gameOver)
+        {
+            HandleGameOverFrame(isDebugStep);
+            return;
+        }
+
         if (_debugPaused && _debugStepFrames <= 0)
         {
             UpdateHud();
@@ -256,7 +265,6 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var isDebugStep = _debugStepFrames > 0;
         var frameInput = _courseClear
             ? ReadCourseClearInput()
             : ReadFrameInput();
@@ -323,6 +331,28 @@ public partial class GameScene : Node2D
             CheckPipeDebug(frameInput);
         }
         PrintQueuedDebugTrace(frameInput);
+
+        _debugFrameCounter++;
+        if (isDebugStep)
+        {
+            _debugStepFrames--;
+            if (_debugStepFrames <= 0 && _debugPaused)
+            {
+                PrintDebugState("step_done");
+            }
+        }
+    }
+
+    private void HandleGameOverFrame(bool isDebugStep)
+    {
+        if (Input.IsActionJustPressed("smw_start") || Input.IsActionJustPressed("smw_jump"))
+        {
+            ContinueAfterGameOver();
+        }
+
+        UpdateHud();
+        UpdateDebugGizmos();
+        PrintQueuedDebugTrace(new SmwPhysics.FrameInput());
 
         _debugFrameCounter++;
         if (isDebugStep)
@@ -4632,6 +4662,7 @@ public partial class GameScene : Node2D
         _statusHud = null;
         _hud = null;
         _courseClearLabel = null;
+        _gameOverLabel = null;
 
         var layer = new CanvasLayer
         {
@@ -4661,6 +4692,7 @@ public partial class GameScene : Node2D
 
         UpdateHud();
         BuildCourseClearLabel(layer);
+        BuildGameOverLabel(layer);
     }
 
     private void BuildCourseClearLabel(CanvasLayer layer)
@@ -4685,6 +4717,39 @@ public partial class GameScene : Node2D
         if (_courseClearLabel != null)
         {
             _courseClearLabel.Visible = true;
+        }
+    }
+
+    private void BuildGameOverLabel(CanvasLayer layer)
+    {
+        var label = new Label
+        {
+            Text = "GAME OVER\nPRESS START",
+            Position = new Vector2(62, 82),
+            Visible = _gameOver,
+        };
+        label.AddThemeFontSizeOverride("font_size", 20);
+        label.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
+        label.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 1.0f));
+        label.AddThemeConstantOverride("shadow_offset_x", 2);
+        label.AddThemeConstantOverride("shadow_offset_y", 2);
+        _gameOverLabel = label;
+        layer.AddChild(label);
+    }
+
+    private void ShowGameOverLabel()
+    {
+        if (_gameOverLabel != null)
+        {
+            _gameOverLabel.Visible = true;
+        }
+    }
+
+    private void HideGameOverLabel()
+    {
+        if (_gameOverLabel != null)
+        {
+            _gameOverLabel.Visible = false;
         }
     }
 
@@ -4770,8 +4835,8 @@ public partial class GameScene : Node2D
 
     private string BuildStatusHudText()
     {
-        var clear = _courseClear ? "  COURSE CLEAR" : string.Empty;
-        return $"MARIO {_score:000000}  x{_lives:00}  COIN {_coinCount:00}  DRAGON {_dragonCoinCount}/5  TIME {LevelTimerSecondsRemaining():000}  L{_currentLevelId}{clear}";
+        var status = _gameOver ? "  GAME OVER" : _courseClear ? "  COURSE CLEAR" : string.Empty;
+        return $"MARIO {_score:000000}  x{_lives:00}  COIN {_coinCount:00}  DRAGON {_dragonCoinCount}/5  TIME {LevelTimerSecondsRemaining():000}  L{_currentLevelId}{status}";
     }
 
     private string DescribeFootTile()
@@ -4815,6 +4880,11 @@ public partial class GameScene : Node2D
 
     public void DebugRestartCurrentLevel()
     {
+        if (_lives <= 0)
+        {
+            _lives = StartingLives;
+        }
+
         RestartCurrentLevel("debug:restart");
         GD.Print($"smw-debug: restart level={_currentLevelId}");
     }
@@ -4895,6 +4965,21 @@ public partial class GameScene : Node2D
         UpdateHud();
         UpdateDebugGizmos();
         GD.Print($"smw-test-pmeter: p={_state.PMeter:X2}");
+    }
+
+    public void DebugSetLives(int lives)
+    {
+        _lives = Math.Clamp(lives, 0, 99);
+        if (_lives > 0 && _gameOver)
+        {
+            _gameOver = false;
+            HideGameOverLabel();
+            StartLevelMusic();
+        }
+
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print($"smw-test-lives: lives={_lives} gameover={(_gameOver ? 1 : 0)}");
     }
 
     public void DebugSetPlayerGrounded(bool grounded)
@@ -5297,6 +5382,15 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugSetPlayerPMeter(ParseHexOrDecimalDebug(parts[1]));
                 return BuildDebugState("pmeter");
+            case "lives":
+            case "life":
+                if (parts.Length >= 2)
+                {
+                    DebugSetLives(ParseHexOrDecimalDebug(parts[1]));
+                    return BuildDebugState("lives");
+                }
+
+                return PrintDebugLives("status");
             case "ground":
             case "onground":
                 RequirePartCount(parts, 2);
@@ -5350,6 +5444,10 @@ public partial class GameScene : Node2D
             case "reload":
                 DebugRestartCurrentLevel();
                 return BuildDebugState("restart");
+            case "continue":
+            case "retry":
+                ContinueAfterGameOver();
+                return BuildDebugState("continue");
             case "screen_exit":
             case "exit":
                 RequirePartCount(parts, 2);
@@ -5977,7 +6075,16 @@ public partial class GameScene : Node2D
     {
         var line =
             $"smw-debug-status: score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} " +
-            $"time={LevelTimerSecondsRemaining()} clear={(_courseClear ? 1 : 0)} text=\"{BuildStatusHudText()}\"";
+            $"time={LevelTimerSecondsRemaining()} clear={(_courseClear ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} text=\"{BuildStatusHudText()}\"";
+        GD.Print(line);
+        return line;
+    }
+
+    private string PrintDebugLives(string tag)
+    {
+        var line =
+            $"smw-debug-lives: tag={tag} lives={_lives} starting={StartingLives} " +
+            $"gameover={(_gameOver ? 1 : 0)} deaths={_deathCount}";
         GD.Print(line);
         return line;
     }
@@ -6027,7 +6134,7 @@ public partial class GameScene : Node2D
     {
         var line =
             $"smw-debug-timer: tag={tag} frames={_levelTimerFrames} seconds={LevelTimerSecondsRemaining()} " +
-            $"clear={(_courseClear ? 1 : 0)} lives={_lives} deaths={_deathCount}";
+            $"clear={(_courseClear ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} lives={_lives} deaths={_deathCount}";
         GD.Print(line);
         return line;
     }
@@ -6240,7 +6347,7 @@ public partial class GameScene : Node2D
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} face={_state.Facing} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
-            $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} time={LevelTimerSecondsRemaining()} " +
+            $"clear={(_courseClear ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} time={LevelTimerSecondsRemaining()} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} " +
             $"near={nearestActor} actor_event={_lastActorEvent} blocks={_blockBreakCount} deaths={_deathCount}";
@@ -6726,6 +6833,7 @@ public partial class GameScene : Node2D
         }
 
         _courseClear = false;
+        _gameOver = false;
         _courseClearWalkoutFrames = 0;
         _playerHurtCooldown = 0;
         _lastActorEvent = "none";
@@ -6767,7 +6875,49 @@ public partial class GameScene : Node2D
         GD.Print(
             $"smw-runtime: player_death level={_currentLevelId} cause={cause} count={_deathCount} " +
             $"lives={_lives} x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
+        if (_lives <= 0)
+        {
+            TriggerGameOver(cause);
+            return;
+        }
+
         RestartCurrentLevel(actorEvent);
+    }
+
+    private void TriggerGameOver(string cause)
+    {
+        _gameOver = true;
+        _courseClear = false;
+        _courseClearWalkoutFrames = 0;
+        _entranceMotionFrames = 0;
+        _pipeTransitionLatch = false;
+        _state.XSpeed = 0;
+        _state.YSpeed = 0;
+        _state.SubXSpeed = 0;
+        _state.SubYSpeed = 0;
+        _lastActorEvent = $"gameover:{cause}";
+        _levelTimerFrames = 0;
+        _audio?.StopMusicPreview();
+        ShowGameOverLabel();
+        UpdateHud();
+        UpdateDebugGizmos();
+        GD.Print(
+            $"smw-runtime: game_over level={_currentLevelId} cause={cause} deaths={_deathCount} " +
+            $"score={_score} coins={_coinCount} dragon_coins={_dragonCoinCount}");
+    }
+
+    private void ContinueAfterGameOver()
+    {
+        var wasGameOver = _gameOver;
+        _gameOver = false;
+        _lives = StartingLives;
+        _coinCount = 0;
+        _dragonCoinCount = 0;
+        _oneUpCount = 0;
+        _score = 0;
+        HideGameOverLabel();
+        RestartCurrentLevel(wasGameOver ? "gameover:continue" : "debug:continue");
+        GD.Print($"smw-runtime: continue level={_currentLevelId} lives={_lives} score={_score}");
     }
 
     private void RestartCurrentLevel(string actorEvent)
@@ -6779,6 +6929,7 @@ public partial class GameScene : Node2D
         }
 
         _courseClear = false;
+        _gameOver = false;
         _courseClearWalkoutFrames = 0;
         _playerHurtCooldown = 0;
         _lastActorEvent = actorEvent;
