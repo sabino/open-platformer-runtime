@@ -26,6 +26,7 @@ REX_COMMAND_FILE="$(mktemp)"
 BREAK_COMMAND_FILE="$(mktemp)"
 WING_BLOCK_COMMAND_FILE="$(mktemp)"
 WING_BLOCK_REWARD_COMMAND_FILE="$(mktemp)"
+ITEM_COLLECT_COMMAND_FILE="$(mktemp)"
 PIRANHA_HIDDEN_COMMAND_FILE="$(mktemp)"
 PIRANHA_VISIBLE_COMMAND_FILE="$(mktemp)"
 C7_NORMAL_VISUAL_COMMAND_FILE="$(mktemp)"
@@ -42,7 +43,7 @@ TRACE_COMMAND_FILE="$(mktemp)"
 COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -111,6 +112,12 @@ pause
 spawn 592 256
 powerup big
 velocity 0 -64
+step 1
+EOF
+cat >"$ITEM_COLLECT_COMMAND_FILE" <<'EOF'
+pause
+spawn 592 224 big
+item flower 592 224
 step 1
 EOF
 cat >"$PIRANHA_HIDDEN_COMMAND_FILE" <<'EOF'
@@ -350,12 +357,22 @@ grep -q "actor_event=block:83:top" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$WING_BLOCK_REWARD_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$WING_BLOCK_REWARD_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-runtime: item_spawn level=105 sprite=75 reward=flower" "$LOG_FILE"
 grep -q "smw-runtime: block_reward level=105 sprite=83 reward=flower" "$LOG_FILE"
 grep -q "smw-audio: sfx=powerup_reward port=3 command=0A" "$LOG_FILE"
-grep -q "score=1000" "$LOG_FILE"
+grep -q "pow=1 score=0" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "actors=33" "$LOG_FILE"
+grep -q "actor_event=block:83:reward:flower" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$ITEM_COLLECT_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$ITEM_COLLECT_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug: item sprite=75 x=592.00 y=224.00" "$LOG_FILE"
+grep -q "smw-runtime: item_collect level=105 sprite=75" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "pow=3" "$LOG_FILE"
-grep -q "actor_event=block:83:reward:flower" "$LOG_FILE"
+grep -q "score=1000" "$LOG_FILE"
+grep -q "actor_event=item:75:collect" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIRANHA_HIDDEN_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIRANHA_HIDDEN_COMMAND_FILE" "$LOG_FILE"

@@ -37,6 +37,11 @@ public partial class GameScene : Node2D
     private const int JumpingPiranhaFallFrames = 24;
     private const float JumpingPiranhaTravelPixels = 32.0f;
     private const int WingedQuestionBlockCycleFrames = 64;
+    private const int PowerupItemEmergingState = 1;
+    private const int PowerupItemActiveState = 2;
+    private const int PowerupItemEmergingFrames = 32;
+    private const float PowerupItemEmergingPixels = 16.0f;
+    private const float PowerupItemWalkSpeed = 1.0f;
     private const int GoalTapeSpriteId = 0x7B;
     private const int GoalTapeCycleFrames = 124;
     private const float GoalTapeDownSpeed = 1.0f;
@@ -1471,6 +1476,11 @@ public partial class GameScene : Node2D
         return spriteId is 0x83 or 0xB9;
     }
 
+    private static bool IsPowerupItemSprite(int spriteId)
+    {
+        return spriteId is 0x74 or 0x75 or 0x76 or 0x77 or 0x78;
+    }
+
     private RuntimeSpriteActor CreateRuntimeSpriteActor(SpriteSpawn spawn, bool debugOverlays)
     {
         var color = SpriteActorColor(spawn.SpriteId);
@@ -1707,6 +1717,7 @@ public partial class GameScene : Node2D
             0xAB => state == 1 ? SquishedRexOamTiles : RexOamTiles,
             0xBD => SlidingKoopaOamTiles,
             0x83 => WingOamTiles,
+            0x74 or 0x75 or 0x76 or 0x77 or 0x78 => PowerupItemOamTilesFor(spriteId),
             0xDA or 0xDB or 0xDC or 0xDD or 0xDF => ShellOamTilesFor(spriteId),
             0x4F or 0x50 => JumpingPiranhaOamTiles,
             0x4B => PipeLakituOamTiles,
@@ -1770,6 +1781,14 @@ public partial class GameScene : Node2D
         new(-11, -10, 0xC6, 0x46, 1, true),
         new(11, -10, 0xC6, 0x06, 1, true),
     ];
+
+    private static SpriteOamTile[] PowerupItemOamTilesFor(int spriteId)
+    {
+        var index = Math.Clamp(spriteId - 0x74, 0, 4);
+        int[] tiles = [0x24, 0x26, 0x48, 0x0E, 0x24];
+        int[] props = [0x08, 0x0A, 0x00, 0x04, 0x0A];
+        return [new SpriteOamTile(0, -1, tiles[index], props[index], 0, true)];
+    }
 
     private static readonly SpriteOamTile[] JumpingPiranhaOamTiles =
     [
@@ -1863,6 +1882,9 @@ public partial class GameScene : Node2D
             0x95 => new SpriteActorBehavior(new Rect2(0, -4, 20, 36), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
             0xAB => new SpriteActorBehavior(new Rect2(-4, -15, 20, 31), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
             0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.58f),
+            0x74 or 0x78 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: PowerupItemWalkSpeed),
+            0x75 or 0x76 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: 0.0f),
+            0x77 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
             0xDA or 0xDB or 0xDC or 0xDD or 0xDF => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: 0.0f),
             0x4F or 0x50 => new SpriteActorBehavior(new Rect2(8, -16, 16, 32), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
             _ => new SpriteActorBehavior(new Rect2(0, 0, SpriteActorWidth, SpriteActorHeight), CanInteract: false, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
@@ -3417,6 +3439,19 @@ public partial class GameScene : Node2D
             UpdateWingedQuestionBlockMotion(actor);
             return;
         }
+        if (IsPowerupItemSprite(actor.SpriteId))
+        {
+            if (actor.State == PowerupItemEmergingState)
+            {
+                UpdateEmergingPowerupItemMotion(actor);
+                return;
+            }
+            if (actor.SpriteId == 0x77)
+            {
+                UpdateFeatherItemMotion(actor);
+                return;
+            }
+        }
 
         actor.X += actor.XSpeed;
         var rect = actor.Rect;
@@ -3518,6 +3553,34 @@ public partial class GameScene : Node2D
             : WingedQuestionBlockCycleFrames - frame;
         actor.State = wave < WingedQuestionBlockCycleFrames / 4 ? 0 : 1;
         actor.Y = actor.HomeY + (wave - WingedQuestionBlockCycleFrames / 4) / 4.0f;
+    }
+
+    private static void UpdateEmergingPowerupItemMotion(RuntimeSpriteActor actor)
+    {
+        actor.MotionFrame++;
+        var t = Math.Clamp(actor.MotionFrame / (float)PowerupItemEmergingFrames, 0.0f, 1.0f);
+        actor.Y = Mathf.Lerp(actor.HomeY + PowerupItemEmergingPixels, actor.HomeY, t);
+        if (actor.MotionFrame >= PowerupItemEmergingFrames)
+        {
+            actor.State = PowerupItemActiveState;
+            actor.MotionFrame = 0;
+            if (actor.SpriteId is 0x74 or 0x78 && MathF.Abs(actor.XSpeed) < 0.01f)
+            {
+                actor.XSpeed = PowerupItemWalkSpeed;
+            }
+        }
+    }
+
+    private static void UpdateFeatherItemMotion(RuntimeSpriteActor actor)
+    {
+        actor.MotionFrame++;
+        var phase = (actor.MotionFrame / 32) & 1;
+        var targetSpeed = phase == 0 ? 1.25f : -1.25f;
+        actor.XSpeed = Mathf.MoveToward(actor.XSpeed, targetSpeed, 0.08f);
+        actor.YSpeed = 0.45f + 0.18f * MathF.Sin(actor.MotionFrame / 8.0f);
+        actor.X += actor.XSpeed;
+        actor.Y += actor.YSpeed;
+        actor.State = PowerupItemActiveState;
     }
 
     private static void UpdateJumpingPiranhaMotion(RuntimeSpriteActor actor)
@@ -3716,23 +3779,13 @@ public partial class GameScene : Node2D
                 AddCoin("block:83");
                 break;
             case 1:
-                AddScore(PowerupRewardScore);
-                _physics.SetPowerup(
-                    ref _state,
-                    _state.Powerup == SmwPhysics.SmallPowerup ? SmwPhysics.BigPowerup : SmwPhysics.FirePowerup);
-                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
-                UpdatePlayerGraphic(force: true);
-                _audio?.PlayBlockReward();
+                SpawnPowerupItem(actor, _state.Powerup == SmwPhysics.SmallPowerup ? 0x74 : 0x75, reward);
                 break;
             case 2:
-                AddScore(PowerupRewardScore);
-                _physics.SetPowerup(ref _state, SmwPhysics.CapePowerup);
-                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
-                UpdatePlayerGraphic(force: true);
-                _audio?.PlayBlockReward();
+                SpawnPowerupItem(actor, 0x77, reward);
                 break;
             case 3:
-                AddOneUp("block:83");
+                SpawnPowerupItem(actor, 0x78, reward);
                 break;
         }
 
@@ -3742,6 +3795,82 @@ public partial class GameScene : Node2D
             $"smw-runtime: block_reward level={_currentLevelId} sprite={actor.SpriteId:X2} reward={reward} " +
             $"x={actor.X:0.00} y={actor.Y:0.00} coins={_coinCount} lives={_lives} oneups={_oneUpCount} pow={_state.Powerup} score={_score}");
         return true;
+    }
+
+    private void SpawnPowerupItem(RuntimeSpriteActor blockActor, int spriteId, string reward)
+    {
+        var behavior = SpriteActorBehaviorFor(spriteId);
+        var finalY = blockActor.Rect.Position.Y - behavior.Hitbox.Size.Y;
+        AddPowerupItemActor(
+            spriteId,
+            blockActor.X,
+            blockActor.Rect.Position.Y,
+            finalY,
+            PowerupItemEmergingState,
+            blockActor.WakeScreen);
+        _audio?.PlayBlockReward();
+        GD.Print(
+            $"smw-runtime: item_spawn level={_currentLevelId} sprite={spriteId:X2} reward={reward} " +
+            $"x={blockActor.X:0.00} y={blockActor.Rect.Position.Y:0.00} target_y={finalY:0.00}");
+    }
+
+    private void AddPowerupItemActor(int spriteId, float x, float startY, float finalY, int state, int wakeScreen)
+    {
+        var behavior = SpriteActorBehaviorFor(spriteId);
+        var node = new Node2D
+        {
+            Name = $"SpawnedItem_{spriteId:X2}_{_debugFrameCounter:X4}",
+            Position = new Vector2(x, startY),
+            ZIndex = 7,
+            Visible = _debugActorVisualsEnabled,
+        };
+        var visuals = AddSpriteActorVisuals(node, spriteId, state);
+        var body = new ColorRect
+        {
+            Name = "ItemCollisionDebug",
+            Color = DebugOverlays ? new Color(1.0f, 0.90f, 0.15f, 0.20f) : new Color(1.0f, 0.90f, 0.15f, 1.0f),
+            Position = behavior.Hitbox.Position,
+            Size = behavior.Hitbox.Size,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Visible = false,
+        };
+        node.AddChild(body);
+        if (DebugOverlays)
+        {
+            AddRectOutline(node, behavior.Hitbox, new Color(1.0f, 0.95f, 0.15f, 0.88f), 1.0f, 60);
+        }
+
+        _worldRoot?.AddChild(node);
+        _spriteActors.Add(new RuntimeSpriteActor
+        {
+            Node = node,
+            Body = body,
+            SpriteId = spriteId,
+            X = x,
+            Y = startY,
+            PreviousX = x,
+            PreviousY = startY,
+            HomeY = finalY,
+            XSpeed = spriteId is 0x74 or 0x78 ? PowerupItemWalkSpeed : 0.0f,
+            YSpeed = 0.0f,
+            WakeScreen = wakeScreen,
+            MotionFrame = 0,
+            Visuals = visuals,
+            Behavior = behavior,
+            State = state,
+        });
+    }
+
+    public void DebugSpawnPowerupItem(int spriteId, Vector2 position)
+    {
+        AddPowerupItemActor(
+            spriteId,
+            position.X,
+            position.Y,
+            position.Y,
+            PowerupItemActiveState,
+            (int)MathF.Floor(position.X / LogicalViewportWidth));
+        GD.Print($"smw-debug: item sprite={spriteId:X2} x={position.X:0.00} y={position.Y:0.00}");
     }
 
     private static int WorldTileXNibble(float x)
@@ -3765,10 +3894,17 @@ public partial class GameScene : Node2D
         var actorRect = actor.Rect;
         if (!actor.Alive ||
             !actor.Behavior.CanInteract ||
+            (IsPowerupItemSprite(actor.SpriteId) && actor.State == PowerupItemEmergingState) ||
             (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0) ||
             !playerRect.Intersects(actorRect))
         {
             return false;
+        }
+
+        if (IsPowerupItemSprite(actor.SpriteId))
+        {
+            CollectPowerupItem(actor);
+            return true;
         }
 
         var playerBottom = _state.YFloat + SmwPhysics.PlayerHeightFor(_state);
@@ -3791,6 +3927,47 @@ public partial class GameScene : Node2D
 
         HurtPlayerFromActor(actor);
         return true;
+    }
+
+    private void CollectPowerupItem(RuntimeSpriteActor actor)
+    {
+        actor.Alive = false;
+        _lastActorEvent = $"item:{actor.SpriteId:X2}:collect";
+        switch (actor.SpriteId)
+        {
+            case 0x74:
+                AddScore(PowerupRewardScore);
+                _physics.SetPowerup(ref _state, SmwPhysics.BigPowerup);
+                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
+                UpdatePlayerGraphic(force: true);
+                _audio?.PlayBlockReward();
+                break;
+            case 0x75:
+                AddScore(PowerupRewardScore);
+                _physics.SetPowerup(ref _state, SmwPhysics.FirePowerup);
+                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
+                UpdatePlayerGraphic(force: true);
+                _audio?.PlayBlockReward();
+                break;
+            case 0x77:
+                AddScore(PowerupRewardScore);
+                _physics.SetPowerup(ref _state, SmwPhysics.CapePowerup);
+                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
+                UpdatePlayerGraphic(force: true);
+                _audio?.PlayBlockReward();
+                break;
+            case 0x76:
+                AddScore(PowerupRewardScore);
+                _audio?.PlayBlockReward();
+                break;
+            case 0x78:
+                AddOneUp("item:78");
+                break;
+        }
+
+        GD.Print(
+            $"smw-runtime: item_collect level={_currentLevelId} sprite={actor.SpriteId:X2} " +
+            $"x={actor.X:0.00} y={actor.Y:0.00} pow={_state.Powerup} score={_score} lives={_lives} oneups={_oneUpCount}");
     }
 
     private bool TryStompRex(RuntimeSpriteActor actor)
@@ -5559,6 +5736,15 @@ public partial class GameScene : Node2D
                 RequirePartCount(parts, 2);
                 DebugSetPlayerPowerup(ParseDebugPowerup(parts[1]));
                 return BuildDebugState("powerup");
+            case "item":
+            case "spawn_item":
+            case "powerup_item":
+                RequirePartCount(parts, 2);
+                var itemPosition = parts.Length >= 4
+                    ? new Vector2(ParseFloat(parts[2]), ParseFloat(parts[3]))
+                    : new Vector2(_state.XFloat, _state.YFloat);
+                DebugSpawnPowerupItem(ParseDebugItemSprite(parts[1]), itemPosition);
+                return BuildDebugState("item");
             case "velocity":
             case "vel":
                 RequirePartCount(parts, 3);
@@ -6797,6 +6983,30 @@ public partial class GameScene : Node2D
             "cape" => SmwPhysics.CapePowerup,
             "fire" => SmwPhysics.FirePowerup,
             _ => throw new FormatException($"unknown powerup '{value}'"),
+        };
+    }
+
+    private static int ParseDebugItemSprite(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        if (int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out var spriteId))
+        {
+            return spriteId;
+        }
+        if (normalized.StartsWith("0x", StringComparison.Ordinal) &&
+            int.TryParse(normalized[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hexSpriteId))
+        {
+            return hexSpriteId;
+        }
+
+        return normalized switch
+        {
+            "mushroom" => 0x74,
+            "flower" or "fire" => 0x75,
+            "star" => 0x76,
+            "feather" or "cape" => 0x77,
+            "1up" or "oneup" or "one-up" => 0x78,
+            _ => throw new FormatException($"unknown item sprite '{value}'"),
         };
     }
 
