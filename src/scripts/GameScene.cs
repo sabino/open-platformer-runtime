@@ -4891,6 +4891,10 @@ public partial class GameScene : Node2D
             case "collisions":
             case "collide":
                 return PrintDebugCollision(parts);
+            case "pipe":
+            case "pipe_probe":
+            case "pipe_cells":
+                return PrintDebugPipeCells(parts);
             case "player_oam":
             case "oam":
             case "pose":
@@ -5114,6 +5118,30 @@ public partial class GameScene : Node2D
 
         var line = $"smw-debug-collision: point={point.X:0.00},{point.Y:0.00} radius={radius:0.00} " +
             $"{DescribeSolidsNear(point, radius)} {DescribeSlopesNear(point, radius)}";
+        GD.Print(line);
+        return line;
+    }
+
+    private string PrintDebugPipeCells(string[] parts)
+    {
+        Vector2 point;
+        float radius;
+        if (parts.Length >= 3)
+        {
+            point = new Vector2(ParseFloat(parts[1]), ParseFloat(parts[2]));
+            radius = parts.Length >= 4 ? ParseFloat(parts[3]) : 48.0f;
+        }
+        else
+        {
+            point = _physics.PlayerRect(_state).GetCenter();
+            radius = parts.Length >= 2 ? ParseFloat(parts[1]) : 48.0f;
+        }
+
+        var line =
+            $"smw-debug-pipe: point={point.X:0.00},{point.Y:0.00} radius={radius:0.00} " +
+            $"floor={DescribePipeCellsNear(_diagonalPipeFloorCells, point, radius)} " +
+            $"body={DescribePipeCellsNear(_diagonalPipeBodyCells, point, radius)} " +
+            $"ceiling={DescribePipeCellsNear(_diagonalPipeCeilingCells, point, radius)}";
         GD.Print(line);
         return line;
     }
@@ -5343,6 +5371,33 @@ public partial class GameScene : Node2D
                 $"{item.Index}:rect={item.Solid.Position.X:0.00},{item.Solid.Position.Y:0.00},{item.Solid.Size.X:0.00},{item.Solid.Size.Y:0.00}:step={BoolAt(_solidStepUpEnabled, item.Index)}:vert={BoolAt(_solidVerticalEnabled, item.Index)}");
         var description = string.Join(" | ", solids);
         return $"solids={(string.IsNullOrEmpty(description) ? "none" : description)}";
+    }
+
+    private static string DescribePipeCellsNear(
+        HashSet<(int X, int Y)> cells,
+        Vector2 point,
+        float radius)
+    {
+        var radiusSq = radius * radius;
+        var cellsNear = cells
+            .Select(cell => new
+            {
+                Cell = cell,
+                Center = new Vector2(
+                    cell.X * Map16TileSize + Map16TileSize * 0.5f,
+                    cell.Y * Map16TileSize + LevelVisualYOffset + Map16TileSize * 0.5f),
+            })
+            .Select(item => new
+            {
+                item.Cell,
+                DistanceSq = item.Center.DistanceSquaredTo(point),
+            })
+            .Where(item => item.DistanceSq <= radiusSq)
+            .OrderBy(item => item.DistanceSq)
+            .Take(8)
+            .Select(item => $"{item.Cell.X},{item.Cell.Y}");
+        var description = string.Join("|", cellsNear);
+        return string.IsNullOrEmpty(description) ? "none" : description;
     }
 
     private string DescribeSlopesNear(Vector2 point, float radius)

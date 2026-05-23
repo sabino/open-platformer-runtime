@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added RCON `pipe`/`pipe_probe` diagnostics for nearby right-diagonal pipe floor/body/ceiling cells so slope-pipe collision bugs can be triaged from live coordinates.
 - Exposed the full native horizontal max-speed, acceleration, friction/deceleration, and target sub-speed tables in `SmwPhysics` so the remaining horizontal movement branches can be ported against ROM-derived data.
 - Replaced the temporary flat-ground turn-around acceleration with the native `kHandlePlayerPhysics_MarioAccel` walk/run entries (`0x0280`/`0x0500`).
 - Added RCON `actor_visuals`/`sprite_visuals` toggles so unattended visual debugging can hide runtime sprite actor nodes without freezing their simulation, making Mario OAM pixel glitches easier to isolate from nearby enemy or block sprites.
