@@ -26,9 +26,10 @@ WING_BLOCK_COMMAND_FILE="$(mktemp)"
 WING_BLOCK_REWARD_COMMAND_FILE="$(mktemp)"
 PIRANHA_HIDDEN_COMMAND_FILE="$(mktemp)"
 PIRANHA_VISIBLE_COMMAND_FILE="$(mktemp)"
+SLOPE_PROBE_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 1 right run
@@ -92,6 +93,13 @@ cat >"$PIRANHA_VISIBLE_COMMAND_FILE" <<'EOF'
 pause
 spawn 2224 240
 powerup big
+step 1
+EOF
+cat >"$SLOPE_PROBE_COMMAND_FILE" <<'EOF'
+pause
+spawn 921 208
+powerup small
+velocity 2 0
 step 1
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
@@ -211,6 +219,12 @@ grep -q "smw-debug: command_file=$PIRANHA_VISIBLE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "near=4F:2:2224.00,240.00" "$LOG_FILE"
 grep -q "actor_event=hurt:4F:2" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$SLOPE_PROBE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$SLOPE_PROBE_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "x=921.13 y=213.00" "$LOG_FILE"
+grep -q "g=1" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 600 --smw-test-autostart --smw-debug-rcon="$RCON_PORT" >"$LOG_FILE" 2>&1 &
 RCON_PID="$!"

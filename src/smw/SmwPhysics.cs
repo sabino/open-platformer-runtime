@@ -665,7 +665,7 @@ public sealed class SmwPhysics
             }
         }
 
-        if (!TryResolveFloorSlopeFromAbove(probeX, top, bottom, previousBottom, state.YSpeed, slopes, 6.0f, 16.0f, out var floorY))
+        if (!TryResolvePlayerFloorSlopeFromAbove(state, top, bottom, previousBottom, slopes, out var floorY))
         {
             return;
         }
@@ -679,6 +679,58 @@ public sealed class SmwPhysics
         }
         state.OnGround = true;
         state.RunningTakeoff = false;
+    }
+
+    private static bool TryResolvePlayerFloorSlopeFromAbove(
+        PlayerState state,
+        float top,
+        float bottom,
+        float previousBottom,
+        IReadOnlyList<SlopeSurface> slopes,
+        out float floorY)
+    {
+        var leftProbe = state.XFloat + 2.0f;
+        var centerProbe = state.XFloat + PlayerWidth * 0.5f;
+        var rightProbe = state.XFloat + PlayerWidth - 2.0f;
+        Span<float> probes = stackalloc float[3];
+        if (state.XSpeed > 0)
+        {
+            probes[0] = rightProbe;
+            probes[1] = centerProbe;
+            probes[2] = leftProbe;
+        }
+        else if (state.XSpeed < 0)
+        {
+            probes[0] = leftProbe;
+            probes[1] = centerProbe;
+            probes[2] = rightProbe;
+        }
+        else
+        {
+            probes[0] = centerProbe;
+            probes[1] = leftProbe;
+            probes[2] = rightProbe;
+        }
+
+        foreach (var probeX in probes)
+        {
+            if (TryResolveFloorSlopeFromAbove(
+                probeX,
+                top,
+                bottom,
+                previousBottom,
+                state.YSpeed,
+                slopes,
+                6.0f,
+                16.0f,
+                out floorY))
+            {
+                return true;
+            }
+        }
+
+        floorY = 0.0f;
+        return false;
     }
 
     private static void AddXAccel(ref PlayerState state, int accel)
