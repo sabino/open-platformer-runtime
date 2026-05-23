@@ -27,6 +27,7 @@ BREAK_COMMAND_FILE="$(mktemp)"
 WING_BLOCK_COMMAND_FILE="$(mktemp)"
 WING_BLOCK_REWARD_COMMAND_FILE="$(mktemp)"
 ITEM_COLLECT_COMMAND_FILE="$(mktemp)"
+STATIC_QUESTION_COMMAND_FILE="$(mktemp)"
 PIRANHA_HIDDEN_COMMAND_FILE="$(mktemp)"
 PIRANHA_VISIBLE_COMMAND_FILE="$(mktemp)"
 C7_NORMAL_VISUAL_COMMAND_FILE="$(mktemp)"
@@ -43,7 +44,7 @@ TRACE_COMMAND_FILE="$(mktemp)"
 COURSE_CLEAR_COMMAND_FILE="$(mktemp)"
 RCON_LOG="$(mktemp)"
 RCON_PORT=4617
-trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
+trap 'rm -f "$LOG_FILE" "$INPUT_SCRIPT" "$PIPE_SCRIPT" "$DEBUG_COMMAND_FILE" "$COIN_LIFE_COMMAND_FILE" "$DRAGON_LIFE_COMMAND_FILE" "$ACTOR_COMMAND_FILE" "$REX_COMMAND_FILE" "$BREAK_COMMAND_FILE" "$WING_BLOCK_COMMAND_FILE" "$WING_BLOCK_REWARD_COMMAND_FILE" "$ITEM_COLLECT_COMMAND_FILE" "$STATIC_QUESTION_COMMAND_FILE" "$PIRANHA_HIDDEN_COMMAND_FILE" "$PIRANHA_VISIBLE_COMMAND_FILE" "$C7_NORMAL_VISUAL_COMMAND_FILE" "$C7_DEBUG_VISUAL_COMMAND_FILE" "$SLOPE_PROBE_COMMAND_FILE" "$PIPE_UNDERSIDE_COMMAND_FILE" "$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$PIPE_UNDERSIDE_JUMP_COMMAND_FILE" "$DEATH_COMMAND_FILE" "$TIME_UP_COMMAND_FILE" "$GAME_OVER_COMMAND_FILE" "$PAUSE_COMMAND_FILE" "$TRACE_COMMAND_FILE" "$COURSE_CLEAR_COMMAND_FILE" "$RCON_LOG"' EXIT
 cat >"$INPUT_SCRIPT" <<'EOF'
 # frame-count plus held controls; jump/spin are edge-pressed on the first frame of a segment.
 @allow-opposing-directions
@@ -118,6 +119,12 @@ cat >"$ITEM_COLLECT_COMMAND_FILE" <<'EOF'
 pause
 spawn 592 224 big
 item flower 592 224
+step 1
+EOF
+cat >"$STATIC_QUESTION_COMMAND_FILE" <<'EOF'
+pause
+spawn 3888 224 big
+velocity 0 -64
 step 1
 EOF
 cat >"$PIRANHA_HIDDEN_COMMAND_FILE" <<'EOF'
@@ -210,7 +217,7 @@ trace 12 none tag=goal_walkout
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480 collision_rects=25 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480 collision_rects=26 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
 grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
@@ -244,7 +251,7 @@ grep -q "smw-runtime: level_music level=1CB music_index=1 bank=Level" "$LOG_FILE
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-level=1CB --smw-test-screen-exit=1 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: entrance_motion action=6 frames=32 dx=4.00 dy=-4.00" "$LOG_FILE"
 grep -q "smw-runtime: entrance level=105 source=1CB secondary=1 settings=6 spawn=24,242" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480 collision_rects=25 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480 collision_rects=26 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=272,176 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=1 dragon_coins=1" "$LOG_FILE"
@@ -345,7 +352,7 @@ grep -q "smw-audio: sfx=block_break port=1 command=08" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "blocks=2" "$LOG_FILE"
 grep -q "tile=120,20:----" "$LOG_FILE"
-grep -q "solids=24" "$LOG_FILE"
+grep -q "solids=25" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$WING_BLOCK_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$WING_BLOCK_COMMAND_FILE" "$LOG_FILE"
@@ -373,6 +380,17 @@ grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "pow=3" "$LOG_FILE"
 grep -q "score=1000" "$LOG_FILE"
 grep -q "actor_event=item:75:collect" "$LOG_FILE"
+
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$STATIC_QUESTION_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-debug: command_file=$STATIC_QUESTION_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-runtime: item_spawn level=105 sprite=75 reward=flower x=3888.00 y=208.00 target_y=192.00" "$LOG_FILE"
+grep -q "smw-runtime: block_reward level=105 map16=124 reward=flower tile=243,17" "$LOG_FILE"
+grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
+grep -q "ys=8" "$LOG_FILE"
+grep -q "pow=1" "$LOG_FILE"
+grep -q "score=0" "$LOG_FILE"
+grep -q "actors=33" "$LOG_FILE"
+grep -q "actor_event=block:124:reward:flower" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIRANHA_HIDDEN_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIRANHA_HIDDEN_COMMAND_FILE" "$LOG_FILE"

@@ -160,7 +160,7 @@ assert "extended_goal_marker" in tile_sources, tile_sources
 assert "extended_midway_bar" in tile_sources, tile_sources
 assert "extended_3up_moon" in tile_sources, tile_sources
 assert "extended_invisible_1up" in tile_sources, tile_sources
-assert "extended_question_block" in tile_sources, tile_sources
+assert "extended_question_block_flower" in tile_sources, tile_sources
 assert "extended_yellow_switch_block" in tile_sources, tile_sources
 assert "steep_right_slope_surface" in tile_sources, tile_sources
 placed_by_coord = {(tile["x"], tile["y"], tile["source"]): tile["map16"] for tile in tilemap["placed_tiles"]}
@@ -181,7 +181,7 @@ assert placed_by_coord[(150, 21, "extended_midway_bar")] == 0x0035, placed_by_co
 assert placed_by_coord[(151, 21, "extended_midway_bar")] == 0x0038, placed_by_coord.get((151, 21, "extended_midway_bar"))
 assert placed_by_coord[(198, 4, "extended_3up_moon")] == 0x006E, placed_by_coord.get((198, 4, "extended_3up_moon"))
 assert placed_by_coord[(209, 15, "extended_invisible_1up")] == 0x011A, placed_by_coord.get((209, 15, "extended_invisible_1up"))
-assert placed_by_coord[(243, 17, "extended_question_block")] == 0x0124, placed_by_coord.get((243, 17, "extended_question_block"))
+assert placed_by_coord[(243, 17, "extended_question_block_flower")] == 0x0124, placed_by_coord.get((243, 17, "extended_question_block_flower"))
 assert placed_by_coord[(156, 20, "extended_yellow_switch_block")] == 0x006B, placed_by_coord.get((156, 20, "extended_yellow_switch_block"))
 assert all(tile["source"] != "right_diagonal_pipe" for tile in tilemap["placed_tiles"] if (tile["x"], tile["y"]) == (50, 24))
 

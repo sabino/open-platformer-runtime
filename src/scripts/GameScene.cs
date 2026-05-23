@@ -322,6 +322,7 @@ public partial class GameScene : Node2D
                 (int)MathF.Round(GetLevelPixelRight()));
             ResolveDiagonalPipeTileContacts(previousState);
             TryBreakSpinJumpTurnBlocks(previousState);
+            TryHitStaticBlockFromBelow(previousState);
             if (TryHandlePlayerFallDeath())
             {
                 previousStateForActors = _state;
@@ -509,6 +510,26 @@ public partial class GameScene : Node2D
             {
                 QueueRedraw();
             }
+        }
+
+        public void ReplaceTile(PlacedMap16Tile replacement)
+        {
+            for (var i = 0; i < _tiles.Count; i++)
+            {
+                if (_tiles[i].X != replacement.X || _tiles[i].Y != replacement.Y)
+                {
+                    continue;
+                }
+
+                _tiles[i] = replacement;
+                _hiddenTiles.Remove((replacement.X, replacement.Y));
+                QueueRedraw();
+                return;
+            }
+
+            _tiles.Add(replacement);
+            _hiddenTiles.Remove((replacement.X, replacement.Y));
+            QueueRedraw();
         }
 
         public override void _Draw()
@@ -2064,7 +2085,7 @@ public partial class GameScene : Node2D
             {
                 slopeTiles.Add(tile);
             }
-            else if (IsSolidMap16Source(tile.Source))
+            else if (IsSolidRuntimeBlockTile(tile) || IsSolidMap16Source(tile.Source))
             {
                 solidTiles.Add((tile.X, tile.Y));
             }
@@ -2159,9 +2180,142 @@ public partial class GameScene : Node2D
         _map16Layer?.HideTile(tile.X, tile.Y);
     }
 
+    private void ReplaceMap16Tile(PlacedMap16Tile tile, int map16, string source)
+    {
+        var replacement = new PlacedMap16Tile(tile.X, tile.Y, map16, source);
+        for (var i = 0; i < _placedTiles.Count; i++)
+        {
+            if (_placedTiles[i].X != tile.X || _placedTiles[i].Y != tile.Y)
+            {
+                continue;
+            }
+
+            _placedTiles[i] = replacement;
+            _map16TilesByCoord[(tile.X, tile.Y)] = replacement;
+            _map16Layer?.ReplaceTile(replacement);
+            return;
+        }
+
+        _placedTiles.Add(replacement);
+        _map16TilesByCoord[(tile.X, tile.Y)] = replacement;
+        _map16Layer?.ReplaceTile(replacement);
+    }
+
     private static bool IsSpinJumpBreakableTurnBlock(PlacedMap16Tile tile)
     {
         return tile.Source == "std_generic_08" || tile.Map16 == 0x011E;
+    }
+
+    private bool TryHitStaticBlockFromBelow(SmwPhysics.PlayerState previousState)
+    {
+        if (previousState.YSpeed >= 0 || _state.YSpeed != 0)
+        {
+            return false;
+        }
+
+        var headY = _state.YFloat - 1.0f;
+        var tileY = WorldToTileY(headY);
+        var headCenterX = _state.XFloat + SmwPhysics.PlayerWidth * 0.5f;
+        Span<int> candidateTileXs = stackalloc int[3]
+        {
+            WorldToTileX(headCenterX),
+            WorldToTileX(_state.XFloat + 1.0f),
+            WorldToTileX(_state.XFloat + SmwPhysics.PlayerWidth - 1.0f),
+        };
+        var checkedTiles = new HashSet<int>();
+        foreach (var tileX in candidateTileXs)
+        {
+            if (!checkedTiles.Add(tileX) ||
+                !_map16TilesByCoord.TryGetValue((tileX, tileY), out var tile) ||
+                !IsStaticQuestionBlockTile(tile))
+            {
+                continue;
+            }
+
+            TriggerStaticQuestionBlockReward(tile);
+            _state.YSpeed = Math.Max(8, _state.YSpeed);
+            _state.SubYSpeed = 0;
+            _state.OnGround = false;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void TriggerStaticQuestionBlockReward(PlacedMap16Tile tile)
+    {
+        var reward = StaticQuestionBlockRewardFor(tile);
+        ReplaceMap16Tile(tile, 0x0125, "runtime_used_question_block");
+        AddGeneratedCollision(debugVisible: false);
+
+        switch (reward)
+        {
+            case "flower":
+                SpawnPowerupItem(tile, _state.Powerup == SmwPhysics.SmallPowerup ? 0x74 : 0x75, reward);
+                break;
+            case "feather":
+                SpawnPowerupItem(tile, 0x77, reward);
+                break;
+            case "star":
+                SpawnPowerupItem(tile, 0x76, reward);
+                break;
+            case "1up":
+                SpawnPowerupItem(tile, 0x78, reward);
+                break;
+            case "coin":
+            case "multi_coin":
+            default:
+                AddScore(CoinScore);
+                _audio?.PlayCoin();
+                AddCoin($"block:{tile.Map16:X3}");
+                break;
+        }
+
+        _lastActorEvent = $"block:{tile.Map16:X3}:reward:{reward}";
+        GD.Print(
+            $"smw-runtime: block_reward level={_currentLevelId} map16={tile.Map16:X3} reward={reward} " +
+            $"tile={tile.X},{tile.Y} x={tile.X * Map16TileSize:0.00} y={tile.Y * Map16TileSize + LevelVisualYOffset:0.00} " +
+            $"coins={_coinCount} lives={_lives} oneups={_oneUpCount} pow={_state.Powerup} score={_score}");
+    }
+
+    private static bool IsStaticQuestionBlockTile(PlacedMap16Tile tile)
+    {
+        return tile.Map16 == 0x0124 &&
+            (tile.Source == "std_generic_09" ||
+                tile.Source.StartsWith("extended_question_block", StringComparison.Ordinal));
+    }
+
+    private static bool IsSolidRuntimeBlockTile(PlacedMap16Tile tile)
+    {
+        return IsStaticQuestionBlockTile(tile) ||
+            tile.Map16 == 0x0125 ||
+            tile.Source == "runtime_used_question_block";
+    }
+
+    private static string StaticQuestionBlockRewardFor(PlacedMap16Tile tile)
+    {
+        if (tile.Source.EndsWith("_flower", StringComparison.Ordinal))
+        {
+            return "flower";
+        }
+        if (tile.Source.EndsWith("_feather", StringComparison.Ordinal))
+        {
+            return "feather";
+        }
+        if (tile.Source.EndsWith("_star", StringComparison.Ordinal))
+        {
+            return "star";
+        }
+        if (tile.Source.EndsWith("_multi_coin", StringComparison.Ordinal))
+        {
+            return "multi_coin";
+        }
+        if (tile.Source.EndsWith("_yoshi_1up", StringComparison.Ordinal))
+        {
+            return "1up";
+        }
+
+        return "coin";
     }
 
     private void ResolveDiagonalPipeTileContacts(SmwPhysics.PlayerState previousState)
@@ -3814,6 +3968,25 @@ public partial class GameScene : Node2D
             $"x={blockActor.X:0.00} y={blockActor.Rect.Position.Y:0.00} target_y={finalY:0.00}");
     }
 
+    private void SpawnPowerupItem(PlacedMap16Tile blockTile, int spriteId, string reward)
+    {
+        var behavior = SpriteActorBehaviorFor(spriteId);
+        var blockX = blockTile.X * Map16TileSize;
+        var blockY = blockTile.Y * Map16TileSize + LevelVisualYOffset;
+        var finalY = blockY - behavior.Hitbox.Size.Y;
+        AddPowerupItemActor(
+            spriteId,
+            blockX,
+            blockY,
+            finalY,
+            PowerupItemEmergingState,
+            (int)MathF.Floor(blockX / LogicalViewportWidth));
+        _audio?.PlayBlockReward();
+        GD.Print(
+            $"smw-runtime: item_spawn level={_currentLevelId} sprite={spriteId:X2} reward={reward} " +
+            $"x={blockX:0.00} y={blockY:0.00} target_y={finalY:0.00}");
+    }
+
     private void AddPowerupItemActor(int spriteId, float x, float startY, float finalY, int state, int wakeScreen)
     {
         var behavior = SpriteActorBehaviorFor(spriteId);
@@ -5190,6 +5363,7 @@ public partial class GameScene : Node2D
 
         var role = IsSlopeSurfaceTile(tile) ? "slope" :
             IsCoinMarkerTile(tile) ? "coin" :
+            IsSolidRuntimeBlockTile(tile) ? "solid" :
             IsSolidMap16Source(tile.Source) ? "solid" :
             "pass";
         return $"{tileX},{tileY}:{tile.Map16:X3}:{role}:{tile.Source}";

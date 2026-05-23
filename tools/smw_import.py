@@ -1778,7 +1778,18 @@ def build_partial_level_tilemap(header: dict[str, Any], objects: list[dict[str, 
             place_map16(x, y, 0x011A, "extended_invisible_1up")
             return True
         if 0x30 <= size <= 0x38:
-            place_map16(x, y, 0x0124, "extended_question_block")
+            question_sources = {
+                0x30: "extended_question_block_flower",
+                0x31: "extended_question_block_feather",
+                0x32: "extended_question_block_star",
+                0x33: "extended_question_block_coin",
+                0x34: "extended_question_block_multi_coin",
+                0x35: "extended_question_block_special",
+                0x36: "extended_question_block_yoshi_1up",
+                0x37: "extended_question_block_37",
+                0x38: "extended_question_block_38",
+            }
+            place_map16(x, y, 0x0124, question_sources[size])
             return True
         if size == 0x41:
             place_map16(x, y, 0x002D, "yoshi_coin_top")
