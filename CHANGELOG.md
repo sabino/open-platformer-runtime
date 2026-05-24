@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added the Star music preview to the in-game menu audio tester and headless audio preview gate, matching the starman runtime path already used during play.
 - Added native-unit C# physics golden trajectories for 60/120-frame walk/run probes, held/released small jumps, and ledge falls, so `tools/check-dotnet.sh` now catches pixel/subpixel movement drift beyond single-frame table checks.
 - Improved actors-on debug traversal through the Yoshi Island 1 goal section: the explorer now air-brakes only for rising side-overlap against the tall Clappin' Chuck (`0x95`), allowing the 5000-frame actors-on probe to stomp the Chuck and reach course clear with `deaths=0` and `max_x=5106.00`.
 - Improved actors-on debug traversal around late one-tile blockers: the explorer now jumps when a small solid tile is immediately ahead at Mario's body height, preserving normal collision while moving the Yoshi Island 1 actors-on probe frontier from `max_x=4642.00` to `max_x=4735.06`. The remaining accepted death is now a later Clappin' Chuck (`0x95`) contact near the goal section.

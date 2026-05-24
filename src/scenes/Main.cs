@@ -487,7 +487,7 @@ public partial class Main : Node2D
         {
             AddSampleButton(samples, sampleId, $"BRR{sampleId:X2}");
         }
-        GD.Print($"smw-menu-audio: samples={(_audio?.LoadedProbeSampleCount ?? 0)} buttons={SmwAudio.ProbeSampleIds.Length}");
+        GD.Print($"smw-menu-audio: samples={(_audio?.LoadedProbeSampleCount ?? 0)} buttons={SmwAudio.ProbeSampleIds.Length} sfx_buttons=6 music_buttons=4");
 
         var musicTitle = new Label { Text = "Music Banks" };
         musicTitle.AddThemeFontSizeOverride("font_size", 10);
@@ -502,13 +502,13 @@ public partial class Main : Node2D
 
         var musicButtons = new HBoxContainer();
         panel.AddChild(musicButtons);
-        foreach (var name in new[] { "Level", "Overworld", "Credits" })
+        foreach (var name in new[] { "Level", "Overworld", "Credits", "Star" })
         {
             var bankPath = $"res://generated/smw/audio/spc_{name.ToLowerInvariant()}_music_bank.bin";
             var button = new Button
             {
                 Text = name,
-                Disabled = !FileAccess.FileExists(bankPath),
+                Disabled = name != "Star" && !FileAccess.FileExists(bankPath),
                 TooltipText = "Internal BRR sequencer preview; exact SPC/DSP song playback is still pending.",
             };
             button.Pressed += () => _audio?.PlayMusicPreview(name);
