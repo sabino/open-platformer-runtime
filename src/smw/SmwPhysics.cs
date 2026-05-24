@@ -379,7 +379,7 @@ public sealed class SmwPhysics
         state.SlopePlayer = 0;
         state.SlopeType = 0;
         ResolveAxis(ref state, solids, solidStepUpEnabled, solidVerticalEnabled, horizontal: false);
-        ResolveSlopes(ref state, slopes, previousBottom);
+        ResolveSlopes(ref state, slopes, previousBottom, wasOnGround);
         if (!state.OnGround &&
             state.YSpeed >= 0 &&
             IsStandingOnSolid(state, solids, solidVerticalEnabled))
@@ -1140,7 +1140,7 @@ public sealed class SmwPhysics
         return false;
     }
 
-    private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes, float previousBottom)
+    private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes, float previousBottom, bool wasOnGround)
     {
         if (slopes.Count == 0)
         {
@@ -1196,7 +1196,7 @@ public sealed class SmwPhysics
             }
         }
 
-        if (!TryResolvePlayerFloorSlopeFromAbove(state, top, bottom, previousBottom, slopes, out var floorY, out var floorSlope))
+        if (!TryResolvePlayerFloorSlopeFromAbove(state, top, bottom, previousBottom, wasOnGround, slopes, out var floorY, out var floorSlope))
         {
             return;
         }
@@ -1215,35 +1215,44 @@ public sealed class SmwPhysics
         float top,
         float bottom,
         float previousBottom,
+        bool wasOnGround,
         IReadOnlyList<SlopeSurface> slopes,
         out float floorY,
         out SlopeSurface floorSlope)
     {
         var leftProbe = state.XFloat + 2.0f;
-        var centerProbe = state.XFloat + PlayerWidth * 0.5f;
+        var nativeCenterProbe = state.XFloat + 8.0f;
         var rightProbe = state.XFloat + PlayerWidth - 2.0f;
         Span<float> probes = stackalloc float[3];
-        if (state.XSpeed > 0)
+        var probeCount = 3;
+        if (!wasOnGround)
         {
-            probes[0] = rightProbe;
-            probes[1] = centerProbe;
+            probes[0] = nativeCenterProbe;
+            probeCount = 1;
+        }
+        else if (state.XSpeed > 0)
+        {
+            probes[0] = nativeCenterProbe;
+            probes[1] = rightProbe;
             probes[2] = leftProbe;
         }
         else if (state.XSpeed < 0)
         {
-            probes[0] = leftProbe;
-            probes[1] = centerProbe;
+            probes[0] = nativeCenterProbe;
+            probes[1] = leftProbe;
             probes[2] = rightProbe;
         }
         else
         {
-            probes[0] = centerProbe;
+            probes[0] = nativeCenterProbe;
             probes[1] = leftProbe;
             probes[2] = rightProbe;
         }
 
-        foreach (var probeX in probes)
+        var aboveTolerance = wasOnGround ? 6.0f : 0.0f;
+        for (var probeIndex = 0; probeIndex < probeCount; probeIndex++)
         {
+            var probeX = probes[probeIndex];
             if (TryResolveFloorSlopeFromAbove(
                 probeX,
                 top,
@@ -1251,13 +1260,96 @@ public sealed class SmwPhysics
                 previousBottom,
                 state.YSpeed,
                 slopes,
-                6.0f,
+                aboveTolerance,
                 16.0f,
                 out floorY))
             {
                 FindMatchingFloorSlope(probeX, floorY, slopes, out floorSlope);
                 return true;
             }
+        }
+
+        if (!wasOnGround && state.XSpeed != 0)
+        {
+            probes[0] = state.XSpeed < 0 ? leftProbe : rightProbe;
+            probes[1] = state.XSpeed < 0 ? rightProbe : leftProbe;
+            for (var probeIndex = 0; probeIndex < 2; probeIndex++)
+            {
+                var probeX = probes[probeIndex];
+                if (TryResolveNativeKindRangeFloorSlopeFromAbove(
+                    probeX,
+                    top,
+                    bottom,
+                    previousBottom,
+                    state.YSpeed,
+                    slopes,
+                    minNativeKind: 20,
+                    maxNativeKind: 23,
+                    aboveTolerance: aboveTolerance,
+                    belowTolerance: 16.0f,
+                    out floorY,
+                    out floorSlope))
+                {
+                    return true;
+                }
+            }
+        }
+
+        floorY = 0.0f;
+        floorSlope = default;
+        return false;
+    }
+
+    private static bool TryResolveNativeKindRangeFloorSlopeFromAbove(
+        float probeX,
+        float top,
+        float bottom,
+        float previousBottom,
+        float ySpeed,
+        IReadOnlyList<SlopeSurface> slopes,
+        int minNativeKind,
+        int maxNativeKind,
+        float aboveTolerance,
+        float belowTolerance,
+        out float floorY,
+        out SlopeSurface floorSlope)
+    {
+        foreach (var slope in slopes)
+        {
+            if (slope.Ceiling ||
+                slope.NativeSlopeKind < minNativeKind ||
+                slope.NativeSlopeKind > maxNativeKind)
+            {
+                continue;
+            }
+
+            var minX = MathF.Min(slope.X0, slope.X1);
+            var maxX = MathF.Max(slope.X0, slope.X1);
+            if (probeX < minX || probeX > maxX)
+            {
+                continue;
+            }
+
+            var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+            if (t < 0.0f || t > 1.0f)
+            {
+                continue;
+            }
+
+            var surfaceY = SurfaceYAt(slope, probeX);
+            var effectiveBelowTolerance = EffectiveSlopeBelowTolerance(slope, belowTolerance);
+            if (ySpeed < 0 ||
+                bottom < surfaceY - aboveTolerance ||
+                bottom > surfaceY + effectiveBelowTolerance ||
+                top >= surfaceY - 1.0f ||
+                previousBottom > surfaceY + effectiveBelowTolerance)
+            {
+                continue;
+            }
+
+            floorY = surfaceY;
+            floorSlope = slope;
+            return true;
         }
 
         floorY = 0.0f;

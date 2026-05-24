@@ -645,9 +645,9 @@ grep -q "score=0" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$SLOPE_PROBE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$SLOPE_PROBE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "x=921.13 y=187.00" "$LOG_FILE"
-grep -q "g=1" "$LOG_FILE"
-grep -q "slope=19" "$LOG_FILE"
+grep -q "x=921.13 y=200.00" "$LOG_FILE"
+grep -q "g=0" "$LOG_FILE"
+grep -q "slope=-1" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIPE_UNDERSIDE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIPE_UNDERSIDE_COMMAND_FILE" "$LOG_FILE"
@@ -947,13 +947,17 @@ grep -q "xs=2" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
 grep -q "ok step_queued=1" "$RCON_LOG"
 for _ in $(seq 1 80); do
-  if grep -q "x=921.13 y=187.00" "$LOG_FILE"; then
+  if grep -q "x=921.13 y=200.00" "$LOG_FILE"; then
     break
   fi
   sleep 0.05
 done
-grep -q "x=921.13 y=187.00" "$LOG_FILE"
-grep -q "slope=19" "$LOG_FILE"
+grep -q "x=921.13 y=200.00" "$LOG_FILE"
+grep -q "slope=-1" "$LOG_FILE"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 921 187 | tee "$RCON_LOG"
+grep -q "x=921.00 y=187.00" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh ground on | tee "$RCON_LOG"
+grep -q "g=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh trace 4 jump tag=rcon_slope_jump | tee "$RCON_LOG"
 grep -q "ok trace_queued=4" "$RCON_LOG"
 for _ in $(seq 1 80); do

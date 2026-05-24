@@ -702,7 +702,7 @@ public static class PhysicsSmoke
             NativeSlopeKind: 12,
             SnapDistance: SmwPhysics.NativeSlopeSnapDistanceForKind(12));
 
-        var fastState = physics.MakeState(1, 84, SmwPhysics.SmallPowerup);
+        var fastState = physics.MakeState(1, 80, SmwPhysics.SmallPowerup);
         fastState.XSpeed = 0x28;
         physics.Step(ref fastState, new SmwPhysics.FrameInput(), [], [slope]);
         if (!fastState.OnGround ||
@@ -714,7 +714,7 @@ public static class PhysicsSmoke
             return false;
         }
 
-        var slowState = physics.MakeState(1, 84, SmwPhysics.SmallPowerup);
+        var slowState = physics.MakeState(1, 80, SmwPhysics.SmallPowerup);
         slowState.XSpeed = 0x20;
         physics.Step(ref slowState, new SmwPhysics.FrameInput(), [], [slope]);
         if (!slowState.OnGround ||
