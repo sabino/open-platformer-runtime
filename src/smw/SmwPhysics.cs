@@ -28,6 +28,7 @@ public sealed class SmwPhysics
     public const int NativeRunningJumpInAirState = 0x0C;
     public const int NativeFallingInAirState = 0x24;
     private const int CapeFloatFrameCount = 0x10;
+    private const int PostLandingAirDragFrameCount = 48;
     private const float StepUpTolerance = 12.0f;
     private const float MaxHorizontalCollisionCorrection = 64.0f;
 
@@ -222,6 +223,7 @@ public sealed class SmwPhysics
         public int SlopeKind;
         public int SlopePlayer;
         public int SlopeType;
+        public int PostLandingAirDragFrames;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -361,6 +363,8 @@ public sealed class SmwPhysics
         IReadOnlyList<SlopeSurface> slopes)
     {
         var preserveTerrainlessGround = state.OnGround && solids.Count == 0 && slopes.Count == 0;
+        var wasOnGround = state.OnGround;
+        var usePostLandingAirDrag = state.PostLandingAirDragFrames > 0;
         var preservedSlopeKind = state.SlopeKind;
         var preservedSlopePlayer = state.SlopePlayer;
         var preservedSlopeType = state.SlopeType;
@@ -394,6 +398,11 @@ public sealed class SmwPhysics
             state.SlopePlayer = preservedSlopePlayer;
             state.SlopeType = preservedSlopeType;
         }
+        var landedThisFrame = !wasOnGround && state.OnGround;
+        if (landedThisFrame)
+        {
+            state.PostLandingAirDragFrames = Math.Max(state.PostLandingAirDragFrames, PostLandingAirDragFrameCount);
+        }
         if (state.OnGround)
         {
             state.InAirState = 0;
@@ -410,7 +419,11 @@ public sealed class SmwPhysics
 
         ApplyDucking(ref state, input);
         ApplyJumpAndGravity(ref state, input);
-        ApplyHorizontal(ref state, input);
+        ApplyHorizontal(ref state, input, usePostLandingAirDrag);
+        if (usePostLandingAirDrag && state.PostLandingAirDragFrames > 0)
+        {
+            state.PostLandingAirDragFrames--;
+        }
     }
 
     public void Step(
@@ -690,7 +703,7 @@ public sealed class SmwPhysics
         state.Y += oldHeight - newHeight;
     }
 
-    private static void ApplyHorizontal(ref PlayerState state, FrameInput input)
+    private static void ApplyHorizontal(ref PlayerState state, FrameInput input, bool usePostLandingAirDrag)
     {
         var dir = 0;
         var duckingOnGround = state.Ducking && state.OnGround;
@@ -708,7 +721,13 @@ public sealed class SmwPhysics
             state.Facing = dir > 0 ? 1 : 0;
             var absSpeed = Math.Abs(state.XSpeed);
             var pMeterMode = UpdatePMeterEx(ref state, PMeterModeForHorizontal(state, input, absSpeed));
-            ApplyNativeHorizontal(ref state, dir, input.Run, pMeterMode, HorizontalSlopePlayerForState(state));
+            ApplyNativeHorizontal(
+                ref state,
+                dir,
+                input.Run,
+                pMeterMode,
+                HorizontalSlopePlayerForState(state),
+                usePostLandingAirDrag);
         }
         else
         {
@@ -720,7 +739,7 @@ public sealed class SmwPhysics
 
             if (state.XSpeed > 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), inAir: false);
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useGroundFriction: !usePostLandingAirDrag);
                 if (state.XSpeed < 0)
                 {
                     state.XSpeed = 0;
@@ -729,7 +748,7 @@ public sealed class SmwPhysics
             }
             else if (state.XSpeed < 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), inAir: false);
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useGroundFriction: !usePostLandingAirDrag);
                 if (state.XSpeed > 0)
                 {
                     state.XSpeed = 0;
@@ -738,7 +757,7 @@ public sealed class SmwPhysics
             }
             else if (state.OnGround && HorizontalSlopePlayerForState(state) != 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), inAir: false);
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useGroundFriction: !usePostLandingAirDrag);
             }
         }
     }
@@ -782,14 +801,15 @@ public sealed class SmwPhysics
         int dir,
         bool runHeld,
         int pMeterMode,
-        int slopePlayer)
+        int slopePlayer,
+        bool usePostLandingAirDrag)
     {
         var directionBit = NativeDirectionBit(dir);
         var targetIndex = directionBit | (slopePlayer & 0xFF) | (2 * Math.Clamp(pMeterMode, 0, 3));
         var target = HorizontalMaxSpeedTable[Math.Clamp(targetIndex, 0, HorizontalMaxSpeedTable.Length - 1)];
         if (ShouldApplyNativeFlatDrag(state.XSpeed, target))
         {
-            ApplyNativeHorizontalDrag(ref state, slopePlayer, inAir: !state.OnGround);
+            ApplyNativeHorizontalDrag(ref state, slopePlayer, useGroundFriction: state.OnGround && !usePostLandingAirDrag);
             return;
         }
 
@@ -813,7 +833,7 @@ public sealed class SmwPhysics
         return x == t || ((t ^ ((x - t) & 0xFF)) & 0x80) == 0;
     }
 
-    private static void ApplyNativeHorizontalDrag(ref PlayerState state, int slopePlayer, bool inAir)
+    private static void ApplyNativeHorizontalDrag(ref PlayerState state, int slopePlayer, bool useGroundFriction)
     {
         var k = (slopePlayer & 0xFF) >> 2;
         var j = (slopePlayer & 0xFF) >> 1;
@@ -823,7 +843,7 @@ public sealed class SmwPhysics
         }
 
         var tableIndex = Math.Clamp(j >> 1, 0, HorizontalDecelerationTable.Length - 1);
-        AddXAccel(ref state, inAir ? HorizontalDecelerationTable[tableIndex] : HorizontalGroundFrictionTable[tableIndex]);
+        AddXAccel(ref state, useGroundFriction ? HorizontalGroundFrictionTable[tableIndex] : HorizontalDecelerationTable[tableIndex]);
         ClampNativeHorizontalDragToTarget(ref state, tableIndex, k >> 1);
     }
 

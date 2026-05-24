@@ -1626,6 +1626,7 @@ public partial class GameScene : Node2D
             AddObjectMarkers();
             AddSpriteMarkers();
             AddTileSemanticMarkers();
+            AddPickupDebugMarkers();
             BuildCameraGizmo();
 
             for (var i = 0; i < 20; i++)
@@ -1926,11 +1927,11 @@ public partial class GameScene : Node2D
     {
         var color = SpriteActorColor(spawn.SpriteId);
         var behavior = SpriteActorBehaviorFor(spawn.SpriteId);
-        var visualTopY = spawn.Y - SpriteActorVisualHeightFor(spawn.SpriteId);
+        var actorY = spawn.Y + SpriteActorSpawnYOffsetFor(spawn.SpriteId);
         var node = new Node2D
         {
             Name = $"Sprite_{spawn.SpriteId:X2}_{spawn.Offset:X2}",
-            Position = new Vector2(spawn.X, visualTopY),
+            Position = new Vector2(spawn.X, actorY),
             ZIndex = 6,
             Visible = _debugActorVisualsEnabled,
         };
@@ -1961,15 +1962,26 @@ public partial class GameScene : Node2D
             Body = body,
             SpriteId = spawn.SpriteId,
             X = spawn.X,
-            Y = visualTopY,
+            Y = actorY,
             PreviousX = spawn.X,
-            PreviousY = visualTopY,
-            HomeY = visualTopY,
+            PreviousY = actorY,
+            HomeY = actorY,
             XSpeed = behavior.InitialXSpeed,
             WakeScreen = spawn.Screen,
             MotionFrame = InitialSpriteMotionFrame(spawn),
             Visuals = visuals,
             Behavior = behavior,
+        };
+    }
+
+    private static int SpriteActorSpawnYOffsetFor(int spriteId)
+    {
+        return spriteId switch
+        {
+            // These level 105 enemies use OAM and clipping data relative to the native sprite
+            // origin, not to the top of their rendered sprite.
+            0x9F or 0xAB => 0,
+            _ => -SpriteActorVisualHeightFor(spriteId),
         };
     }
 
@@ -2329,9 +2341,9 @@ public partial class GameScene : Node2D
     {
         return spriteId switch
         {
-            0x9F => new SpriteActorBehavior(new Rect2(8, 0, 48, 24), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
-            0x95 => new SpriteActorBehavior(new Rect2(2, -4, 16, 36), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
-            0xAB => new SpriteActorBehavior(new Rect2(-4, -15, 20, 31), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
+            0x9F => new SpriteActorBehavior(new Rect2(8, 8, 52, 46), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
+            0x95 => new SpriteActorBehavior(new Rect2(0, -4, 15, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
+            0xAB => new SpriteActorBehavior(new Rect2(2, -8, 12, 19), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
             0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -2.0f),
             0x74 or 0x78 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: PowerupItemWalkSpeed),
             0x75 or 0x76 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: 0.0f),
@@ -2470,7 +2482,7 @@ public partial class GameScene : Node2D
             {
                 _coinPickups.Add(new CoinPickup
                 {
-                    Rect = new Rect2(TileToWorld(tile.X, tile.Y), new Vector2(Map16TileSize, Map16TileSize * 2)),
+                    Rect = DragonCoinPickupRect(tile.X, tile.Y),
                     Tiles = [(tile.X, tile.Y), (tile.X, tile.Y + 1)],
                     DragonCoin = true,
                 });
@@ -2491,6 +2503,12 @@ public partial class GameScene : Node2D
             });
             handled.Add((tile.X, tile.Y));
         }
+    }
+
+    private static Rect2 DragonCoinPickupRect(int tileX, int tileY)
+    {
+        var topLeft = TileToWorld(tileX, tileY);
+        return new Rect2(topLeft + new Vector2(4.0f, 2.0f), new Vector2(8.0f, 28.0f));
     }
 
     private void AddGeneratedCollision(bool debugVisible)
@@ -3870,6 +3888,19 @@ public partial class GameScene : Node2D
                 coin ? new Color(1.0f, 0.94f, 0.20f, 0.92f) : new Color(0.40f, 0.78f, 1.0f, 0.72f),
                 1.0f,
                 128);
+        }
+    }
+
+    private void AddPickupDebugMarkers()
+    {
+        foreach (var pickup in _coinPickups)
+        {
+            AddRectOutline(
+                _worldRoot ?? this,
+                pickup.Rect,
+                pickup.DragonCoin ? new Color(1.0f, 0.45f, 0.05f, 0.95f) : new Color(1.0f, 0.95f, 0.30f, 0.78f),
+                1.0f,
+                132);
         }
     }
 
@@ -7079,6 +7110,11 @@ public partial class GameScene : Node2D
             case "sprite_oam":
             case "sprites_oam":
                 return PrintDebugActorOam(parts);
+            case "pickups_near":
+            case "pickup_near":
+            case "coins_near":
+            case "dragon_near":
+                return PrintDebugPickupsNear(parts);
             case "quit":
                 GD.Print("smw-debug: quit");
                 GetTree().Quit();
@@ -7250,6 +7286,7 @@ public partial class GameScene : Node2D
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
             $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
+            $"score={_score} coins={_coinCount} dragon={_dragonCoinCount} lives={_lives} oneups={_oneUpCount} " +
             $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()} " +
             DescribeNearestActorTraceFields());
 
@@ -7768,6 +7805,14 @@ public partial class GameScene : Node2D
         return line;
     }
 
+    private string PrintDebugPickupsNear(string[] parts)
+    {
+        var radius = parts.Length >= 2 ? ParseFloat(parts[1]) : 96.0f;
+        var line = $"smw-debug-pickups-near: radius={radius:0.00} {DescribePickupsNear(radius)}";
+        GD.Print(line);
+        return line;
+    }
+
     private string ExecuteDebugCameraCommand(string[] parts)
     {
         if (parts.Length == 1 || parts[1].Equals("status", StringComparison.OrdinalIgnoreCase))
@@ -8070,6 +8115,28 @@ public partial class GameScene : Node2D
             .Take(6)
             .Select(item => DescribeActorOam(item.Actor));
         var description = string.Join(" | ", actors);
+        return string.IsNullOrEmpty(description) ? "none" : description;
+    }
+
+    private string DescribePickupsNear(float radius)
+    {
+        var maxDistanceSq = radius * radius;
+        var playerCenter = _physics.PlayerRect(_state).GetCenter();
+        var pickups = _coinPickups
+            .Select((pickup, index) => new
+            {
+                Pickup = pickup,
+                Index = index,
+                DistanceSq = DistanceSquaredToRect(playerCenter, pickup.Rect),
+            })
+            .Where(item => item.DistanceSq <= maxDistanceSq)
+            .OrderBy(item => item.DistanceSq)
+            .Take(8)
+            .Select(item =>
+                $"{item.Index}:dragon={(item.Pickup.DragonCoin ? 1 : 0)}:collected={(item.Pickup.Collected ? 1 : 0)}:" +
+                $"rect={item.Pickup.Rect.Position.X:0.00},{item.Pickup.Rect.Position.Y:0.00},{item.Pickup.Rect.Size.X:0.00},{item.Pickup.Rect.Size.Y:0.00}:" +
+                $"tiles={string.Join(',', item.Pickup.Tiles.Select(tile => $"{tile.X},{tile.Y}"))}");
+        var description = string.Join(" | ", pickups);
         return string.IsNullOrEmpty(description) ? "none" : description;
     }
 

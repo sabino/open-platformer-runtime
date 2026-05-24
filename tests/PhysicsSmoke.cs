@@ -406,6 +406,18 @@ public static class PhysicsSmoke
         }
 
         state = physics.MakeState(0, 0);
+        state.OnGround = true;
+        state.XSpeed = 0x14;
+        state.SubXSpeed = 0x80;
+        state.PostLandingAirDragFrames = 1;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, []);
+        if (state.XSpeed != 0x13 || state.SubXSpeed != 0x80 || state.PostLandingAirDragFrames != 0)
+        {
+            Console.Error.WriteLine($"expected post-landing held cap drag to use native air decel for one frame, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2} lag={state.PostLandingAirDragFrames}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
         state.XSpeed = 0x14;
         state.SubXSpeed = 0x80;
         state.PMeter = 1;

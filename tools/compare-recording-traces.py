@@ -109,6 +109,16 @@ def number(record: dict[str, int | float | str], key: str) -> float | None:
     return None
 
 
+def native_position(record: dict[str, int | float | str], coarse_key: str, sub_key: str) -> float | None:
+    coarse = number(record, coarse_key)
+    if coarse is None:
+        return None
+    sub = number(record, sub_key)
+    if sub is None:
+        return coarse
+    return coarse + sub / 256.0
+
+
 def format_id(value: int | float | str | None) -> str:
     if isinstance(value, int):
         return f"{value:02X}"
@@ -149,6 +159,13 @@ def player_motion_summary(native: dict[str, int | float | str], godot: dict[str,
     )
 
 
+def counter_summary(native: dict[str, int | float | str], godot: dict[str, int | float | str]) -> str:
+    return (
+        f"native_counters=coins:{native.get('coins', '?')}:dragon:{native.get('yoshi_coins', '?')}:score:{native.get('score', '?')} "
+        f"godot_counters=coins:{godot.get('coins', '?')}:dragon:{godot.get('dragon', '?')}:score:{godot.get('score', '?')}"
+    )
+
+
 def compare(
     native: list[dict[str, int | float | str]],
     godot: list[dict[str, int | float | str]],
@@ -169,22 +186,46 @@ def compare(
     for index in range(count):
         n = native[index]
         g = godot[index]
-        nx = number(n, "player_x")
-        ny = number(n, "player_y")
+        nx = native_position(n, "player_x", "player_subx")
+        ny = native_position(n, "player_y", "player_suby")
         gx = number(g, "x")
         gy = number(g, "y")
         npow = number(n, "powerup")
         gpow = number(g, "pow")
-        if nx is None or ny is None or gx is None or gy is None or npow is None or gpow is None:
+        ncoins = number(n, "coins")
+        gcoins = number(g, "coins")
+        nyoshi = number(n, "yoshi_coins")
+        gdragon = number(g, "dragon")
+        if (
+            nx is None or
+            ny is None or
+            gx is None or
+            gy is None or
+            npow is None or
+            gpow is None or
+            ncoins is None or
+            gcoins is None or
+            nyoshi is None or
+            gdragon is None
+        ):
             return 2, f"missing comparison fields at index={index}"
         adjusted_ny = ny + native_y_offset
-        if abs(nx - gx) > tolerance or abs(adjusted_ny - gy) > tolerance or int(npow) != int(gpow):
+        if (
+            abs(nx - gx) > tolerance or
+            abs(adjusted_ny - gy) > tolerance or
+            int(npow) != int(gpow) or
+            int(ncoins) != int(gcoins) or
+            int(nyoshi) != int(gdragon)
+        ):
             return 1, (
                 f"first_divergence index={index} "
                 f"native_frame={n.get('frame', '?')} godot_frame={g.get('frame', '?')} "
-                f"native_x={nx:.2f} godot_x={gx:.2f} dx={gx - nx:.2f} "
-                f"native_y={ny:.2f} native_y_adjusted={adjusted_ny:.2f} godot_y={gy:.2f} dy={gy - adjusted_ny:.2f} "
+                f"native_x={nx:.2f} native_x_raw={n.get('player_x', '?')}:{n.get('player_subx', '?')} "
+                f"godot_x={gx:.2f} dx={gx - nx:.2f} "
+                f"native_y={ny:.2f} native_y_raw={n.get('player_y', '?')}:{n.get('player_suby', '?')} "
+                f"native_y_adjusted={adjusted_ny:.2f} godot_y={gy:.2f} dy={gy - adjusted_ny:.2f} "
                 f"native_powerup={int(npow)} godot_powerup={int(gpow)} "
+                f"{counter_summary(n, g)} "
                 f"{player_motion_summary(n, g)} "
                 f"{actor_summary(n, g)}"
             )
