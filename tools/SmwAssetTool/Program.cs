@@ -34,6 +34,8 @@ internal static class Program
                 "verify-core" when args.Length == 3 => VerifyCore(args[1], args[2]),
                 "extract-levels" when args.Length == 3 => ExtractLevels(args[1], args[2]),
                 "verify-levels" when args.Length == 3 => VerifyLevels(args[1], args[2]),
+                "extract-audio-previews" when args.Length == 3 => ExtractAudioPreviews(args[1], args[2]),
+                "verify-audio-previews" when args.Length == 3 => VerifyAudioPreviews(args[1], args[2]),
                 _ => UsageError(args),
             };
         }
@@ -106,6 +108,40 @@ internal static class Program
         }
 
         Console.WriteLine($"smw-asset-tool: verified native level metadata for {string.Join(",", summaries.Keys)}");
+        return 0;
+    }
+
+    private static int ExtractAudioPreviews(string romPath, string outDir)
+    {
+        var rom = Rom.Load(romPath);
+        var outputRoot = Path.GetFullPath(outDir);
+        Directory.CreateDirectory(outputRoot);
+        var manifest = BuildAudioPreviewManifest(rom);
+        foreach (var sample in manifest.DecodedSamples)
+        {
+            WriteBinary(Path.Combine(outputRoot, sample.File), sample.WavData);
+        }
+
+        WriteJson(Path.Combine(outputRoot, "native_audio_preview_manifest.json"), manifest.ToSerializable());
+        Console.WriteLine($"smw-asset-tool: extracted native audio previews to {outputRoot}");
+        return 0;
+    }
+
+    private static int VerifyAudioPreviews(string romPath, string generatedDir)
+    {
+        var rom = Rom.Load(romPath);
+        var generatedRoot = Path.GetFullPath(generatedDir);
+        var manifest = BuildAudioPreviewManifest(rom);
+        VerifyGeneratedAudioManifest(generatedRoot, manifest);
+        foreach (var sample in manifest.DecodedSamples)
+        {
+            var path = Path.Combine(generatedRoot, sample.File);
+            Check(File.Exists(path), $"generated audio preview missing: {sample.File}");
+            var actual = File.ReadAllBytes(path);
+            Check(actual.SequenceEqual(sample.WavData), $"generated audio preview differs from C# BRR decode: {sample.File}");
+        }
+
+        Console.WriteLine($"smw-asset-tool: verified native BRR audio previews for samples {string.Join(",", manifest.DecodedSamples.Select(sample => sample.Id))}");
         return 0;
     }
 
@@ -557,6 +593,171 @@ internal static class Program
         }
     }
 
+    private static AudioPreviewManifest BuildAudioPreviewManifest(Rom rom)
+    {
+        var sampleBank = rom.GetBytes(0x0F8000, 28538);
+        var (ram, uploadBlocks) = ParseSpcUpload(sampleBank);
+        var decodedSamples = new List<AudioPreviewSample>();
+        foreach (var sampleId in new[] { 9, 14, 16 })
+        {
+            var entry = 0x8000 + sampleId * 4;
+            var start = ram[entry] | (ram[entry + 1] << 8);
+            var loop = ram[entry + 2] | (ram[entry + 3] << 8);
+            var (samples, brrBytes) = DecodeBrrSample(ram, start);
+            var wavData = WriteWavMono16(samples, sampleRate: 32000);
+            decodedSamples.Add(new AudioPreviewSample(
+                Id: sampleId,
+                File: $"audio/sample_{sampleId:00}.wav",
+                SpcStart: start,
+                SpcLoop: loop,
+                BrrBytes: brrBytes,
+                SampleCount: samples.Count,
+                SampleRate: 32000,
+                WavData: wavData));
+        }
+
+        return new AudioPreviewManifest(
+            SourceRomSha1: rom.Sha1,
+            SampleUploadBlocks: uploadBlocks,
+            DecodedSamples: decodedSamples);
+    }
+
+    private static (byte[] Ram, List<SpcUploadBlock> Blocks) ParseSpcUpload(byte[] payload)
+    {
+        var ram = new byte[0x10000];
+        var blocks = new List<SpcUploadBlock>();
+        var offset = 0;
+        while (offset + 2 <= payload.Length)
+        {
+            var count = payload[offset] | (payload[offset + 1] << 8);
+            offset += 2;
+            if (count == 0)
+            {
+                return (ram, blocks);
+            }
+
+            Check(offset + 2 + count <= payload.Length, "truncated SPC upload block");
+            var target = payload[offset] | (payload[offset + 1] << 8);
+            offset += 2;
+            Array.Copy(payload, offset, ram, target, count);
+            blocks.Add(new SpcUploadBlock(target, count));
+            offset += count;
+        }
+
+        throw new InvalidOperationException("SPC upload stream missing zero terminator");
+    }
+
+    private static (List<int> Samples, int BrrBytes) DecodeBrrSample(byte[] ram, int start)
+    {
+        var samples = new List<int>();
+        var old = 0;
+        var older = 0;
+        var offset = start;
+        while (offset + 9 <= ram.Length)
+        {
+            var command = ram[offset];
+            var shift = command >> 4;
+            var filterId = (command >> 2) & 0x03;
+            for (var i = 0; i < 16; i++)
+            {
+                var packed = ram[offset + 1 + i / 2];
+                var nibble = (packed >> (((i & 1) == 1) ? 0 : 4)) & 0x0F;
+                var sample = (nibble & 7) - (nibble & 8);
+                if (shift <= 12)
+                {
+                    sample = (sample << shift) >> 1;
+                }
+                else
+                {
+                    sample = (sample >> 3) << 12;
+                }
+
+                if (filterId == 1)
+                {
+                    sample += old + ((-old) >> 4);
+                }
+                else if (filterId == 2)
+                {
+                    sample += old * 2 + ((-old * 3) >> 5) - older + (older >> 4);
+                }
+                else if (filterId == 3)
+                {
+                    sample += old * 2 + ((-old * 13) >> 6) - older + ((older * 3) >> 4);
+                }
+
+                sample = Math.Clamp(sample, -0x8000, 0x7FFF);
+                sample = (sample & 0x3FFF) - (sample & 0x4000);
+                older = old;
+                old = sample;
+                samples.Add(sample * 2);
+            }
+
+            offset += 9;
+            if ((command & 1) != 0)
+            {
+                break;
+            }
+        }
+
+        return (samples, offset - start);
+    }
+
+    private static byte[] WriteWavMono16(IReadOnlyList<int> samples, int sampleRate)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        var dataBytes = samples.Count * 2;
+        writer.Write("RIFF"u8);
+        writer.Write(36 + dataBytes);
+        writer.Write("WAVE"u8);
+        writer.Write("fmt "u8);
+        writer.Write(16);
+        writer.Write((short)1);
+        writer.Write((short)1);
+        writer.Write(sampleRate);
+        writer.Write(sampleRate * 2);
+        writer.Write((short)2);
+        writer.Write((short)16);
+        writer.Write("data"u8);
+        writer.Write(dataBytes);
+        foreach (var sample in samples)
+        {
+            writer.Write((short)Math.Clamp(sample, -32768, 32767));
+        }
+
+        return stream.ToArray();
+    }
+
+    private static void VerifyGeneratedAudioManifest(string generatedRoot, AudioPreviewManifest expected)
+    {
+        var path = Path.Combine(generatedRoot, "audio", "audio_manifest.json");
+        Check(File.Exists(path), $"generated audio manifest missing: {path}");
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        var root = document.RootElement;
+        Check(Required(root, "sample_rate").GetInt32() == 32000, "audio manifest sample rate mismatch");
+        var blocks = RequiredArray(root, "sample_upload_blocks").ToArray();
+        Check(blocks.Length == expected.SampleUploadBlocks.Count, "SPC sample upload block count mismatch");
+        for (var i = 0; i < blocks.Length; i++)
+        {
+            Check((Required(blocks[i], "target").GetString() ?? "") == $"0x{expected.SampleUploadBlocks[i].Target:X4}", $"SPC upload block {i} target mismatch");
+            Check(Required(blocks[i], "length").GetInt32() == expected.SampleUploadBlocks[i].Length, $"SPC upload block {i} length mismatch");
+        }
+
+        var samples = RequiredArray(root, "decoded_samples").ToArray();
+        foreach (var expectedSample in expected.DecodedSamples)
+        {
+            var sample = samples.FirstOrDefault(candidate => Required(candidate, "id").GetInt32() == expectedSample.Id);
+            Check(sample.ValueKind != JsonValueKind.Undefined, $"decoded sample {expectedSample.Id} missing from audio manifest");
+            Check((Required(sample, "file").GetString() ?? "") == expectedSample.File, $"decoded sample {expectedSample.Id} file mismatch");
+            Check((Required(sample, "spc_start").GetString() ?? "") == $"0x{expectedSample.SpcStart:X4}", $"decoded sample {expectedSample.Id} start mismatch");
+            Check((Required(sample, "spc_loop").GetString() ?? "") == $"0x{expectedSample.SpcLoop:X4}", $"decoded sample {expectedSample.Id} loop mismatch");
+            Check(Required(sample, "brr_bytes").GetInt32() == expectedSample.BrrBytes, $"decoded sample {expectedSample.Id} BRR length mismatch");
+            Check(Required(sample, "sample_count").GetInt32() == expectedSample.SampleCount, $"decoded sample {expectedSample.Id} sample count mismatch");
+            Check(Required(sample, "sample_rate").GetInt32() == expectedSample.SampleRate, $"decoded sample {expectedSample.Id} sample rate mismatch");
+            Check((Required(sample, "sha1").GetString() ?? "") == Convert.ToHexString(SHA1.HashData(expectedSample.WavData)), $"decoded sample {expectedSample.Id} WAV sha1 mismatch");
+        }
+    }
+
     private static (byte[] Data, int CompressedLength) SmwDecompress(Rom rom, int address)
     {
         var result = new List<byte>();
@@ -663,6 +864,8 @@ internal static class Program
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-core <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-levels <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-levels <rom.sfc> <generated/smw>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-audio-previews <rom.sfc> <out-dir>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-audio-previews <rom.sfc> <generated/smw>");
     }
 
     private static void Check(bool condition, string message)
@@ -701,6 +904,64 @@ internal static class Program
     };
 
     private sealed record AudioBank(string Name, int SourceAddress, int Length, byte[] Suffix);
+
+    private sealed record AudioPreviewManifest(
+        string SourceRomSha1,
+        List<SpcUploadBlock> SampleUploadBlocks,
+        List<AudioPreviewSample> DecodedSamples)
+    {
+        public object ToSerializable()
+        {
+            return new
+            {
+                schema_version = 1,
+                source_rom_sha1 = SourceRomSha1,
+                sample_rate = 32000,
+                sample_upload_blocks = SampleUploadBlocks.Select(block => block.ToSerializable()).ToArray(),
+                decoded_samples = DecodedSamples.Select(sample => sample.ToSerializable()).ToArray(),
+            };
+        }
+    }
+
+    private sealed record SpcUploadBlock(int Target, int Length)
+    {
+        public object ToSerializable()
+        {
+            return new
+            {
+                target = $"0x{Target:X4}",
+                length = Length,
+            };
+        }
+    }
+
+    private sealed record AudioPreviewSample(
+        int Id,
+        string File,
+        int SpcStart,
+        int SpcLoop,
+        int BrrBytes,
+        int SampleCount,
+        int SampleRate,
+        byte[] WavData)
+    {
+        public object ToSerializable()
+        {
+            return new
+            {
+                id = Id,
+                file = File,
+                source = "spc_samples directory",
+                spc_start = $"0x{SpcStart:X4}",
+                spc_loop = $"0x{SpcLoop:X4}",
+                brr_bytes = BrrBytes,
+                sample_count = SampleCount,
+                sample_rate = SampleRate,
+                format = "pcm_s16le_wav_from_brr",
+                sha1 = Convert.ToHexString(SHA1.HashData(WavData)),
+            };
+        }
+    }
 
     private sealed record LevelSummary(
         string LevelId,
