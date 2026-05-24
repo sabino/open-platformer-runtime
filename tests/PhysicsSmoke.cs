@@ -443,7 +443,7 @@ public static class PhysicsSmoke
     {
         var floor = new List<Rect2> { new(0, 100, 4096, 16) };
 
-        var walk = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        var walk = physics.MakeState(16, 52, SmwPhysics.BigPowerup);
         walk.OnGround = true;
         for (var i = 0; i < 60; i++)
         {
@@ -454,7 +454,7 @@ public static class PhysicsSmoke
             walk,
             x: 83,
             subX: 176,
-            y: 68,
+            y: 52,
             subY: 0,
             xSpeed: 20,
             subXSpeed: 32,
@@ -476,7 +476,7 @@ public static class PhysicsSmoke
             walk,
             x: 159,
             subX: 160,
-            y: 68,
+            y: 52,
             subY: 0,
             xSpeed: 20,
             subXSpeed: 192,
@@ -489,7 +489,7 @@ public static class PhysicsSmoke
             return false;
         }
 
-        var run = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        var run = physics.MakeState(16, 52, SmwPhysics.BigPowerup);
         run.OnGround = true;
         for (var i = 0; i < 60; i++)
         {
@@ -500,7 +500,7 @@ public static class PhysicsSmoke
             run,
             x: 125,
             subX: 80,
-            y: 68,
+            y: 52,
             subY: 0,
             xSpeed: 36,
             subXSpeed: 96,
@@ -522,7 +522,7 @@ public static class PhysicsSmoke
             run,
             x: 289,
             subX: 144,
-            y: 68,
+            y: 52,
             subY: 0,
             xSpeed: 48,
             subXSpeed: 96,
@@ -535,7 +535,7 @@ public static class PhysicsSmoke
             return false;
         }
 
-        var jumpHeld = physics.MakeState(16, 84, SmwPhysics.SmallPowerup);
+        var jumpHeld = physics.MakeState(16, 68, SmwPhysics.SmallPowerup);
         jumpHeld.OnGround = true;
         physics.Step(ref jumpHeld, new SmwPhysics.FrameInput { Jump = true, JumpPressed = true }, floor);
         for (var i = 1; i < 30; i++)
@@ -547,7 +547,7 @@ public static class PhysicsSmoke
             jumpHeld,
             x: 16,
             subX: 0,
-            y: 21,
+            y: 5,
             subY: 48,
             xSpeed: 0,
             subXSpeed: 0,
@@ -569,7 +569,7 @@ public static class PhysicsSmoke
             jumpHeld,
             x: 16,
             subX: 0,
-            y: 83,
+            y: 67,
             subY: 16,
             xSpeed: 0,
             subXSpeed: 0,
@@ -582,7 +582,7 @@ public static class PhysicsSmoke
             return false;
         }
 
-        var fall = physics.MakeState(5000, 84, SmwPhysics.SmallPowerup);
+        var fall = physics.MakeState(5000, 68, SmwPhysics.SmallPowerup);
         fall.OnGround = true;
         for (var i = 0; i < 45; i++)
         {
@@ -593,7 +593,7 @@ public static class PhysicsSmoke
             fall,
             x: 5000,
             subX: 0,
-            y: 253,
+            y: 237,
             subY: 32,
             xSpeed: 0,
             subXSpeed: 0,
@@ -690,7 +690,7 @@ public static class PhysicsSmoke
             NativeSlopeKind: 12,
             SnapDistance: SmwPhysics.NativeSlopeSnapDistanceForKind(12));
 
-        var fastState = physics.MakeState(1, 100, SmwPhysics.SmallPowerup);
+        var fastState = physics.MakeState(1, 84, SmwPhysics.SmallPowerup);
         fastState.XSpeed = 0x28;
         physics.Step(ref fastState, new SmwPhysics.FrameInput(), [], [slope]);
         if (!fastState.OnGround ||
@@ -702,7 +702,7 @@ public static class PhysicsSmoke
             return false;
         }
 
-        var slowState = physics.MakeState(1, 100, SmwPhysics.SmallPowerup);
+        var slowState = physics.MakeState(1, 84, SmwPhysics.SmallPowerup);
         slowState.XSpeed = 0x20;
         physics.Step(ref slowState, new SmwPhysics.FrameInput(), [], [slope]);
         if (!slowState.OnGround ||
@@ -720,10 +720,10 @@ public static class PhysicsSmoke
     private static bool CheckDuckingState(SmwPhysics physics)
     {
         var floor = new List<Rect2> { new(0, 100, 256, 16) };
-        var state = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        var state = physics.MakeState(16, 52, SmwPhysics.BigPowerup);
         state.OnGround = true;
         physics.Step(ref state, new SmwPhysics.FrameInput { Down = true, Right = true }, floor);
-        if (!state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.DuckingPlayerHeight || state.Y != 84)
+        if (!state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.DuckingPlayerHeight || state.Y != 68)
         {
             Console.Error.WriteLine($"expected big Mario to duck with feet preserved, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)} y={state.Y}");
             return false;
@@ -735,13 +735,13 @@ public static class PhysicsSmoke
         }
 
         physics.Step(ref state, new SmwPhysics.FrameInput(), floor);
-        if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.BigPlayerHeight || state.Y != 68)
+        if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.BigPlayerHeight || state.Y != 52)
         {
             Console.Error.WriteLine($"expected releasing down to stand with feet preserved, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)} y={state.Y}");
             return false;
         }
 
-        state = physics.MakeState(16, 84, SmwPhysics.SmallPowerup);
+        state = physics.MakeState(16, 68, SmwPhysics.SmallPowerup);
         state.OnGround = true;
         physics.Step(ref state, new SmwPhysics.FrameInput { Down = true }, floor);
         if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.SmallPlayerHeight)
@@ -750,11 +750,11 @@ public static class PhysicsSmoke
             return false;
         }
 
-        state = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        state = physics.MakeState(16, 52, SmwPhysics.BigPowerup);
         state.OnGround = true;
         physics.Step(ref state, new SmwPhysics.FrameInput { Down = true }, floor);
         physics.SetPowerup(ref state, SmwPhysics.SmallPowerup);
-        if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.SmallPlayerHeight || state.Y != 84)
+        if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.SmallPlayerHeight || state.Y != 68)
         {
             Console.Error.WriteLine($"expected power-down to clear ducking while preserving feet, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)} y={state.Y}");
             return false;
@@ -766,20 +766,20 @@ public static class PhysicsSmoke
     private static bool CheckGroundedVerticalPhysics(SmwPhysics physics)
     {
         var floor = new List<Rect2> { new(0, 100, 256, 16) };
-        var state = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        var state = physics.MakeState(16, 52, SmwPhysics.BigPowerup);
         state.OnGround = true;
         state.YSpeed = 24;
         physics.Step(ref state, new SmwPhysics.FrameInput(), floor);
-        if (!state.OnGround || state.Y != 68 || state.YSpeed != 0)
+        if (!state.OnGround || state.Y != 52 || state.YSpeed != 0)
         {
             Console.Error.WriteLine($"expected grounded vertical speed to stay pinned, got g={state.OnGround} y={state.Y} ys={state.YSpeed}");
             return false;
         }
 
-        state = physics.MakeState(280, 68, SmwPhysics.BigPowerup);
+        state = physics.MakeState(280, 52, SmwPhysics.BigPowerup);
         state.OnGround = true;
         physics.Step(ref state, new SmwPhysics.FrameInput(), floor);
-        if (state.OnGround || state.Y != 68 || state.YSpeed != 0 || state.InAirState != 0x24)
+        if (state.OnGround || state.Y != 52 || state.YSpeed != 0 || state.InAirState != 0x24)
         {
             Console.Error.WriteLine($"expected first ledge frame to clear grounded state without gravity, got g={state.OnGround} y={state.Y} ys={state.YSpeed} air=0x{state.InAirState:X2}");
             return false;
@@ -1076,21 +1076,21 @@ public static class PhysicsSmoke
 
     private static bool CheckStepUpCollision(SmwPhysics physics)
     {
-        var state = physics.MakeState(49, 84);
+        var state = physics.MakeState(49, 68);
         state.OnGround = true;
         state.XSpeed = 0x30;
         physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, [new Rect2(64, 108, 16, 16)]);
-        if (state.Y > 80 || state.XSpeed == 0)
+        if (state.Y > 64 || state.XSpeed == 0)
         {
             Console.Error.WriteLine($"expected low ledge side impact to step up, got x={state.X} y={state.Y}");
             return false;
         }
 
-        state = physics.MakeState(49, 84);
+        state = physics.MakeState(49, 68);
         state.OnGround = true;
         state.XSpeed = 0x30;
         physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, [new Rect2(64, 96, 16, 32)]);
-        if (state.X > 50 || state.Y <= 80)
+        if (state.X > 50 || state.Y <= 64)
         {
             Console.Error.WriteLine($"expected high wall side impact to block, got x={state.X} y={state.Y}");
             return false;
@@ -1105,28 +1105,28 @@ public static class PhysicsSmoke
         {
             new(0, 96, 64, 64, Ceiling: true),
         };
-        var state = physics.MakeState(24, 84);
+        var state = physics.MakeState(24, 68);
         state.YSpeed = -16;
 
         physics.Step(ref state, new SmwPhysics.FrameInput(), [], slopes);
-        if (state.Y != 80 || state.YSpeed != 0 || state.OnGround)
+        if (state.Y != 64 || state.YSpeed != 0 || state.OnGround)
         {
             Console.Error.WriteLine($"expected upward motion to stop against slope ceiling, got y={state.Y} ys={state.YSpeed} ground={state.OnGround}");
             return false;
         }
 
-        state = physics.MakeState(24, 84);
+        state = physics.MakeState(24, 68);
         state.YSpeed = 16;
         physics.Step(ref state, new SmwPhysics.FrameInput(), [], slopes);
-        if (state.Y == 80 || state.YSpeed == 0)
+        if (state.Y == 64 || state.YSpeed == 0)
         {
             Console.Error.WriteLine($"expected falling motion to ignore slope ceiling, got y={state.Y} ys={state.YSpeed}");
             return false;
         }
 
-        state = physics.MakeState(24, 84);
+        state = physics.MakeState(24, 68);
         physics.Step(ref state, new SmwPhysics.FrameInput { Left = true }, [], slopes);
-        if (state.Y == 80 || state.YSpeed == 0)
+        if (state.Y == 64 || state.YSpeed == 0)
         {
             Console.Error.WriteLine($"expected walking motion to ignore slope ceiling, got y={state.Y} ys={state.YSpeed}");
             return false;

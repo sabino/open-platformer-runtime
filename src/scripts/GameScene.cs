@@ -33,6 +33,8 @@ public partial class GameScene : Node2D
     private const float SpriteActorVerticalSleepMargin = 128.0f;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
+    private const float SlidingKoopaGroundDeceleration = 0.03125f;
+    private const int NativeLevelStartSpriteWarmupFrames = 22;
     private const int NativePlayerHurtAnimationFrames = 0x2F;
     private const int NativePlayerPostPowerdownInvulnerabilityFrames = 0x7F;
     private const int NativePlayerHurtBlinkFrameShift = 2;
@@ -1615,6 +1617,7 @@ public partial class GameScene : Node2D
         RebuildPipeEntrances();
         LoadSpriteTexture();
         AddRuntimeSpriteActors();
+        WarmUpRuntimeSpriteActors(NativeLevelStartSpriteWarmupFrames);
         AddGoalTapeTriggers();
         if (DebugOverlays)
         {
@@ -1716,6 +1719,36 @@ public partial class GameScene : Node2D
             var actor = CreateRuntimeSpriteActor(spawn, DebugOverlays);
             _spriteActors.Add(actor);
             AddWorldChild(actor.Node);
+        }
+    }
+
+    private void WarmUpRuntimeSpriteActors(int frames)
+    {
+        if (frames <= 0 || _spriteActors.Count == 0)
+        {
+            return;
+        }
+
+        for (var frame = 0; frame < frames; frame++)
+        {
+            foreach (var actor in _spriteActors)
+            {
+                if (!actor.Alive)
+                {
+                    continue;
+                }
+
+                actor.Active = IsSpriteActorAwake(actor);
+                if (!actor.Active)
+                {
+                    continue;
+                }
+
+                actor.PreviousX = actor.X;
+                actor.PreviousY = actor.Y;
+                UpdateSpriteActorMotion(actor);
+                actor.Node.Position = new Vector2(actor.X, actor.Y);
+            }
         }
     }
 
@@ -2299,7 +2332,7 @@ public partial class GameScene : Node2D
             0x9F => new SpriteActorBehavior(new Rect2(8, 0, 48, 24), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
             0x95 => new SpriteActorBehavior(new Rect2(2, -4, 16, 36), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
             0xAB => new SpriteActorBehavior(new Rect2(-4, -15, 20, 31), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
-            0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.58f),
+            0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -2.0f),
             0x74 or 0x78 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: PowerupItemWalkSpeed),
             0x75 or 0x76 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: 0.0f),
             0x77 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: 0.0f),
@@ -2537,7 +2570,7 @@ public partial class GameScene : Node2D
 
         var playerLeft = _state.XFloat + 1.0f;
         var playerRight = _state.XFloat + SmwPhysics.PlayerWidth - 1.0f;
-        var probeY = _state.YFloat + SmwPhysics.PlayerHeightFor(_state) + 1.0f;
+        var probeY = SmwPhysics.PlayerCollisionBottom(_state) + 1.0f;
         var tileY = WorldToTileY(probeY);
         var minTileX = WorldToTileX(playerLeft);
         var maxTileX = WorldToTileX(playerRight);
@@ -2611,7 +2644,7 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var headY = _state.YFloat - 1.0f;
+        var headY = SmwPhysics.PlayerCollisionTop(_state) - 1.0f;
         var tileY = WorldToTileY(headY);
         var headCenterX = _state.XFloat + SmwPhysics.PlayerWidth * 0.5f;
         Span<int> candidateTileXs = stackalloc int[3]
@@ -2743,11 +2776,11 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var height = SmwPhysics.PlayerHeightFor(_state);
-        var left = _state.XFloat;
-        var right = left + SmwPhysics.PlayerWidth;
-        var top = _state.YFloat;
-        var bottom = top + height;
+        var playerRect = _physics.PlayerRect(_state);
+        var left = playerRect.Position.X;
+        var right = playerRect.Position.X + playerRect.Size.X;
+        var top = playerRect.Position.Y;
+        var bottom = playerRect.Position.Y + playerRect.Size.Y;
         var tileMinX = WorldToTileX(left) - 1;
         var tileMaxX = WorldToTileX(right) + 1;
         var tileMinY = WorldToTileY(top) - 1;
@@ -2802,13 +2835,14 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var height = SmwPhysics.PlayerHeightFor(_state);
-        var left = _state.XFloat;
-        var right = left + SmwPhysics.PlayerWidth;
-        var top = _state.YFloat;
-        var bottom = top + height;
-        var previousLeft = previousState.XFloat;
-        var previousRight = previousLeft + SmwPhysics.PlayerWidth;
+        var playerRect = _physics.PlayerRect(_state);
+        var previousPlayerRect = _physics.PlayerRect(previousState);
+        var left = playerRect.Position.X;
+        var right = playerRect.Position.X + playerRect.Size.X;
+        var top = playerRect.Position.Y;
+        var bottom = playerRect.Position.Y + playerRect.Size.Y;
+        var previousLeft = previousPlayerRect.Position.X;
+        var previousRight = previousPlayerRect.Position.X + previousPlayerRect.Size.X;
         if (MathF.Abs(left - previousLeft) <= 0.01f && _state.XSpeed == 0)
         {
             return false;
@@ -2879,8 +2913,8 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var top = state.YFloat;
-        var bottom = top + SmwPhysics.PlayerHeightFor(state);
+        var top = SmwPhysics.PlayerCollisionTop(state);
+        var bottom = SmwPhysics.PlayerCollisionBottom(state);
         Span<float> probes = stackalloc float[3];
         probes[0] = state.XFloat + SmwPhysics.PlayerWidth * 0.5f;
         probes[1] = state.XFloat + 2.0f;
@@ -2917,12 +2951,12 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var height = SmwPhysics.PlayerHeightFor(state);
-        var left = state.XFloat;
-        var right = left + SmwPhysics.PlayerWidth;
-        var top = state.YFloat;
-        var mid = top + height * 0.5f;
-        var bottom = top + height;
+        var playerRect = _physics.PlayerRect(state);
+        var left = playerRect.Position.X;
+        var right = playerRect.Position.X + playerRect.Size.X;
+        var top = playerRect.Position.Y;
+        var mid = top + playerRect.Size.Y * 0.5f;
+        var bottom = top + playerRect.Size.Y;
         Span<Vector2> probes = stackalloc Vector2[5];
         probes[0] = new Vector2(left, mid);
         probes[1] = new Vector2(right - 1.0f, mid);
@@ -3884,23 +3918,24 @@ public partial class GameScene : Node2D
 
     private void UpdatePlayerDebugGizmos()
     {
-        var height = SmwPhysics.PlayerHeightFor(_state);
+        var height = SmwPhysics.PlayerCollisionHeightFor(_state);
+        var offsetY = SmwPhysics.PlayerCollisionYOffset;
         if (_playerHitboxGizmo != null)
         {
-            SetLineRect(_playerHitboxGizmo, new Rect2(Vector2.Zero, new Vector2(SmwPhysics.PlayerWidth, height)));
+            SetLineRect(_playerHitboxGizmo, new Rect2(new Vector2(0.0f, offsetY), new Vector2(SmwPhysics.PlayerWidth, height)));
         }
         if (_playerFootGizmo != null)
         {
-            _playerFootGizmo.Position = new Vector2(SmwPhysics.PlayerWidth * 0.5f - 1.0f, height - 2.0f);
+            _playerFootGizmo.Position = new Vector2(SmwPhysics.PlayerWidth * 0.5f - 1.0f, offsetY + height - 2.0f);
         }
         if (_playerSensorGizmos.Count >= 6)
         {
-            SetPlayerSensorGizmo(0, SmwPhysics.PlayerWidth * 0.5f, 1.0f);
-            SetPlayerSensorGizmo(1, 0.0f, height * 0.5f);
-            SetPlayerSensorGizmo(2, SmwPhysics.PlayerWidth - 1.0f, height * 0.5f);
-            SetPlayerSensorGizmo(3, 2.0f, height);
-            SetPlayerSensorGizmo(4, SmwPhysics.PlayerWidth * 0.5f, height);
-            SetPlayerSensorGizmo(5, SmwPhysics.PlayerWidth - 2.0f, height);
+            SetPlayerSensorGizmo(0, SmwPhysics.PlayerWidth * 0.5f, offsetY + 1.0f);
+            SetPlayerSensorGizmo(1, 0.0f, offsetY + height * 0.5f);
+            SetPlayerSensorGizmo(2, SmwPhysics.PlayerWidth - 1.0f, offsetY + height * 0.5f);
+            SetPlayerSensorGizmo(3, 2.0f, offsetY + height);
+            SetPlayerSensorGizmo(4, SmwPhysics.PlayerWidth * 0.5f, offsetY + height);
+            SetPlayerSensorGizmo(5, SmwPhysics.PlayerWidth - 2.0f, offsetY + height);
         }
         if (_playerDebugLabel != null)
         {
@@ -4292,6 +4327,7 @@ public partial class GameScene : Node2D
         actor.Y += actor.YSpeed;
         actor.OnGround = false;
         rect = actor.Rect;
+        var onSlope = false;
         if (actor.Behavior.TerrainCollision)
         {
             foreach (var solid in _solids)
@@ -4335,12 +4371,32 @@ public partial class GameScene : Node2D
                 actor.Y = slopeY - actor.Behavior.Hitbox.Position.Y - actor.Behavior.Hitbox.Size.Y;
                 actor.YSpeed = 0.0f;
                 actor.OnGround = true;
+                onSlope = true;
             }
         }
+
+        ApplySpriteActorGroundSpeed(actor, onSlope);
 
         if (actor.Y > GetLevelPixelBottom() + 128.0f)
         {
             actor.Alive = false;
+        }
+    }
+
+    private static void ApplySpriteActorGroundSpeed(RuntimeSpriteActor actor, bool onSlope)
+    {
+        if (!actor.OnGround || onSlope || actor.SpriteId != 0xBD)
+        {
+            return;
+        }
+
+        if (actor.XSpeed < 0.0f)
+        {
+            actor.XSpeed = MathF.Min(0.0f, actor.XSpeed + SlidingKoopaGroundDeceleration);
+        }
+        else if (actor.XSpeed > 0.0f)
+        {
+            actor.XSpeed = MathF.Max(0.0f, actor.XSpeed - SlidingKoopaGroundDeceleration);
         }
     }
 
@@ -4736,7 +4792,7 @@ public partial class GameScene : Node2D
 
     private void LandPlayerOnSolidBlockActor(RuntimeSpriteActor actor, float actorTop)
     {
-        _state.Y = (int)MathF.Round(actorTop - SmwPhysics.PlayerHeightFor(_state));
+        _state.Y = SmwPhysics.AnchorYForCollisionBottom(actorTop, _state);
         _state.SubY = 0;
         _state.YSpeed = 0;
         _state.SubYSpeed = 0;
@@ -5589,9 +5645,7 @@ public partial class GameScene : Node2D
     private static int PlayerRenderYOffsetForState(int powerup, bool ducking)
     {
         const int nativeOamYBias = -1;
-        return nativeOamYBias + (powerup == SmwPhysics.SmallPowerup || ducking
-            ? SmwPhysics.SmallPlayerHeight - SmwPhysics.BigPlayerHeight
-            : 0);
+        return nativeOamYBias;
     }
 
     private ImageTexture? PlayerTextureForPowerup(int powerup)
@@ -6188,7 +6242,7 @@ public partial class GameScene : Node2D
     private string DescribeFootTile()
     {
         var footX = (int)MathF.Floor((_state.XFloat + SmwPhysics.PlayerWidth * 0.5f) / Map16TileSize);
-        var footY = (int)MathF.Floor((_state.YFloat + SmwPhysics.PlayerHeightFor(_state) - LevelVisualYOffset + 1.0f) / Map16TileSize);
+        var footY = (int)MathF.Floor((SmwPhysics.PlayerCollisionBottom(_state) - LevelVisualYOffset + 1.0f) / Map16TileSize);
         return DescribeTileAt(footX, footY);
     }
 
@@ -7207,7 +7261,12 @@ public partial class GameScene : Node2D
         if (_debugTraceSensors)
         {
             GD.Print(BuildDebugPlayerSensors($"{_debugTraceTag}_{_debugTraceFrame:00}"));
-            GD.Print(BuildDebugSlopeProbe($"{_debugTraceTag}_{_debugTraceFrame:00}", _state.XFloat, _state.YFloat, SmwPhysics.PlayerHeightFor(_state), _state.YSpeed));
+            GD.Print(BuildDebugSlopeProbe(
+                $"{_debugTraceTag}_{_debugTraceFrame:00}",
+                _state.XFloat,
+                SmwPhysics.PlayerCollisionTop(_state),
+                SmwPhysics.PlayerCollisionHeightFor(_state),
+                _state.YSpeed));
         }
 
         _debugTraceFrames--;
@@ -7394,10 +7453,11 @@ public partial class GameScene : Node2D
 
     private string BuildDebugPlayerSensors(string tag)
     {
-        var height = SmwPhysics.PlayerHeightFor(_state);
-        var left = _state.XFloat;
-        var right = left + SmwPhysics.PlayerWidth;
-        var top = _state.YFloat;
+        var playerRect = _physics.PlayerRect(_state);
+        var height = playerRect.Size.Y;
+        var left = playerRect.Position.X;
+        var right = playerRect.Position.X + playerRect.Size.X;
+        var top = playerRect.Position.Y;
         var bottom = top + height;
         var centerX = left + SmwPhysics.PlayerWidth * 0.5f;
         var middleY = top + height * 0.5f;
@@ -7464,8 +7524,8 @@ public partial class GameScene : Node2D
     {
         var tag = "manual";
         var x = _state.XFloat;
-        var y = _state.YFloat;
-        var height = (float)SmwPhysics.PlayerHeightFor(_state);
+        var y = SmwPhysics.PlayerCollisionTop(_state);
+        var height = (float)SmwPhysics.PlayerCollisionHeightFor(_state);
         var ySpeed = (float)_state.YSpeed;
 
         for (var i = 1; i < parts.Length; i++)

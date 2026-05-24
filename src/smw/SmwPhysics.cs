@@ -18,6 +18,7 @@ public sealed class SmwPhysics
     public const int DuckingPlayerHeight = 16;
     public const int BigPlayerHeight = 32;
     public const int PlayerHeight = BigPlayerHeight;
+    public const int PlayerCollisionYOffset = 16;
 
     public const int NativeFlatWalkTurnAcceleration = 0x0280;
     public const int NativeFlatRunTurnAcceleration = 0x0500;
@@ -360,7 +361,7 @@ public sealed class SmwPhysics
         IReadOnlyList<SlopeSurface> slopes)
     {
         ApplyDucking(ref state, input);
-        var previousBottom = state.YFloat + PlayerHeightFor(state);
+        var previousBottom = PlayerCollisionBottom(state);
         ApplyJumpAndGravity(ref state, input);
         ApplyHorizontal(ref state, input);
 
@@ -467,13 +468,38 @@ public sealed class SmwPhysics
     public Rect2 PlayerRect(PlayerState state)
     {
         return new Rect2(
-            new Vector2(state.XFloat, state.YFloat),
-            new Vector2(PlayerWidth, PlayerHeightFor(state)));
+            new Vector2(state.XFloat, PlayerCollisionTop(state)),
+            new Vector2(PlayerWidth, PlayerCollisionHeightFor(state)));
     }
 
     public static int PlayerHeightFor(PlayerState state)
     {
         return state.Ducking ? DuckingPlayerHeight : PlayerHeightForPowerup(state.Powerup);
+    }
+
+    public static int PlayerCollisionHeightFor(PlayerState state)
+    {
+        return PlayerHeightFor(state);
+    }
+
+    public static float PlayerCollisionTop(PlayerState state)
+    {
+        return state.YFloat + PlayerCollisionYOffset;
+    }
+
+    public static float PlayerCollisionBottom(PlayerState state)
+    {
+        return PlayerCollisionTop(state) + PlayerCollisionHeightFor(state);
+    }
+
+    public static int AnchorYForCollisionTop(float collisionTop)
+    {
+        return (int)MathF.Round(collisionTop - PlayerCollisionYOffset);
+    }
+
+    public static int AnchorYForCollisionBottom(float collisionBottom, PlayerState state)
+    {
+        return (int)MathF.Round(collisionBottom - PlayerCollisionYOffset - PlayerCollisionHeightFor(state));
     }
 
     public static int PlayerHeightForPowerup(int powerup)
@@ -944,7 +970,7 @@ public sealed class SmwPhysics
                 var allowStepUp = solidStepUpEnabled == null ||
                     solidIndex >= solidStepUpEnabled.Count ||
                     solidStepUpEnabled[solidIndex];
-                if (allowStepUp && TryStepUp(ref state, solid, rect, PlayerHeightFor(state)))
+                if (allowStepUp && TryStepUp(ref state, solid, rect))
                 {
                     rect = PlayerRect(state);
                     steppedOntoSolid = true;
@@ -987,14 +1013,14 @@ public sealed class SmwPhysics
 
                 if (state.YSpeed > 0)
                 {
-                    state.Y = (int)MathF.Round(solid.Position.Y - PlayerHeightFor(state));
+                    state.Y = AnchorYForCollisionBottom(solid.Position.Y, state);
                     state.OnGround = true;
                     state.InAirState = 0;
                     state.RunningTakeoff = false;
                 }
                 else if (state.YSpeed < 0)
                 {
-                    state.Y = (int)MathF.Round(solid.Position.Y + solid.Size.Y);
+                    state.Y = AnchorYForCollisionTop(solid.Position.Y + solid.Size.Y);
                 }
                 state.SubY = 0;
                 state.SubYSpeed = 0;
@@ -1015,7 +1041,7 @@ public sealed class SmwPhysics
             playerRect.Position.Y < solid.Position.Y + solid.Size.Y;
     }
 
-    private static bool TryStepUp(ref PlayerState state, Rect2 solid, Rect2 playerRect, int playerHeight)
+    private static bool TryStepUp(ref PlayerState state, Rect2 solid, Rect2 playerRect)
     {
         if (state.YSpeed < 0)
         {
@@ -1029,7 +1055,7 @@ public sealed class SmwPhysics
             return false;
         }
 
-        state.Y = (int)MathF.Round(solidTop - playerHeight);
+        state.Y = AnchorYForCollisionBottom(solidTop, state);
         state.SubY = 0;
         state.SubYSpeed = 0;
         state.RunningTakeoff = false;
@@ -1042,8 +1068,8 @@ public sealed class SmwPhysics
         IReadOnlyList<bool>? solidVerticalEnabled)
     {
         var rect = new Rect2(
-            new Vector2(state.XFloat, state.YFloat),
-            new Vector2(PlayerWidth, PlayerHeightFor(state)));
+            new Vector2(state.XFloat, PlayerCollisionTop(state)),
+            new Vector2(PlayerWidth, PlayerCollisionHeightFor(state)));
         var bottom = rect.Position.Y + rect.Size.Y;
         for (var solidIndex = 0; solidIndex < solids.Count; solidIndex++)
         {
@@ -1082,9 +1108,9 @@ public sealed class SmwPhysics
         }
 
         var probeX = state.XFloat + PlayerWidth * 0.5f;
-        var playerHeight = PlayerHeightFor(state);
-        var bottom = state.YFloat + playerHeight;
-        var top = state.YFloat;
+        var playerHeight = PlayerCollisionHeightFor(state);
+        var bottom = PlayerCollisionBottom(state);
+        var top = PlayerCollisionTop(state);
         var previousTop = previousBottom - playerHeight;
         foreach (var slope in slopes)
         {
@@ -1118,7 +1144,7 @@ public sealed class SmwPhysics
                     continue;
                 }
 
-                state.Y = (int)MathF.Round(surfaceY);
+                state.Y = AnchorYForCollisionTop(surfaceY);
                 state.SubY = 0;
                 state.SubYSpeed = 0;
                 if (state.YSpeed < 0)
@@ -1134,7 +1160,7 @@ public sealed class SmwPhysics
             return;
         }
 
-        state.Y = (int)MathF.Round(floorY - playerHeight);
+        state.Y = AnchorYForCollisionBottom(floorY, state);
         state.SubY = 0;
         state.SubYSpeed = 0;
         ApplyNativeSlopeContact(ref state, floorSlope);
