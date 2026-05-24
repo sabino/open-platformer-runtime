@@ -57,6 +57,7 @@ public partial class Main : Node2D
         string? autoplayMode = null;
         string? debugCommandPath = null;
         int? debugRconPort = null;
+        var titleStart = false;
         Vector2? testSpawn = null;
         int? testPowerup = null;
         int? testScreenExit = null;
@@ -66,6 +67,10 @@ public partial class Main : Node2D
             if (arg == "--smw-test-autostart")
             {
                 autostart = true;
+            }
+            else if (arg == "--smw-title-start")
+            {
+                titleStart = true;
             }
             else if (arg == "--smw-no-audio" ||
                 arg.Equals("--smw-audio=off", StringComparison.OrdinalIgnoreCase) ||
@@ -140,6 +145,10 @@ public partial class Main : Node2D
         if (autostart || testLevel != null || capturePath != null)
         {
             StartGame();
+        }
+        if (titleStart && !autostart && testLevel == null && capturePath == null)
+        {
+            CallDeferred(nameof(StartGameFromTitleStartProbe));
         }
         if (testLevel != null)
         {
@@ -292,7 +301,7 @@ public partial class Main : Node2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (_game == null && @event.IsActionPressed("ui_accept"))
+        if (_game == null && (@event.IsActionPressed("ui_accept") || @event.IsActionPressed("smw_start")))
         {
             StartGame();
         }
@@ -307,6 +316,7 @@ public partial class Main : Node2D
         AddKeyAction("smw_spin", Key.X);
         AddKeyAction("smw_run", Key.Shift, Key.C);
         AddKeyAction("smw_start", Key.Enter);
+        AddKeyAction("ui_accept", Key.Enter);
 
         AddJoyButtonAction("smw_left", JoyButton.DpadLeft);
         AddJoyButtonAction("smw_right", JoyButton.DpadRight);
@@ -725,6 +735,17 @@ public partial class Main : Node2D
             AudioEnabled = _audioEnabled,
         };
         AddChild(_game);
+    }
+
+    private void StartGameFromTitleStartProbe()
+    {
+        if (_game != null)
+        {
+            return;
+        }
+
+        GD.Print("smw-menu: title_start=1");
+        StartGame();
     }
 
     private static bool ShouldEnableAudio()

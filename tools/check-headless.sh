@@ -75,6 +75,11 @@ grep -q "sfx_buttons=6 music_buttons=4" "$LOG_FILE"
 grep -q "smw-menu: assets=1 audio=1 actors=1 actor_visuals=1 level_preview=1 player_preview=1" "$LOG_FILE"
 ! grep -q "smw-runtime: level=" "$LOG_FILE"
 
+"$GODOT_BIN" --headless --path . --quit-after 3 --smw-title-start --smw-no-audio 2>&1 | tee "$LOG_FILE"
+grep -q "smw-menu: assets=1 audio=0 actors=1 actor_visuals=1 level_preview=1 player_preview=1" "$LOG_FILE"
+grep -q "smw-menu: title_start=1" "$LOG_FILE"
+grep -q "smw-runtime: level=105" "$LOG_FILE"
+
 cat >"$ACTORS_OFF_COMMAND_FILE" <<'EOF'
 pause
 state actors_cli

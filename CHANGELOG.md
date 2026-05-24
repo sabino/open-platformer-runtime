@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a headless title-start probe for the Godot menu: `--smw-title-start` now shows the real start menu, defers one frame, then starts the playable level through the same path used by Enter/Start and the menu button, with headless coverage proving level `105` loads from that flow.
 - Extended the native C# ROM asset CLI with `extract-player-metadata` and `verify-player-metadata`: it now reads Mario/Luigi/fire palette variants, walking animation tables, head/body tile pointer tables, and the `PlayerGFXRt` OAM placement/tile/flip tables directly from the ROM and checks them against `generated/smw/player/player_graphics.json`.
 - Extended the native C# ROM asset CLI with `extract-audio-previews` and `verify-audio-previews`: it now parses the SPC sample upload stream, decodes BRR samples `09`, `14`, and `16`, writes matching 32 kHz PCM WAV previews, and byte-checks the generated WAVs and audio manifest against direct C# decoding.
 - Extended the native C# ROM asset CLI with `extract-levels` and `verify-levels` for level `105` and direct pipe target `1CB`: it now independently decodes level headers, layer-1 object streams, screen exits, layer-2 RLE background source metadata, sprite stream coordinates, and the vanilla screen-07 pipe destination, then byte-checks generated JSON raw streams against direct ROM extraction.
