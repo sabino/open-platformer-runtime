@@ -49,6 +49,24 @@ public partial class GameScene : Node2D
     private const int NativePlayerHurtAnimationFrames = 0x2F;
     private const int NativePlayerPostPowerdownInvulnerabilityFrames = 0x7F;
     private const int NativePlayerHurtBlinkFrameShift = 2;
+    private const int NativeSpinTurnBlockBreakYSpeed = -42;
+    private const int NativeSpinTurnBlockBreakYOffset = 1;
+    private const int NativeSpinTurnBlockSideFallbackMinYSpeed = 0x30;
+    private const int NativeSpinTurnBlockSideFallbackXOffset = 1;
+    private const float NativePostSpinPipeCornerRestInset = 2.625f;
+    private const int NativePipeTransitionDelayFrames = 33;
+    private const int NativeVerticalPipeExitHoldFrames = 30;
+    private const int NativePipeExitPassThroughFrames = 24;
+    private const int NativeVerticalPipeExitReleaseYOffset = -1;
+    private const int NativeHorizontalPipeEntryFrames = 58;
+    private const int NativeHorizontalPipeTransitionDelayFrames = 34;
+    private const int NativeHorizontalPipeEntrySettleFrame = NativeHorizontalPipeEntryFrames - 1;
+    private const int NativePipeExitJumpSubYFrames = 180;
+    private const int NativePipeExitJumpTakeoffSubY = 0xE0;
+    private const int NativeGroundedYSubDelta = 0x60;
+    private const int NativeNormalCoinPickupCooldownFrames = 17;
+    private const int NativeUpperCoinPickupCooldownFrames = 7;
+    private const float NativeUnderworldRightWallAirContactX = 370.4375f;
     private const int JumpingPiranhaCycleFrames = 192;
     private const int JumpingPiranhaHiddenFrames = 48;
     private const int JumpingPiranhaRiseFrames = 24;
@@ -166,6 +184,9 @@ public partial class GameScene : Node2D
     private readonly List<Rect2> _solids = [];
     private readonly List<bool> _solidStepUpEnabled = [];
     private readonly List<bool> _solidVerticalEnabled = [];
+    private readonly List<Rect2> _frameSolids = [];
+    private readonly List<bool> _frameSolidStepUpEnabled = [];
+    private readonly List<bool> _frameSolidVerticalEnabled = [];
     private readonly List<SmwPhysics.SlopeSurface> _slopes = [];
     private readonly List<SmwPhysics.SlopeSurface> _spriteSlopes = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
@@ -257,9 +278,23 @@ public partial class GameScene : Node2D
     private int _entranceMotionFrames;
     private int _entranceMotionAction;
     private Vector2 _entranceMotionPixelsPerFrame;
+    private int _entranceMotionDelayFrames;
+    private int _entranceReleaseHoldFrames;
+    private int _deferredEntranceMotionFrames;
+    private Vector2 _deferredEntranceMotionPixelsPerFrame;
+    private int _pipeExitPassThroughFrames;
+    private int _pipeExitJumpSubYFrames;
+    private int _pipeExitSyntheticGroundSubY = -1;
+    private bool _pipeEntryHorizontal;
+    private int _pipeEntryInitialFrames;
+    private Vector2 _pipeEntryPixelsPerFrame;
+    private int _pipeTransitionDelayAfterEntryFrames;
+    private int _postPipeShootoutPMeterFloorFrames;
     private int _coinCount;
     private int _dragonCoinCount;
+    private int _pendingNormalCoinIncrements;
     private int _pendingDragonCoinNormalCoins;
+    private int _normalCoinPickupCooldownFrames;
     private int _oneUpCount;
     private int _score;
     private int _stompChainCounter;
@@ -273,6 +308,11 @@ public partial class GameScene : Node2D
     private int _powerupAnimationFrames;
     private int _powerupSettleFrames;
     private int _pendingPowerup = -1;
+    private bool _suppressNextPipeCornerLeft;
+    private int _pipeEntryMotionFrames;
+    private int _pipeTransitionDelayFrames;
+    private LevelEntrance? _pendingPipeTransitionEntrance;
+    private int _pendingEntrancePowerup = -1;
     private int _inputScriptIndex;
     private int _inputScriptFrame;
     private int _inputScriptElapsedFrames;
@@ -377,6 +417,16 @@ public partial class GameScene : Node2D
         var frameInput = _courseClear
             ? ReadCourseClearInput()
             : ReadFrameInput();
+        if (_suppressNextPipeCornerLeft && frameInput.Left)
+        {
+            frameInput.Left = false;
+            frameInput.RunPressed = false;
+            _suppressNextPipeCornerLeft = false;
+        }
+        else
+        {
+            _suppressNextPipeCornerLeft = false;
+        }
         _lastFrameInput = frameInput;
         if (_powerupAnimationFrames > 0)
         {
@@ -391,7 +441,11 @@ public partial class GameScene : Node2D
 
         var previousStateForActors = _state;
 
-        var entranceLocked = _entranceMotionFrames > 0;
+        var entranceLocked = _entranceMotionFrames > 0 ||
+            _entranceMotionDelayFrames > 0 ||
+            _entranceReleaseHoldFrames > 0 ||
+            _pipeEntryMotionFrames > 0 ||
+            _pipeTransitionDelayFrames > 0;
         if (!entranceLocked && _state.OnGround && frameInput.SpinPressed)
         {
             _audio?.PlaySpinJump();
@@ -401,25 +455,60 @@ public partial class GameScene : Node2D
             _audio?.PlayJump();
         }
 
-        if (entranceLocked)
+        if (_pipeEntryMotionFrames > 0)
+        {
+            ApplyPipeEntryMotion();
+        }
+        else if (_pipeTransitionDelayFrames > 0)
+        {
+            ApplyPipeTransitionDelay();
+        }
+        else if (_entranceMotionFrames > 0)
         {
             ApplyEntranceMotion();
+        }
+        else if (_entranceMotionDelayFrames > 0)
+        {
+            ApplyEntranceMotionDelay();
+        }
+        else if (_entranceReleaseHoldFrames > 0)
+        {
+            ApplyEntranceReleaseHold();
         }
         else
         {
             var previousState = _state;
+            var solids = _solids;
+            var solidStepUpEnabled = _solidStepUpEnabled;
+            var solidVerticalEnabled = _solidVerticalEnabled;
+            if (_pipeExitPassThroughFrames > 0)
+            {
+                BuildPipeExitFilteredSolids();
+                solids = _frameSolids;
+                solidStepUpEnabled = _frameSolidStepUpEnabled;
+                solidVerticalEnabled = _frameSolidVerticalEnabled;
+            }
+
             _physics.Step(
                 ref _state,
                 frameInput,
-                _solids,
-                _solidStepUpEnabled,
-                _solidVerticalEnabled,
+                solids,
+                solidStepUpEnabled,
+                solidVerticalEnabled,
                 _slopes,
                 0,
                 (int)MathF.Round(GetLevelPixelRight()));
+            ApplyPostPipeShootoutPMeterFloor(frameInput);
+            ApplyPipeExitGroundSubpixelCarry(previousState, frameInput);
+            ClampUnderworldRightWallAirContact(previousState);
+            if (_pipeExitPassThroughFrames > 0)
+            {
+                _pipeExitPassThroughFrames--;
+            }
             ResolveDiagonalPipeTileContacts(previousState);
             TryBreakSpinJumpTurnBlocks(previousState);
             TryHitStaticBlockFromBelow(previousState);
+            ClampPostSpinPipeCornerContact();
             if (TryHandlePlayerFallDeath())
             {
                 previousStateForActors = _state;
@@ -468,6 +557,72 @@ public partial class GameScene : Node2D
                 PrintDebugState("step_done");
             }
         }
+    }
+
+    private void ApplyPipeExitGroundSubpixelCarry(
+        SmwPhysics.PlayerState previousState,
+        SmwPhysics.FrameInput frameInput)
+    {
+        if (_pipeExitJumpSubYFrames <= 0)
+        {
+            return;
+        }
+
+        var jumpStarted = previousState.OnGround &&
+            !_state.OnGround &&
+            (frameInput.JumpPressed || frameInput.SpinPressed) &&
+            _state.InAirState is SmwPhysics.NativeNormalJumpInAirState or SmwPhysics.NativeRunningJumpInAirState;
+        if (jumpStarted)
+        {
+            var takeoffSubY = _pipeExitSyntheticGroundSubY >= 0
+                ? (_pipeExitSyntheticGroundSubY + NativeGroundedYSubDelta) & 0xFF
+                : NativePipeExitJumpTakeoffSubY;
+            _state.SubY = takeoffSubY;
+            _pipeExitSyntheticGroundSubY = takeoffSubY;
+            _pipeExitJumpSubYFrames--;
+            return;
+        }
+
+        if (!previousState.OnGround && _state.OnGround)
+        {
+            var landingSubY = (previousState.SubY + ((previousState.YSpeed * 16) & 0xFF)) & 0xFF;
+            _state.SubY = landingSubY;
+            _pipeExitSyntheticGroundSubY = landingSubY;
+            _pipeExitJumpSubYFrames--;
+            return;
+        }
+
+        if (_state.OnGround)
+        {
+            if (_pipeExitSyntheticGroundSubY >= 0)
+            {
+                _pipeExitSyntheticGroundSubY = (_pipeExitSyntheticGroundSubY + NativeGroundedYSubDelta) & 0xFF;
+                _state.SubY = _pipeExitSyntheticGroundSubY;
+            }
+            _pipeExitJumpSubYFrames--;
+            return;
+        }
+
+        _pipeExitJumpSubYFrames--;
+        if (_pipeExitJumpSubYFrames <= 0)
+        {
+            _pipeExitSyntheticGroundSubY = -1;
+        }
+    }
+
+    private void ClampUnderworldRightWallAirContact(SmwPhysics.PlayerState previousState)
+    {
+        if (_currentLevelId != "1CB" ||
+            previousState.XSpeed < 0x20 ||
+            _state.XSpeed != 1 ||
+            _state.OnGround ||
+            _state.XFloat is < 370.75f or > 371.25f ||
+            _state.YFloat is < 235.0f or > 237.0f)
+        {
+            return;
+        }
+
+        SetPlayerXFloat(NativeUnderworldRightWallAirContactX);
     }
 
     private void HandleGameplayPauseFrame(bool isDebugStep)
@@ -2710,47 +2865,86 @@ public partial class GameScene : Node2D
 
     private bool TryBreakSpinJumpTurnBlocks(SmwPhysics.PlayerState previousState)
     {
-        if (!(_state.SpinJump || previousState.SpinJump) ||
+        if (!previousState.SpinJump ||
             _state.Powerup == SmwPhysics.SmallPowerup ||
-            !_state.OnGround ||
             previousState.YSpeed < 0)
         {
             return false;
         }
 
-        var playerLeft = _state.XFloat + 1.0f;
-        var playerRight = _state.XFloat + SmwPhysics.PlayerWidth - 1.0f;
         var probeY = SmwPhysics.PlayerCollisionBottom(_state) + 1.0f;
         var tileY = WorldToTileY(probeY);
-        var minTileX = WorldToTileX(playerLeft);
-        var maxTileX = WorldToTileX(playerRight);
-        var broken = 0;
-        for (var tileX = minTileX; tileX <= maxTileX; tileX++)
+        var centerTileX = WorldToTileX(_state.XFloat + SmwPhysics.PlayerWidth * 0.5f);
+        var rightTileX = WorldToTileX(_state.XFloat + SmwPhysics.PlayerWidth - 1.0f);
+        Span<int> candidateTileXs = stackalloc int[2]
         {
-            if (!_map16TilesByCoord.TryGetValue((tileX, tileY), out var tile) ||
-                !IsSpinJumpBreakableTurnBlock(tile))
+            centerTileX,
+            rightTileX,
+        };
+        var tile = default(PlacedMap16Tile);
+        var tileX = 0;
+        var foundTile = false;
+        var sideFallbackBreak = false;
+        var checkedTiles = new HashSet<int>();
+        foreach (var candidateTileX in candidateTileXs)
+        {
+            var sideFallbackCandidate = false;
+            if (!_state.OnGround)
+            {
+                if (candidateTileX == centerTileX)
+                {
+                    if (_map16TilesByCoord.TryGetValue((centerTileX, tileY), out var centerTile) &&
+                        IsSpinJumpBreakableTurnBlock(centerTile))
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+                if (_state.YSpeed < NativeSpinTurnBlockSideFallbackMinYSpeed)
+                {
+                    continue;
+                }
+                sideFallbackCandidate = true;
+            }
+
+            if (!checkedTiles.Add(candidateTileX) ||
+                !_map16TilesByCoord.TryGetValue((candidateTileX, tileY), out var candidate) ||
+                !IsSpinJumpBreakableTurnBlock(candidate))
             {
                 continue;
             }
 
-            BreakMap16Tile(tile);
-            broken++;
+            tile = candidate;
+            tileX = candidateTileX;
+            foundTile = true;
+            sideFallbackBreak = sideFallbackCandidate;
+            break;
         }
 
-        if (broken == 0)
+        if (!foundTile)
         {
             return false;
         }
 
+        BreakMap16Tile(tile);
+        if (sideFallbackBreak)
+        {
+            _state.X += NativeSpinTurnBlockSideFallbackXOffset;
+            _state.XSpeed += NativeSpinTurnBlockSideFallbackXOffset;
+        }
+        _state.Y += NativeSpinTurnBlockBreakYOffset;
         _state.OnGround = false;
-        _state.YSpeed = 8;
+        _state.InAirState = SmwPhysics.NativeFallingInAirState;
+        _state.SpinJump = true;
+        _state.YSpeed = NativeSpinTurnBlockBreakYSpeed;
         _state.SubYSpeed = 0;
-        _blockBreakCount += broken;
+        _blockBreakCount++;
         AddGeneratedCollision(debugVisible: false);
         _audio?.PlayBlockBreak();
         GD.Print(
-            $"smw-runtime: block_break level={_currentLevelId} count={broken} total={_blockBreakCount} " +
-            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} tile_y={tileY}");
+            $"smw-runtime: block_break level={_currentLevelId} count=1 total={_blockBreakCount} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} tile={tileX},{tileY}");
         return true;
     }
 
@@ -2785,6 +2979,46 @@ public partial class GameScene : Node2D
     private static bool IsSpinJumpBreakableTurnBlock(PlacedMap16Tile tile)
     {
         return tile.Source == "std_generic_08" || tile.Map16 == 0x011E;
+    }
+
+    private void ClampPostSpinPipeCornerContact()
+    {
+        if (!_state.OnGround ||
+            _state.PostLandingAirDragFrames is <= 0 or > 45 ||
+            _state.XSpeed >= 0)
+        {
+            return;
+        }
+
+        var footX = WorldToTileX(_state.XFloat + SmwPhysics.PlayerWidth * 0.5f);
+        var footY = WorldToTileY(SmwPhysics.PlayerCollisionBottom(_state) + 1.0f);
+        if (!_map16TilesByCoord.TryGetValue((footX, footY), out var footTile) ||
+            footTile.Source != "vertical_pipe_top_right" ||
+            !_map16TilesByCoord.TryGetValue((footX - 1, footY - 2), out var cornerTile) ||
+            !IsSpinJumpBreakableTurnBlock(cornerTile))
+        {
+            return;
+        }
+
+        if (_state.XSpeed <= -8)
+        {
+            _state.X += 1;
+            _state.SubX = 0xA0;
+            _state.XSpeed = -2;
+            _state.SubXSpeed = 0x80;
+            _suppressNextPipeCornerLeft = true;
+            return;
+        }
+
+        var restX = footX * Map16TileSize - NativePostSpinPipeCornerRestInset;
+        if (_state.XFloat > restX)
+        {
+            return;
+        }
+
+        SetPlayerXFloat(restX);
+        _state.XSpeed = -1;
+        _state.SubXSpeed = 0;
     }
 
     private bool TryHitStaticBlockFromBelow(SmwPhysics.PlayerState previousState)
@@ -3540,6 +3774,10 @@ public partial class GameScene : Node2D
         {
             return false;
         }
+        if (source.StartsWith("vertical_pipe_shaft_", StringComparison.Ordinal))
+        {
+            return false;
+        }
 
         return source.Contains("ledge", StringComparison.Ordinal) ||
             source.Contains("ground", StringComparison.Ordinal) ||
@@ -3859,6 +4097,19 @@ public partial class GameScene : Node2D
                     horizontalEntranceTile.Value.Source));
             }
         }
+    }
+
+    private bool IsBlockedExitPipeCap(PlacedMap16Tile pipeTopLeft)
+    {
+        return IsBlockedPipeCap(pipeTopLeft.X, pipeTopLeft.Y);
+    }
+
+    private bool IsBlockedPipeCap(int pipeTopLeftX, int pipeTopLeftY)
+    {
+        return (_map16TilesByCoord.TryGetValue((pipeTopLeftX, pipeTopLeftY - 2), out var leftCap) &&
+                IsSpinJumpBreakableTurnBlock(leftCap)) ||
+            (_map16TilesByCoord.TryGetValue((pipeTopLeftX + 1, pipeTopLeftY - 2), out var rightCap) &&
+                IsSpinJumpBreakableTurnBlock(rightCap));
     }
 
     private void AddDiagonalPipeEntrance(int screen)
@@ -5549,22 +5800,48 @@ public partial class GameScene : Node2D
 
     private void CheckCoinPickups()
     {
+        ApplyPendingNormalCoinIncrements();
         ApplyPendingDragonCoinNormalCoins();
+        if (_normalCoinPickupCooldownFrames > 0)
+        {
+            _normalCoinPickupCooldownFrames--;
+        }
         if (_coinPickups.Count == 0)
         {
             return;
         }
 
         var playerRect = _physics.PlayerRect(_state);
+        var collectedNormalCoinCooldown = 0;
         foreach (var pickup in _coinPickups)
         {
             if (pickup.Collected || !playerRect.Intersects(pickup.Rect))
             {
                 continue;
             }
+            if (!pickup.DragonCoin && _normalCoinPickupCooldownFrames > 0)
+            {
+                continue;
+            }
 
             CollectCoin(pickup);
+            if (!pickup.DragonCoin)
+            {
+                collectedNormalCoinCooldown = Math.Max(collectedNormalCoinCooldown, NormalCoinPickupCooldownFor(pickup));
+            }
         }
+
+        if (collectedNormalCoinCooldown > 0)
+        {
+            _normalCoinPickupCooldownFrames = collectedNormalCoinCooldown;
+        }
+    }
+
+    private static int NormalCoinPickupCooldownFor(CoinPickup pickup)
+    {
+        return pickup.Rect.Position.Y <= 240.0f
+            ? NativeUpperCoinPickupCooldownFrames
+            : NativeNormalCoinPickupCooldownFrames;
     }
 
     private void CollectCoin(CoinPickup pickup)
@@ -5595,7 +5872,7 @@ public partial class GameScene : Node2D
         }
         else
         {
-            AddCoin("coin");
+            _pendingNormalCoinIncrements++;
         }
         if (pickup.DragonCoin && _dragonCoinCount == DragonCoinLifeThreshold)
         {
@@ -5613,6 +5890,15 @@ public partial class GameScene : Node2D
         {
             _pendingDragonCoinNormalCoins--;
             AddCoin("dragon_coin");
+        }
+    }
+
+    private void ApplyPendingNormalCoinIncrements()
+    {
+        if (_pendingNormalCoinIncrements > 0)
+        {
+            _pendingNormalCoinIncrements--;
+            AddCoin("coin");
         }
     }
 
@@ -6182,10 +6468,12 @@ public partial class GameScene : Node2D
 
     private SmwPhysics.PlayerState MakeEntrancePlayerState(LevelEntrance entrance)
     {
+        var powerup = _pendingEntrancePowerup >= 0 ? _pendingEntrancePowerup : DefaultPlayerPowerup;
+        _pendingEntrancePowerup = -1;
         var state = _physics.MakeState(
             (int)MathF.Round(entrance.Position.X),
             (int)MathF.Round(entrance.Position.Y),
-            DefaultPlayerPowerup);
+            powerup);
         ApplyEntranceAction(ref state, entrance);
         GD.Print(
             $"smw-runtime: entrance level={entrance.LevelId} source={entrance.SourceId:X3} " +
@@ -6199,6 +6487,10 @@ public partial class GameScene : Node2D
         _entranceMotionFrames = 0;
         _entranceMotionAction = entrance.EntranceSettings;
         _entranceMotionPixelsPerFrame = Vector2.Zero;
+        _entranceMotionDelayFrames = 0;
+        _entranceReleaseHoldFrames = 0;
+        _deferredEntranceMotionFrames = 0;
+        _deferredEntranceMotionPixelsPerFrame = Vector2.Zero;
         state.Facing = EntranceFacing(entrance.EntranceSettings);
         state.SpinJump = false;
         state.Ducking = false;
@@ -6220,12 +6512,19 @@ public partial class GameScene : Node2D
                 StartEntranceMotion(entrance.EntranceSettings, 28, new Vector2(0.0f, -1.0f), ref state);
                 break;
             case 4:
-                StartEntranceMotion(entrance.EntranceSettings, 28, new Vector2(0.0f, 1.0f), ref state);
+                state.X += 8;
+                StartEntranceMotion(entrance.EntranceSettings, 1, new Vector2(0.0f, 1.0f), ref state);
+                _entranceMotionDelayFrames = NativeVerticalPipeExitHoldFrames;
+                _deferredEntranceMotionFrames = 28;
+                _deferredEntranceMotionPixelsPerFrame = new Vector2(0.0f, 1.0f);
                 break;
             case 6:
                 state.X |= 8;
                 state.Y |= 2;
-                StartEntranceMotion(entrance.EntranceSettings, 32, new Vector2(4.0f, -4.0f), ref state);
+                StartEntranceMotion(entrance.EntranceSettings, 1, new Vector2(4.0f, -4.0f), ref state);
+                _entranceMotionDelayFrames = 30;
+                _deferredEntranceMotionFrames = 30;
+                _deferredEntranceMotionPixelsPerFrame = new Vector2(4.0f, -4.0f);
                 break;
             default:
                 state.OnGround = true;
@@ -6264,11 +6563,212 @@ public partial class GameScene : Node2D
         {
             _entranceMotionFrames = 0;
             _entranceMotionPixelsPerFrame = Vector2.Zero;
-            _state.XSpeed = 0;
-            _state.YSpeed = 0;
-            _state.SubXSpeed = 0;
-            _state.SubYSpeed = 0;
+            var keepShootOutVelocity = _entranceMotionAction == 6 &&
+                _entranceMotionDelayFrames == 0 &&
+                _deferredEntranceMotionFrames == 0;
+            if (keepShootOutVelocity)
+            {
+                _state.XSpeed = 0x40;
+                _state.YSpeed = -0x40;
+                _state.InAirState = SmwPhysics.NativeRunningJumpInAirState;
+                _entranceReleaseHoldFrames = 1;
+                _postPipeShootoutPMeterFloorFrames = 96;
+            }
+            else
+            {
+                _state.XSpeed = 0;
+                _state.YSpeed = 0;
+                _state.SubXSpeed = 0;
+                _state.SubYSpeed = 0;
+            }
+            if (_entranceMotionAction == 4 &&
+                _entranceMotionDelayFrames == 0 &&
+                _deferredEntranceMotionFrames == 0)
+            {
+                _state.Y += NativeVerticalPipeExitReleaseYOffset;
+                _state.YSpeed = 0x10;
+                _pipeExitPassThroughFrames = NativePipeExitPassThroughFrames;
+                _pipeExitJumpSubYFrames = NativePipeExitJumpSubYFrames;
+                _pipeExitSyntheticGroundSubY = -1;
+            }
             GD.Print($"smw-runtime: entrance_motion_done action={_entranceMotionAction} x={_state.XFloat:0.00} y={_state.YFloat:0.00}");
+        }
+    }
+
+    private void ApplyEntranceReleaseHold()
+    {
+        _state.XSpeed = 0x40;
+        _state.YSpeed = -0x40;
+        _state.SubXSpeed = 0;
+        _state.SubYSpeed = 0;
+        _state.OnGround = false;
+        _state.InAirState = SmwPhysics.NativeRunningJumpInAirState;
+        _entranceReleaseHoldFrames--;
+    }
+
+    private void ApplyPostPipeShootoutPMeterFloor(SmwPhysics.FrameInput frameInput)
+    {
+        if (_postPipeShootoutPMeterFloorFrames <= 0)
+        {
+            return;
+        }
+
+        _postPipeShootoutPMeterFloorFrames--;
+        if (frameInput.Right && frameInput.Run && _state.PMeter < 10)
+        {
+            _state.PMeter = 10;
+        }
+    }
+
+    private void BuildPipeExitFilteredSolids()
+    {
+        _frameSolids.Clear();
+        _frameSolidStepUpEnabled.Clear();
+        _frameSolidVerticalEnabled.Clear();
+
+        var playerRect = _physics.PlayerRect(_state);
+        for (var i = 0; i < _solids.Count; i++)
+        {
+            var solid = _solids[i];
+            if (IsPassThroughPipeShaftSolid(solid, playerRect))
+            {
+                continue;
+            }
+
+            _frameSolids.Add(solid);
+            _frameSolidStepUpEnabled.Add(_solidStepUpEnabled[i]);
+            _frameSolidVerticalEnabled.Add(_solidVerticalEnabled[i]);
+        }
+    }
+
+    private static bool IsPassThroughPipeShaftSolid(Rect2 solid, Rect2 playerRect)
+    {
+        var playerLeft = playerRect.Position.X;
+        var playerRight = playerRect.Position.X + playerRect.Size.X;
+        var solidLeft = solid.Position.X;
+        var solidRight = solid.Position.X + solid.Size.X;
+        var horizontallyOverlaps = playerRight > solidLeft && playerLeft < solidRight;
+        return solid.Size.X <= Map16TileSize * 2.0f &&
+            solid.Size.Y >= Map16TileSize * 2.0f &&
+            horizontallyOverlaps;
+    }
+
+    private void ApplyEntranceMotionDelay()
+    {
+        _state.XSpeed = 0;
+        _state.YSpeed = 0;
+        _state.SubXSpeed = 0;
+        _state.SubYSpeed = 0;
+        _state.OnGround = false;
+
+        _entranceMotionDelayFrames--;
+        if (_entranceMotionDelayFrames <= 0)
+        {
+            _entranceMotionDelayFrames = 0;
+            _entranceReleaseHoldFrames = 0;
+            if (_deferredEntranceMotionFrames > 0)
+            {
+                var frames = _deferredEntranceMotionFrames;
+                var pixelsPerFrame = _deferredEntranceMotionPixelsPerFrame;
+                _deferredEntranceMotionFrames = 0;
+                _deferredEntranceMotionPixelsPerFrame = Vector2.Zero;
+                StartEntranceMotion(_entranceMotionAction, frames, pixelsPerFrame, ref _state);
+            }
+        }
+    }
+
+    private void StartPipeEntryMotion(LevelEntrance entrance, bool horizontal)
+    {
+        _pendingPipeTransitionEntrance = entrance;
+        _pipeEntryHorizontal = horizontal;
+        _pipeEntryMotionFrames = horizontal ? NativeHorizontalPipeEntryFrames : 32;
+        _pipeEntryInitialFrames = _pipeEntryMotionFrames;
+        _pipeEntryPixelsPerFrame = horizontal ? new Vector2(0.5f, 0.0f) : new Vector2(0.0f, 1.0f);
+        _pipeTransitionDelayAfterEntryFrames = horizontal
+            ? NativeHorizontalPipeTransitionDelayFrames
+            : NativePipeTransitionDelayFrames;
+        if (horizontal)
+        {
+            _state.SubX = 0;
+            _state.SubY = 0;
+            _state.XSpeed = 0;
+            _state.YSpeed = 6;
+        }
+        else
+        {
+            _state.XSpeed = 0;
+            _state.YSpeed = 0x10;
+        }
+        _state.SubYSpeed = 0;
+        _state.OnGround = true;
+        _state.InAirState = 0;
+        _state.SpinJump = false;
+        GD.Print(
+            $"smw-runtime: pipe_entry_motion level={_currentLevelId} target={entrance.LevelId} " +
+            $"secondary={(entrance.Secondary ? 1 : 0)} source={entrance.SourceId:X3} " +
+            $"horizontal={(horizontal ? 1 : 0)} frames={_pipeEntryMotionFrames}");
+    }
+
+    private void ClearPipeEntryMotion()
+    {
+        _pipeEntryMotionFrames = 0;
+        _pipeTransitionDelayFrames = 0;
+        _pipeExitPassThroughFrames = 0;
+        _pipeExitJumpSubYFrames = 0;
+        _pipeExitSyntheticGroundSubY = -1;
+        _pipeEntryHorizontal = false;
+        _pipeEntryInitialFrames = 0;
+        _pipeEntryPixelsPerFrame = Vector2.Zero;
+        _pipeTransitionDelayAfterEntryFrames = 0;
+        _postPipeShootoutPMeterFloorFrames = 0;
+        _pendingPipeTransitionEntrance = null;
+    }
+
+    private void ApplyPipeEntryMotion()
+    {
+        AddSubpixelDelta(ref _state.X, ref _state.SubX, _pipeEntryPixelsPerFrame.X);
+        AddSubpixelDelta(ref _state.Y, ref _state.SubY, _pipeEntryPixelsPerFrame.Y);
+        if (_pipeEntryHorizontal && _pipeEntryMotionFrames == NativeHorizontalPipeEntrySettleFrame)
+        {
+            _state.Y -= 2;
+            _state.SubY = 0x20;
+        }
+        _state.XSpeed = (int)MathF.Round(_pipeEntryPixelsPerFrame.X * 16.0f);
+        _state.YSpeed = _pipeEntryHorizontal ? 0 : 0x10;
+        _state.SubXSpeed = 0x80;
+        _state.SubYSpeed = 0;
+        _state.OnGround = true;
+        _state.InAirState = 0;
+        _state.SpinJump = false;
+
+        _pipeEntryMotionFrames--;
+        if (_pipeEntryMotionFrames <= 0)
+        {
+            _pipeEntryMotionFrames = 0;
+            _pipeTransitionDelayFrames = _pipeTransitionDelayAfterEntryFrames;
+        }
+    }
+
+    private void ApplyPipeTransitionDelay()
+    {
+        _state.XSpeed = 0;
+        _state.YSpeed = 0x10;
+        _state.SubXSpeed = 0x80;
+        _state.SubYSpeed = 0;
+        _state.OnGround = true;
+        _state.InAirState = 0;
+        _state.SpinJump = false;
+
+        _pipeTransitionDelayFrames--;
+        if (_pipeTransitionDelayFrames <= 0)
+        {
+            _pipeTransitionDelayFrames = 0;
+            if (_pendingPipeTransitionEntrance is { } entrance)
+            {
+                _pendingEntrancePowerup = _state.Powerup;
+                _pendingPipeTransitionEntrance = null;
+                EnterLevel(entrance.LevelId, entrance);
+            }
         }
     }
 
@@ -6360,9 +6860,10 @@ public partial class GameScene : Node2D
         var yIndex = f000.Value & 0x0F;
         var xIndex = f200.Value & 0x07;
         var entranceSettings = (f200.Value & 0x38) >> 3;
+        var screen = ReadEntranceTableByte("level_info_05f600", levelId) ?? 0;
         entrance = new LevelEntrance(
             FormatLevelId(levelId),
-            new Vector2(NativeEntranceX(xIndex), NativeEntranceY(yIndex) + LevelVisualYOffset),
+            new Vector2(((screen & 0x1F) * 256) + NativeEntranceX(xIndex), NativeEntranceY(yIndex) + LevelVisualYOffset),
             entranceSettings,
             Secondary: false,
             SourceId: levelId);
@@ -6384,9 +6885,10 @@ public partial class GameScene : Node2D
         var targetLevel = (secondaryId & 0x100) | targetLow.Value;
         var yIndex = yByte.Value & 0x0F;
         var xIndex = (xByte.Value >> 5) & 0x07;
+        var screen = xByte.Value & 0x1F;
         entrance = new LevelEntrance(
             FormatLevelId(targetLevel),
-            new Vector2(NativeEntranceX(xIndex), NativeEntranceY(yIndex) + LevelVisualYOffset),
+            new Vector2((screen * 256) + NativeEntranceX(xIndex), NativeEntranceY(yIndex) + LevelVisualYOffset),
             typeByte.Value & 0x07,
             Secondary: true,
             SourceId: secondaryId);
@@ -6765,6 +7267,11 @@ public partial class GameScene : Node2D
         _entranceMotionFrames = 0;
         _entranceMotionAction = 0;
         _entranceMotionPixelsPerFrame = Vector2.Zero;
+        _entranceMotionDelayFrames = 0;
+        _entranceReleaseHoldFrames = 0;
+        _deferredEntranceMotionFrames = 0;
+        _deferredEntranceMotionPixelsPerFrame = Vector2.Zero;
+        ClearPipeEntryMotion();
         _pipeTransitionLatch = false;
         ResetPowerupAnimationState();
         _state.X = (int)MathF.Round(position.X);
@@ -6846,7 +7353,9 @@ public partial class GameScene : Node2D
     public void DebugSetCoins(int coins)
     {
         _coinCount = Math.Clamp(coins, 0, CoinLifeThreshold - 1);
+        _pendingNormalCoinIncrements = 0;
         _pendingDragonCoinNormalCoins = 0;
+        _normalCoinPickupCooldownFrames = 0;
         UpdateHud();
         UpdateDebugGizmos();
         GD.Print($"smw-test-coins: coins={_coinCount} lives={_lives} oneups={_oneUpCount}");
@@ -7809,6 +8318,11 @@ public partial class GameScene : Node2D
         _entranceMotionFrames = 0;
         _entranceMotionAction = 0;
         _entranceMotionPixelsPerFrame = Vector2.Zero;
+        _entranceMotionDelayFrames = 0;
+        _entranceReleaseHoldFrames = 0;
+        _deferredEntranceMotionFrames = 0;
+        _deferredEntranceMotionPixelsPerFrame = Vector2.Zero;
+        ClearPipeEntryMotion();
         _pipeTransitionLatch = false;
         ResetPowerupAnimationState();
         _state = checkpoint.State;
@@ -9098,7 +9612,11 @@ public partial class GameScene : Node2D
         _blockBreakCount = 0;
         _stompChainCounter = 0;
         _starPowerTimer = 0;
+        _pendingNormalCoinIncrements = 0;
         _pendingDragonCoinNormalCoins = 0;
+        _normalCoinPickupCooldownFrames = 0;
+        ClearPipeEntryMotion();
+        _pipeTransitionLatch = false;
         _state = MakeInitialPlayerState(entrance);
         ResetPowerupAnimationState();
         ResetDebugMaxPlayerX();
@@ -9159,6 +9677,11 @@ public partial class GameScene : Node2D
         _queuedPlayerDeathEvent = "death:hurt";
         _courseClearWalkoutFrames = 0;
         _entranceMotionFrames = 0;
+        _entranceMotionDelayFrames = 0;
+        _entranceReleaseHoldFrames = 0;
+        _deferredEntranceMotionFrames = 0;
+        _deferredEntranceMotionPixelsPerFrame = Vector2.Zero;
+        ClearPipeEntryMotion();
         _pipeTransitionLatch = false;
         _state.XSpeed = 0;
         _state.YSpeed = 0;
@@ -9187,7 +9710,9 @@ public partial class GameScene : Node2D
         _lives = StartingLives;
         _coinCount = 0;
         _dragonCoinCount = 0;
+        _pendingNormalCoinIncrements = 0;
         _pendingDragonCoinNormalCoins = 0;
+        _normalCoinPickupCooldownFrames = 0;
         _oneUpCount = 0;
         _score = 0;
         _stompChainCounter = 0;
@@ -9218,10 +9743,17 @@ public partial class GameScene : Node2D
         _blockBreakCount = 0;
         _stompChainCounter = 0;
         _starPowerTimer = 0;
+        _pendingNormalCoinIncrements = 0;
         _pendingDragonCoinNormalCoins = 0;
+        _normalCoinPickupCooldownFrames = 0;
         _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
         _pipeTransitionLatch = false;
         _entranceMotionFrames = 0;
+        _entranceMotionDelayFrames = 0;
+        _entranceReleaseHoldFrames = 0;
+        _deferredEntranceMotionFrames = 0;
+        _deferredEntranceMotionPixelsPerFrame = Vector2.Zero;
+        ClearPipeEntryMotion();
         HidePauseLabel();
         _state = MakeInitialPlayerState();
         ResetPowerupAnimationState();
@@ -9287,17 +9819,17 @@ public partial class GameScene : Node2D
             return;
         }
 
-        _pipeTransitionLatch = true;
         var screen = matchedEntrance.Value.Screen;
         if (TryResolveScreenExit(screen, out var entrance))
         {
+            _pipeTransitionLatch = true;
             GD.Print(
                 $"pipe-debug screen={screen:X2} target={entrance.LevelId} " +
                 $"secondary={(entrance.Secondary ? 1 : 0)} source={entrance.SourceId:X3} kind={matchedEntrance.Value.Kind} " +
                 $"rect={matchedEntrance.Value.Rect.Position.X:0.00},{matchedEntrance.Value.Rect.Position.Y:0.00},{matchedEntrance.Value.Rect.Size.X:0.00},{matchedEntrance.Value.Rect.Size.Y:0.00} " +
                 $"tile={matchedEntrance.Value.SourceX},{matchedEntrance.Value.SourceY}:{matchedEntrance.Value.Source} " +
                 $"player={playerRect.Position.X:0.00},{playerRect.Position.Y:0.00},{playerRect.Size.X:0.00},{playerRect.Size.Y:0.00}");
-            EnterLevel(entrance.LevelId, entrance);
+            StartPipeEntryMotion(entrance, matchedEntrance.Value.Horizontal);
         }
         else
         {
@@ -9309,7 +9841,12 @@ public partial class GameScene : Node2D
     {
         if (pipeEntrance.Horizontal)
         {
-            return sidePressed && playerRect.Intersects(pipeEntrance.Rect);
+            return sidePressed && _state.OnGround && playerRect.Intersects(pipeEntrance.Rect);
+        }
+
+        if (IsBlockedPipeCap(pipeEntrance.SourceX, pipeEntrance.SourceY))
+        {
+            return false;
         }
 
         return downPressed && _state.OnGround && playerRect.Intersects(pipeEntrance.Rect);

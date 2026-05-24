@@ -37,6 +37,9 @@ public sealed class SmwPhysics
     private const float StepUpTolerance = 12.0f;
     private const float MaxHorizontalCollisionCorrection = 64.0f;
     private const float NativeHorizontalWallSlack = 1.0f;
+    private const int NativeFastAirborneWallSnapSpeed = 0x10;
+    private const int NativeRightWallPostCorrectionNibble = 0x02;
+    private const int NativeLeftWallPostCorrectionNibble = 0x0D;
 
     public static readonly sbyte[] PMeterDeltaTable =
     [
@@ -1055,7 +1058,7 @@ public sealed class SmwPhysics
                 {
                     continue;
                 }
-                if (!state.OnGround && allowVerticalForWallSlack && !HasNativeHorizontalSideProbeYOverlap(state, rect, solid))
+                if (allowVerticalForWallSlack && !HasNativeHorizontalSideProbeYOverlap(state, rect, solid))
                 {
                     continue;
                 }
@@ -1063,27 +1066,66 @@ public sealed class SmwPhysics
                 var preserveSubXSpeed = !state.OnGround && allowVerticalForWallSlack;
                 if (state.XSpeed > 0)
                 {
-                    var wallSlack = !state.OnGround && allowVerticalForWallSlack ? NativeHorizontalWallSlack : 0.0f;
-                    var resolvedX = solid.Position.X - PlayerWidth + wallSlack;
-                    if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
+                    if (preserveSubXSpeed &&
+                        Math.Abs(state.XSpeed) < NativeFastAirborneWallSnapSpeed &&
+                        (state.X & 0x0F) == NativeRightWallPostCorrectionNibble)
                     {
                         continue;
                     }
 
-                    state.X = (int)MathF.Round(resolvedX);
+                    if (state.OnGround && solid.Size.X > 16.0f)
+                    {
+                        state.X -= 1;
+                    }
+                    else if (preserveSubXSpeed && Math.Abs(state.XSpeed) < NativeFastAirborneWallSnapSpeed)
+                    {
+                        state.X -= 1;
+                    }
+                    else
+                    {
+                        var wallSlack = !state.OnGround && allowVerticalForWallSlack ? NativeHorizontalWallSlack : 0.0f;
+                        var resolvedX = solid.Position.X - PlayerWidth + wallSlack;
+                        if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
+                        {
+                            continue;
+                        }
+
+                        state.X = (int)MathF.Round(resolvedX);
+                    }
                 }
                 else if (state.XSpeed < 0)
                 {
-                    var wallSlack = !state.OnGround && allowVerticalForWallSlack ? NativeHorizontalWallSlack : 0.0f;
-                    var resolvedX = solid.Position.X + solid.Size.X - wallSlack;
-                    if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
+                    if (preserveSubXSpeed &&
+                        Math.Abs(state.XSpeed) < NativeFastAirborneWallSnapSpeed &&
+                        (state.X & 0x0F) == NativeLeftWallPostCorrectionNibble)
                     {
                         continue;
                     }
 
-                    state.X = (int)MathF.Round(resolvedX);
+                    if (state.OnGround && solid.Size.X > 16.0f)
+                    {
+                        state.X += 1;
+                    }
+                    else if (preserveSubXSpeed && Math.Abs(state.XSpeed) < NativeFastAirborneWallSnapSpeed)
+                    {
+                        state.X += 1;
+                    }
+                    else
+                    {
+                        var wallSlack = !state.OnGround && allowVerticalForWallSlack ? NativeHorizontalWallSlack : 0.0f;
+                        var resolvedX = solid.Position.X + solid.Size.X - wallSlack;
+                        if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
+                        {
+                            continue;
+                        }
+
+                        state.X = (int)MathF.Round(resolvedX);
+                    }
                 }
-                state.SubX = 0;
+                if (!preserveSubXSpeed || Math.Abs(state.XSpeed) >= NativeFastAirborneWallSnapSpeed)
+                {
+                    state.SubX = 0;
+                }
                 if (!preserveSubXSpeed)
                 {
                     state.SubXSpeed = 0;
@@ -1100,6 +1142,7 @@ public sealed class SmwPhysics
                     continue;
                 }
 
+                var preserveVerticalSubpixel = false;
                 if (state.YSpeed > 0)
                 {
                     if (!HasNativeSolidSupport(state, solid))
@@ -1111,6 +1154,7 @@ public sealed class SmwPhysics
                     state.OnGround = true;
                     state.InAirState = 0;
                     state.RunningTakeoff = false;
+                    preserveVerticalSubpixel = state.SpinJump;
                 }
                 else if (state.YSpeed < 0)
                 {
@@ -1121,7 +1165,10 @@ public sealed class SmwPhysics
 
                     state.Y = AnchorYForCollisionTop(solid.Position.Y + solid.Size.Y, state);
                 }
-                state.SubY = 0;
+                if (!preserveVerticalSubpixel)
+                {
+                    state.SubY = 0;
+                }
                 state.SubYSpeed = 0;
                 state.YSpeed = 0;
             }
@@ -1142,7 +1189,7 @@ public sealed class SmwPhysics
 
     private static bool TryStepUp(ref PlayerState state, Rect2 solid, Rect2 playerRect)
     {
-        if (state.YSpeed < 0)
+        if (!state.OnGround || state.YSpeed < 0)
         {
             return false;
         }
@@ -1232,7 +1279,9 @@ public sealed class SmwPhysics
 
     private static bool HasNativeHorizontalSideProbeYOverlap(PlayerState state, Rect2 playerRect, Rect2 solid)
     {
-        var probeY = state.Powerup == SmallPowerup || state.Ducking
+        var probeY = state.OnGround
+            ? playerRect.Position.Y + playerRect.Size.Y
+            : state.Powerup == SmallPowerup || state.Ducking
             ? playerRect.Position.Y + playerRect.Size.Y * 0.5f
             : playerRect.Position.Y + 26.0f;
         return probeY >= solid.Position.Y && probeY < solid.Position.Y + solid.Size.Y;
