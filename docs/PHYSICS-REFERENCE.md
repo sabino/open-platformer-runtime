@@ -59,6 +59,6 @@ Those curves explain why a plain "realistic" platformer controller feels wrong h
 ## Porting Priorities
 
 1. Replace temporary jump velocities and the remaining simplified branch conditions with the native vertical-speed path for normal jump, spin jump, running jump, cape flight/diving, underwater, climbing, riding Yoshi, and damage/knockback states.
-2. Keep all player-motion tests in native units (`XSpeed`, `YSpeed`, subpixel position), then add pixel-trajectory golden tests for short scripted input sequences.
+2. Keep extending player-motion tests in native units (`XSpeed`, `YSpeed`, subpixel position). The current smoke gate locks sustained walk/run, small-jump hold/release, and ledge-fall trajectories; the next additions should cover spin jumps, cape takeoff/flight, underwater movement, climbing, Yoshi, and damage/knockback states.
 3. Treat the Hamaluik curves as visual sanity checks only after native-unit tests pass.
 4. Move slope handling toward native Map16 act-as and block interaction code instead of treating modern collision lines as authoritative.

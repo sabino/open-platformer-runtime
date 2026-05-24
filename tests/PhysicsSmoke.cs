@@ -23,6 +23,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckNativeMotionTrajectories(physics))
+        {
+            return 1;
+        }
         if (!CheckNativeSlopeHorizontalPhysics(physics))
         {
             return 1;
@@ -433,6 +437,211 @@ public static class PhysicsSmoke
         }
 
         return true;
+    }
+
+    private static bool CheckNativeMotionTrajectories(SmwPhysics physics)
+    {
+        var floor = new List<Rect2> { new(0, 100, 4096, 16) };
+
+        var walk = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        walk.OnGround = true;
+        for (var i = 0; i < 60; i++)
+        {
+            physics.Step(ref walk, new SmwPhysics.FrameInput { Right = true }, floor);
+        }
+        if (!ExpectState(
+            "walk60",
+            walk,
+            x: 83,
+            subX: 176,
+            y: 68,
+            subY: 0,
+            xSpeed: 20,
+            subXSpeed: 32,
+            ySpeed: 0,
+            onGround: true,
+            pMeter: 0,
+            inAirState: 0x00,
+            jumpHeldFrames: 0))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < 60; i++)
+        {
+            physics.Step(ref walk, new SmwPhysics.FrameInput { Right = true }, floor);
+        }
+        if (!ExpectState(
+            "walk120",
+            walk,
+            x: 159,
+            subX: 160,
+            y: 68,
+            subY: 0,
+            xSpeed: 20,
+            subXSpeed: 192,
+            ySpeed: 0,
+            onGround: true,
+            pMeter: 0,
+            inAirState: 0x00,
+            jumpHeldFrames: 0))
+        {
+            return false;
+        }
+
+        var run = physics.MakeState(16, 68, SmwPhysics.BigPowerup);
+        run.OnGround = true;
+        for (var i = 0; i < 60; i++)
+        {
+            physics.Step(ref run, new SmwPhysics.FrameInput { Right = true, Run = true }, floor);
+        }
+        if (!ExpectState(
+            "run60",
+            run,
+            x: 125,
+            subX: 80,
+            y: 68,
+            subY: 0,
+            xSpeed: 36,
+            subXSpeed: 96,
+            ySpeed: 0,
+            onGround: true,
+            pMeter: 72,
+            inAirState: 0x00,
+            jumpHeldFrames: 0))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < 60; i++)
+        {
+            physics.Step(ref run, new SmwPhysics.FrameInput { Right = true, Run = true }, floor);
+        }
+        if (!ExpectState(
+            "run120",
+            run,
+            x: 289,
+            subX: 144,
+            y: 68,
+            subY: 0,
+            xSpeed: 48,
+            subXSpeed: 96,
+            ySpeed: 0,
+            onGround: true,
+            pMeter: 112,
+            inAirState: 0x00,
+            jumpHeldFrames: 0))
+        {
+            return false;
+        }
+
+        var jumpHeld = physics.MakeState(16, 84, SmwPhysics.SmallPowerup);
+        jumpHeld.OnGround = true;
+        physics.Step(ref jumpHeld, new SmwPhysics.FrameInput { Jump = true, JumpPressed = true }, floor);
+        for (var i = 1; i < 30; i++)
+        {
+            physics.Step(ref jumpHeld, new SmwPhysics.FrameInput { Jump = true }, floor);
+        }
+        if (!ExpectState(
+            "small_jump_hold30",
+            jumpHeld,
+            x: 16,
+            subX: 0,
+            y: 21,
+            subY: 48,
+            xSpeed: 0,
+            subXSpeed: 0,
+            ySpeed: 10,
+            onGround: false,
+            pMeter: 0,
+            inAirState: 0x24,
+            jumpHeldFrames: 30))
+        {
+            return false;
+        }
+
+        for (var i = 30; i < 60; i++)
+        {
+            physics.Step(ref jumpHeld, new SmwPhysics.FrameInput(), floor);
+        }
+        if (!ExpectState(
+            "small_jump_release60",
+            jumpHeld,
+            x: 16,
+            subX: 0,
+            y: 83,
+            subY: 16,
+            xSpeed: 0,
+            subXSpeed: 0,
+            ySpeed: 0,
+            onGround: true,
+            pMeter: 0,
+            inAirState: 0x00,
+            jumpHeldFrames: 0))
+        {
+            return false;
+        }
+
+        var fall = physics.MakeState(5000, 84, SmwPhysics.SmallPowerup);
+        fall.OnGround = true;
+        for (var i = 0; i < 45; i++)
+        {
+            physics.Step(ref fall, new SmwPhysics.FrameInput(), floor);
+        }
+        return ExpectState(
+            "ledge_fall45",
+            fall,
+            x: 5000,
+            subX: 0,
+            y: 253,
+            subY: 32,
+            xSpeed: 0,
+            subXSpeed: 0,
+            ySpeed: 70,
+            onGround: false,
+            pMeter: 0,
+            inAirState: 0x24,
+            jumpHeldFrames: 0);
+    }
+
+    private static bool ExpectState(
+        string name,
+        SmwPhysics.PlayerState state,
+        int x,
+        int subX,
+        int y,
+        int subY,
+        int xSpeed,
+        int subXSpeed,
+        int ySpeed,
+        bool onGround,
+        int pMeter,
+        int inAirState,
+        int jumpHeldFrames)
+    {
+        if (state.X == x &&
+            state.SubX == subX &&
+            state.Y == y &&
+            state.SubY == subY &&
+            state.XSpeed == xSpeed &&
+            state.SubXSpeed == subXSpeed &&
+            state.YSpeed == ySpeed &&
+            state.OnGround == onGround &&
+            state.PMeter == pMeter &&
+            state.InAirState == inAirState &&
+            state.JumpHeldFrames == jumpHeldFrames)
+        {
+            return true;
+        }
+
+        Console.Error.WriteLine(
+            $"{name} trajectory mismatch: " +
+            $"got x={state.X} subx={state.SubX} y={state.Y} suby={state.SubY} " +
+            $"xs={state.XSpeed} subxs={state.SubXSpeed} ys={state.YSpeed} " +
+            $"g={(state.OnGround ? 1 : 0)} p={state.PMeter} air=0x{state.InAirState:X2} jf={state.JumpHeldFrames}; " +
+            $"expected x={x} subx={subX} y={y} suby={subY} xs={xSpeed} subxs={subXSpeed} ys={ySpeed} " +
+            $"g={(onGround ? 1 : 0)} p={pMeter} air=0x{inAirState:X2} jf={jumpHeldFrames}");
+        return false;
     }
 
     private static bool CheckNativeSlopeHorizontalPhysics(SmwPhysics physics)
