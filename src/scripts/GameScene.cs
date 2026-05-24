@@ -2586,7 +2586,7 @@ public partial class GameScene : Node2D
 
     private bool TryBreakSpinJumpTurnBlocks(SmwPhysics.PlayerState previousState)
     {
-        if (!_state.SpinJump ||
+        if (!(_state.SpinJump || previousState.SpinJump) ||
             _state.Powerup == SmwPhysics.SmallPowerup ||
             !_state.OnGround ||
             previousState.YSpeed < 0)

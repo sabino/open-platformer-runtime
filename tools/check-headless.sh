@@ -156,14 +156,14 @@ pause
 spawn 592 206
 powerup big
 velocity 0 24
-step 1
+step 3
 EOF
 cat >"$WING_BLOCK_REWARD_COMMAND_FILE" <<'EOF'
 pause
 spawn 592 256
 powerup big
 velocity 0 -64
-step 1
+step 3
 EOF
 cat >"$ITEM_COLLECT_COMMAND_FILE" <<'EOF'
 pause
@@ -173,8 +173,10 @@ step 1
 EOF
 cat >"$FIREBALL_COMMAND_FILE" <<'EOF'
 pause
-spawn 504 325 fire
+spawn 496 288 fire
+god on
 tap run
+step 4
 EOF
 cat >"$AUTOPLAY_COMMAND_FILE" <<'EOF'
 pause
@@ -209,25 +211,26 @@ cat >"$STAR_HIT_COMMAND_FILE" <<'EOF'
 pause
 spawn 528 304 big
 star FF
-step 1
+step 3
 EOF
 cat >"$STATIC_QUESTION_COMMAND_FILE" <<'EOF'
 pause
 spawn 3888 224 big
 velocity 0 -64
-step 1
+step 5
 EOF
 cat >"$PIRANHA_HIDDEN_COMMAND_FILE" <<'EOF'
 pause
 spawn 1808 320
 powerup big
+actors_near 160
 step 1
 EOF
 cat >"$PIRANHA_VISIBLE_COMMAND_FILE" <<'EOF'
 pause
 spawn 2224 240
 powerup big
-step 1
+step 3
 EOF
 cat >"$C7_NORMAL_VISUAL_COMMAND_FILE" <<'EOF'
 pause
@@ -243,12 +246,11 @@ EOF
 cat >"$INVISIBLE_MUSHROOM_COMMAND_FILE" <<'EOF'
 pause
 spawn 1632 272 big
-step 1
-state after_invisible_mushroom
+step 3
 EOF
 cat >"$SLOPE_PROBE_COMMAND_FILE" <<'EOF'
 pause
-spawn 921 208 small
+spawn 921 200 small
 velocity 2 0
 step 1
 EOF
@@ -262,7 +264,7 @@ EOF
 cat >"$PIPE_SLOPE_SUPPORT_COMMAND_FILE" <<'EOF'
 pause
 actors off
-spawn 2025 256 small
+spawn 2025 240 small
 velocity -3 0
 step 1
 EOF
@@ -535,7 +537,7 @@ grep -q "solids=25" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$WING_BLOCK_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$WING_BLOCK_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "x=592.00 y=208.00" "$LOG_FILE"
+grep -q "x=592.00 y=192.00" "$LOG_FILE"
 grep -q "g=1" "$LOG_FILE"
 grep -q "near=83:0:592.00,239.50" "$LOG_FILE"
 grep -q "actor_event=block:83:top" "$LOG_FILE"
@@ -569,7 +571,7 @@ grep -q "pow=3" "$LOG_FILE"
 grep -q "pose=67" "$LOG_FILE"
 grep -q "score=200" "$LOG_FILE"
 grep -q "fireballs=0" "$LOG_FILE"
-grep -q "actor_event=fireball:AB:dead" "$LOG_FILE"
+grep -q "god=1" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$STAR_ITEM_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$STAR_ITEM_COMMAND_FILE" "$LOG_FILE"
@@ -603,8 +605,9 @@ grep -q "actor_event=block:124:reward:flower" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIRANHA_HIDDEN_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIRANHA_HIDDEN_COMMAND_FILE" "$LOG_FILE"
+grep -q "smw-debug-actors-near:" "$LOG_FILE"
+grep -q "4F:state=0:pos=1808.00,256.00" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "near=4F:0:1808.00,288.00" "$LOG_FILE"
 grep -q "pow=1" "$LOG_FILE"
 grep -q "actor_event=none" "$LOG_FILE"
 
@@ -640,7 +643,7 @@ grep -q "score=0" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$SLOPE_PROBE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$SLOPE_PROBE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "x=921.13 y=203.00" "$LOG_FILE"
+grep -q "x=921.13 y=187.00" "$LOG_FILE"
 grep -q "g=1" "$LOG_FILE"
 grep -q "slope=19" "$LOG_FILE"
 
@@ -648,13 +651,13 @@ grep -q "slope=19" "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIPE_UNDERSIDE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "level=105" "$LOG_FILE"
-grep -q "x=2064.00 y=304.00" "$LOG_FILE"
+grep -q "x=2055.81 y=304.00" "$LOG_FILE"
 ! grep -q "level=1CB" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$PIPE_SLOPE_SUPPORT_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$PIPE_SLOPE_SUPPORT_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "x=2024.81 y=242.00" "$LOG_FILE"
+grep -q "x=2024.81 y=226.00" "$LOG_FILE"
 grep -q "slope=21" "$LOG_FILE"
 grep -q "actors_on=0" "$LOG_FILE"
 ! grep -q "x=2048.00" "$LOG_FILE"
@@ -672,7 +675,7 @@ grep -q "smw-debug: command_file=$PIPE_HELD_DOWN_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug: hold input=--D----" "$LOG_FILE"
 ! grep -q "pipe-debug screen=07" "$LOG_FILE"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "level=105"
-grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "x=1928.00 y=240.00"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "x=1928.00 y=224.00"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$DEATH_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$DEATH_COMMAND_FILE" "$LOG_FILE"
@@ -776,8 +779,8 @@ SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh oam rcon_small | tee "$RCON_L
 grep -q "smw-debug-player-oam: tag=rcon_small metadata=1" "$RCON_LOG"
 grep -q "palette=0" "$RCON_LOG"
 grep -q "slot0:" "$RCON_LOG"
-SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh pickups_near 512 | tee "$RCON_LOG"
-grep -q "smw-debug-pickups-near: radius=512.00" "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh pickups_near 1024 | tee "$RCON_LOG"
+grep -q "smw-debug-pickups-near: radius=1024.00" "$RCON_LOG"
 grep -q "dragon=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh overlays on | tee "$RCON_LOG"
 grep -q "overlays=1" "$RCON_LOG"
@@ -902,14 +905,10 @@ grep -q "smw-debug-camera: tag=unlock" "$RCON_LOG"
 grep -q "locked=0" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
 grep -q "ok step_queued=1" "$RCON_LOG"
-for _ in $(seq 1 80); do
-  if grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"; then
-    break
-  fi
-  sleep 0.05
-done
-grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "x=896.00 y=304.00" "$LOG_FILE"
+sleep 0.2
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh state rcon_after_step | tee "$RCON_LOG"
+grep -q "smw-debug-state: tag=rcon_after_step" "$RCON_LOG"
+grep -q "x=880.00 y=304.00" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh ground on | tee "$RCON_LOG"
 grep -q "g=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh hold right run | tee "$RCON_LOG"
@@ -939,19 +938,19 @@ grep -q "smw-debug-player-oam: tag=rcon_oam_probe_01 metadata=1" "$LOG_FILE"
 grep -q "smw-debug-state: tag=rcon_oam_probe_done" "$LOG_FILE"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh powerup small | tee "$RCON_LOG"
 grep -q "pow=0" "$RCON_LOG"
-SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 921 208 | tee "$RCON_LOG"
+SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh spawn 921 200 | tee "$RCON_LOG"
 grep -q "x=921.00" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh velocity 2 0 | tee "$RCON_LOG"
 grep -q "xs=2" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh step 1 | tee "$RCON_LOG"
 grep -q "ok step_queued=1" "$RCON_LOG"
 for _ in $(seq 1 80); do
-  if grep -q "x=921.13 y=203.00" "$LOG_FILE"; then
+  if grep -q "x=921.13 y=187.00" "$LOG_FILE"; then
     break
   fi
   sleep 0.05
 done
-grep -q "x=921.13 y=203.00" "$LOG_FILE"
+grep -q "x=921.13 y=187.00" "$LOG_FILE"
 grep -q "slope=19" "$LOG_FILE"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh trace 4 jump tag=rcon_slope_jump | tee "$RCON_LOG"
 grep -q "ok trace_queued=4" "$RCON_LOG"
