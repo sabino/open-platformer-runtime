@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a standalone .NET generated-asset contract checker for `generated/smw`: it validates the manifest file graph, level `105`/`1CB` metadata, pipe exit target, sprite stream counts, Map16 projection anchors, player OAM export tables, palette dimensions, tileset/sprite GFX uploads, audio banks, and PNG/WAV headers. `tools/check-dotnet.sh` runs it when generated assets exist, and `tools/check-importer.sh` runs it after extraction.
 - Tightened runtime pipe-entry activation: the transition latch now arms only after Mario actually matches an imported pipe entrance, and downward pipe entrances require grounded overlap so held-down/falling/block-top probes do not accidentally fire the level-105 screen-07 pipe exit.
 - Added native PC controller bindings to the Godot input map: D-pad/left stick movement, A jump, B spin jump, X/right shoulder run-fire, and Start pause/menu start now feed the same C# action path as keyboard controls, with headless coverage for the startup input map.
 - Added start-menu and CLI startup toggles for the partial runtime sprite layer: `Actors` / `Sprites` in the menu and `--smw-actors=off` / `--smw-actor-visuals=off` now disable actor logic or actor visuals before the Godot level scene builds, with headless coverage for the initial debug state.

@@ -6,6 +6,8 @@ OUT_DIR="${2:-generated/smw}"
 
 tools/import-smw.sh "$ROM_PATH" "$OUT_DIR"
 
+dotnet run --project tests/SmwAssetCheck/SmwAssetCheck.csproj -- "$OUT_DIR"
+
 python3 - "$OUT_DIR" "$ROM_PATH" <<'PY'
 import importlib.util
 import json

@@ -40,6 +40,7 @@ The current first slice covers:
 - Mario runtime rendering now uses imported `PlayerGFXRt` OAM placement tables, signed X/Y displacement tables, dynamic head/body tile upload pointer mapping, native facing flips, native walking/spin-jump animation table data, and generated OBJ row 8 player palette atlases for the first pose set. The runtime also tracks explicit small/big/cape/fire power-up state, switches fire form to the native Fire Mario palette variant, and adjusts the collision height when forms change.
 - A C# fixed-step Mario movement prototype using SMW velocity units, native flat-ground walk/run/P-meter caps, table-driven acceleration/drag around the cap, native ground friction, native jump/gravity tables, first native `$72` in-air jump/fall states, and the first cape hold-jump fall cap from the native reference. See `docs/PHYSICS-REFERENCE.md` for the current native-unit notes and the Hamaluik regression sanity checks.
 - Headless/import/build validation scripts that avoid opening a Wayland window and assert audio, Map16, collision, and player sprite loading.
+- A standalone .NET generated-asset contract checker validates the current `manifest.json` graph, core level `105`/`1CB` metadata, player OAM table exports, palette dimensions, tileset/sprite GFX uploads, audio bank hashes, PNG/WAV headers, and key Map16 projection anchors without invoking Python.
 - The headless gate now includes both actor-off and actors-on `--smw-autoplay=explore` traversals that reach the imported level `105` goal and enter the course-clear walkout, providing end-to-end regressions for first-level layout, camera, timer, deterministic control, and the current runtime enemy interaction slice.
 - Wayland/Sway graphical wrappers default to workspace `6` through `SMW_SWAY_WORKSPACE`, and the capture wrapper can grab a compositor screenshot of the Godot PID for visual inspection.
 
@@ -100,6 +101,13 @@ tools/check-dotnet.sh
 
 This also runs the standalone C# physics smoke executable.
 The physics smoke includes native-unit golden trajectories for sustained walk/run, held/released small jumps, and ledge falls so movement changes are caught at the pixel/subpixel state level, not only by single-frame table checks.
+When `generated/smw/manifest.json` exists, this command also runs the standalone C# generated-asset contract checker.
+
+Run only the native generated-asset contract checker:
+
+```bash
+dotnet run --project tests/SmwAssetCheck/SmwAssetCheck.csproj -- generated/smw
+```
 
 Importer note: `tools/smw_import.py` is an offline development extractor, not a runtime dependency. The shipped Godot scene consumes generated JSON/PNG/BIN assets and runs in C#. The long-term target is to port this extraction pipeline into C# Godot tooling or a C# asset-pipeline project so Python is no longer required for normal project workflows.
 
