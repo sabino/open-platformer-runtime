@@ -5724,7 +5724,12 @@ public partial class GameScene : Node2D
     private static int PlayerRenderYOffsetForState(int powerup, bool ducking)
     {
         const int nativeOamYBias = -1;
-        return nativeOamYBias;
+        if (powerup == SmwPhysics.SmallPowerup || ducking)
+        {
+            return nativeOamYBias;
+        }
+
+        return nativeOamYBias + SmwPhysics.BigPlayerHeight - SmwPhysics.SmallPlayerHeight;
     }
 
     private ImageTexture? PlayerTextureForPowerup(int powerup)
