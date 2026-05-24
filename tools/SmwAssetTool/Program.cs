@@ -34,6 +34,17 @@ internal static class Program
         new("body_tile_pointer_index", 0x00E0CC, 192, "u8"),
         new("tile_x_flip", 0x00E18C, 2, "u8"),
     ];
+    private static readonly EntranceTableSpec[] EntranceTableSpecs =
+    [
+        new("level_info_05f000", 0x05F000, 0x200),
+        new("level_info_05f200", 0x05F200, 0x200),
+        new("level_info_05f400", 0x05F400, 0x200),
+        new("level_info_05f600", 0x05F600, 0x200),
+        new("secondary_entrance_type_05fe00", 0x05FE00, 0x200),
+        new("secondary_level_low_05f800", 0x05F800, 0x200),
+        new("secondary_x_05fc00", 0x05FC00, 0x200),
+        new("secondary_y_05fa00", 0x05FA00, 0x200),
+    ];
     private static readonly string[] PlayerPaletteNames = ["mario", "luigi", "fire_mario", "fire_luigi"];
 
     public static int Main(string[] args)
@@ -56,6 +67,8 @@ internal static class Program
                 "verify-audio-previews" when args.Length == 3 => VerifyAudioPreviews(args[1], args[2]),
                 "extract-player-metadata" when args.Length == 3 => ExtractPlayerMetadata(args[1], args[2]),
                 "verify-player-metadata" when args.Length == 3 => VerifyPlayerMetadata(args[1], args[2]),
+                "extract-entrance-tables" when args.Length == 3 => ExtractEntranceTables(args[1], args[2]),
+                "verify-entrance-tables" when args.Length == 3 => VerifyEntranceTables(args[1], args[2]),
                 _ => UsageError(args),
             };
         }
@@ -181,6 +194,25 @@ internal static class Program
         var generatedRoot = Path.GetFullPath(generatedDir);
         VerifyGeneratedPlayerMetadata(generatedRoot, BuildPlayerMetadata(rom));
         Console.WriteLine("smw-asset-tool: verified native player OAM tables and palettes");
+        return 0;
+    }
+
+    private static int ExtractEntranceTables(string romPath, string outDir)
+    {
+        var rom = Rom.Load(romPath);
+        var outputRoot = Path.GetFullPath(outDir);
+        var tables = BuildEntranceTables(rom);
+        WriteJson(Path.Combine(outputRoot, "levels", "secondary_tables.json"), tables.ToSerializable());
+        Console.WriteLine($"smw-asset-tool: extracted native entrance tables to {outputRoot}");
+        return 0;
+    }
+
+    private static int VerifyEntranceTables(string romPath, string generatedDir)
+    {
+        var rom = Rom.Load(romPath);
+        var generatedRoot = Path.GetFullPath(generatedDir);
+        VerifyGeneratedEntranceTables(generatedRoot, BuildEntranceTables(rom));
+        Console.WriteLine("smw-asset-tool: verified native entrance and secondary-exit tables");
         return 0;
     }
 
@@ -895,6 +927,43 @@ internal static class Program
         }
     }
 
+    private static EntranceTables BuildEntranceTables(Rom rom)
+    {
+        var tables = EntranceTableSpecs
+            .Select(spec => new EntranceTable(
+                Name: spec.Name,
+                SourceAddress: spec.Address,
+                Values: rom.GetBytes(spec.Address, spec.Length).Select(value => (int)value).ToArray()))
+            .ToList();
+
+        return new EntranceTables(rom.Sha1, tables);
+    }
+
+    private static void VerifyGeneratedEntranceTables(string generatedRoot, EntranceTables expected)
+    {
+        var path = Path.Combine(generatedRoot, "levels", "secondary_tables.json");
+        Check(File.Exists(path), $"generated entrance table file missing: {path}");
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        var root = document.RootElement;
+        foreach (var table in expected.Tables)
+        {
+            CheckJsonArrayEquals(Required(root, table.Name), table.Values, $"entrance table {table.Name}");
+        }
+
+        var main105Y = expected.Table("level_info_05f000")[0x105];
+        var main105XAction = expected.Table("level_info_05f200")[0x105];
+        var main1CbY = expected.Table("level_info_05f000")[0x1CB];
+        var main1CbXAction = expected.Table("level_info_05f200")[0x1CB];
+        var secondary1CbLevelLow = expected.Table("secondary_level_low_05f800")[0x1CB];
+        var secondary1CbY = expected.Table("secondary_y_05fa00")[0x1CB];
+        var secondary1CbX = expected.Table("secondary_x_05fc00")[0x1CB];
+        var secondary1CbType = expected.Table("secondary_entrance_type_05fe00")[0x1CB];
+        Check(main105Y == 0x5B && main105XAction == 0x00, "level 105 main entrance table anchor mismatch");
+        Check(main1CbY == 0x19 && main1CbXAction == 0x20, "level 1CB main entrance table anchor mismatch");
+        Check(secondary1CbLevelLow == 0x05 && secondary1CbY == 0xA9 && secondary1CbX == 0x08 && secondary1CbType == 0x06,
+            "secondary entrance 1CB return-to-105 anchor mismatch");
+    }
+
     private static (byte[] Data, int CompressedLength) SmwDecompress(Rom rom, int address)
     {
         var result = new List<byte>();
@@ -1005,6 +1074,8 @@ internal static class Program
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-audio-previews <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-player-metadata <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-player-metadata <rom.sfc> <generated/smw>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-entrance-tables <rom.sfc> <out-dir>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-entrance-tables <rom.sfc> <generated/smw>");
     }
 
     private static void Check(bool condition, string message)
@@ -1037,6 +1108,8 @@ internal static class Program
     }
 
     private sealed record PlayerTableSpec(string Name, int Address, int Count, string Format);
+
+    private sealed record EntranceTableSpec(string Name, int Address, int Length);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -1094,6 +1167,27 @@ internal static class Program
             };
         }
     }
+
+    private sealed record EntranceTables(string SourceRomSha1, List<EntranceTable> Tables)
+    {
+        public object ToSerializable()
+        {
+            return Tables.ToDictionary(table => table.Name, table => table.Values, StringComparer.Ordinal);
+        }
+
+        public int[] Table(string name)
+        {
+            var table = Tables.FirstOrDefault(candidate => candidate.Name == name);
+            if (table == null)
+            {
+                throw new InvalidOperationException($"native entrance table missing: {name}");
+            }
+
+            return table.Values;
+        }
+    }
+
+    private sealed record EntranceTable(string Name, int SourceAddress, int[] Values);
 
     private sealed record AudioPreviewManifest(
         string SourceRomSha1,

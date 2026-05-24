@@ -23,6 +23,7 @@ public static class AssetContractCheck
 
             CheckManifestFiles(generatedRoot, manifestRoot);
             CheckLevels(generatedRoot, manifestRoot);
+            CheckEntranceTables(generatedRoot);
             CheckPlayerGraphics(generatedRoot);
             CheckTilesets(generatedRoot);
             CheckPalettes(generatedRoot);
@@ -127,6 +128,38 @@ public static class AssetContractCheck
         Check(spriteCounts.GetValueOrDefault(0xAB) == 18, "level 105 expected 18 Rex sprite records");
 
         CheckTilemap(generatedRoot, "levels/level_105_partial_tilemap.json");
+    }
+
+    private static void CheckEntranceTables(string generatedRoot)
+    {
+        using var tables = LoadJson(Path.Combine(generatedRoot, "levels/secondary_tables.json"));
+        var root = tables.RootElement;
+        foreach (var tableName in new[]
+        {
+            "level_info_05f000",
+            "level_info_05f200",
+            "level_info_05f400",
+            "level_info_05f600",
+            "secondary_level_low_05f800",
+            "secondary_y_05fa00",
+            "secondary_x_05fc00",
+            "secondary_entrance_type_05fe00",
+        })
+        {
+            Check(RequiredArray(root, tableName).Count() == 0x200, $"entrance table {tableName} length mismatch");
+        }
+
+        var mainY = RequiredArray(root, "level_info_05f000").Select(value => value.GetInt32()).ToArray();
+        var mainXAction = RequiredArray(root, "level_info_05f200").Select(value => value.GetInt32()).ToArray();
+        var secondaryLevel = RequiredArray(root, "secondary_level_low_05f800").Select(value => value.GetInt32()).ToArray();
+        var secondaryY = RequiredArray(root, "secondary_y_05fa00").Select(value => value.GetInt32()).ToArray();
+        var secondaryX = RequiredArray(root, "secondary_x_05fc00").Select(value => value.GetInt32()).ToArray();
+        var secondaryType = RequiredArray(root, "secondary_entrance_type_05fe00").Select(value => value.GetInt32()).ToArray();
+        Check(mainY[0x105] == 0x5B && mainXAction[0x105] == 0x00, "level 105 main entrance anchor mismatch");
+        Check(mainY[0x1CB] == 0x19 && mainXAction[0x1CB] == 0x20, "level 1CB main entrance anchor mismatch");
+        Check(secondaryLevel[0x1CB] == 0x05 && secondaryY[0x1CB] == 0xA9 &&
+              secondaryX[0x1CB] == 0x08 && secondaryType[0x1CB] == 0x06,
+            "secondary entrance 1CB return-to-105 anchor mismatch");
     }
 
     private static void CheckLevelHeader(JsonElement level, string id, int expectedTileset, int expectedSpriteGraphics, int expectedScreens)
