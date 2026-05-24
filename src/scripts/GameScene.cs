@@ -38,6 +38,7 @@ public partial class GameScene : Node2D
     private const int SpriteActorNativeWakeDelayFrames = 2;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
+    private const float RexStompMinimumTopPenetration = 4.0f;
     private const float SlidingKoopaGroundDeceleration = 0.03125f;
     private const int NativeLevelStartSpriteWarmupFrames = 22;
     private const int NativePlayerHurtAnimationFrames = 0x2F;
@@ -246,6 +247,7 @@ public partial class GameScene : Node2D
     private Vector2 _entranceMotionPixelsPerFrame;
     private int _coinCount;
     private int _dragonCoinCount;
+    private int _pendingDragonCoinNormalCoins;
     private int _oneUpCount;
     private int _score;
     private int _stompChainCounter;
@@ -2522,7 +2524,7 @@ public partial class GameScene : Node2D
     private static Rect2 DragonCoinPickupRect(int tileX, int tileY)
     {
         var topLeft = TileToWorld(tileX, tileY);
-        return new Rect2(topLeft + new Vector2(4.0f, 2.0f), new Vector2(8.0f, 28.0f));
+        return new Rect2(topLeft + new Vector2(4.0f, 0.0f), new Vector2(8.0f, 30.0f));
     }
 
     private void AddGeneratedCollision(bool debugVisible)
@@ -4635,9 +4637,9 @@ public partial class GameScene : Node2D
 
         if (_state.YSpeed < 0 && previousTop >= previousActorBottom - 6.0f)
         {
-            _state.Y = (int)MathF.Round(actorBottom);
+            _state.Y = SmwPhysics.AnchorYForCollisionTop(actorBottom);
             _state.SubY = 0;
-            _state.YSpeed = 8;
+            _state.YSpeed = 16;
             _state.SubYSpeed = 0;
             _state.OnGround = false;
             if (!TriggerSolidBlockActorReward(actor))
@@ -4682,9 +4684,9 @@ public partial class GameScene : Node2D
         }
         else if (minOverlap == overlapFromBottom)
         {
-            _state.Y = (int)MathF.Round(actorBottom);
+            _state.Y = SmwPhysics.AnchorYForCollisionTop(actorBottom);
             _state.SubY = 0;
-            _state.YSpeed = Math.Max(8, _state.YSpeed);
+            _state.YSpeed = Math.Max(16, _state.YSpeed);
             _state.SubYSpeed = 0;
             _state.OnGround = false;
             if (!TriggerSolidBlockActorReward(actor))
@@ -4917,10 +4919,19 @@ public partial class GameScene : Node2D
         var downwardContact = _state.YSpeed > 0 || playerBottom > previousBottom + 0.01f;
         var crossedActorTop = previousBottom <= actorTop + 20.0f && playerBottom >= actorTop - 2.0f;
         var topContact = playerBottom <= actorTop + 32.0f;
+        var minimumTopPenetration = actor.SpriteId == 0xAB
+            ? actor.State == 1 ? RexStompMinimumTopPenetration * 2.0f : RexStompMinimumTopPenetration
+            : 0.0f;
+        var penetratedActorTop = playerBottom >= actorTop + minimumTopPenetration;
         _lastActorContact =
             $"{actor.SpriteId:X2}:{actor.State}:pb={playerBottom:0.00}:ppb={previousBottom:0.00}:at={actorTop:0.00}:ys={_state.YSpeed}:down={(downwardContact ? 1 : 0)}:top={(topContact ? 1 : 0)}:cross={(crossedActorTop ? 1 : 0)}";
-        var topBandStomp = crossedActorTop && !_state.OnGround;
-        var stomped = actor.Behavior.Stompable && topContact && (downwardContact || topBandStomp);
+        if (actor.Behavior.Stompable && topContact && downwardContact && !penetratedActorTop)
+        {
+            return false;
+        }
+
+        var topBandStomp = crossedActorTop && penetratedActorTop && !_state.OnGround;
+        var stomped = actor.Behavior.Stompable && topContact && penetratedActorTop && (downwardContact || topBandStomp);
         if (stomped)
         {
             if (TryStompRex(actor))
@@ -5193,6 +5204,7 @@ public partial class GameScene : Node2D
 
     private void CheckCoinPickups()
     {
+        ApplyPendingDragonCoinNormalCoins();
         if (_coinPickups.Count == 0)
         {
             return;
@@ -5232,7 +5244,14 @@ public partial class GameScene : Node2D
             _audio?.PlayCoin();
         }
         AddScore(pickup.DragonCoin ? DragonCoinScore : CoinScore);
-        AddCoin(pickup.DragonCoin ? "dragon_coin" : "coin");
+        if (pickup.DragonCoin)
+        {
+            _pendingDragonCoinNormalCoins++;
+        }
+        else
+        {
+            AddCoin("coin");
+        }
         if (pickup.DragonCoin && _dragonCoinCount == DragonCoinLifeThreshold)
         {
             AddOneUp("dragon_coin_5");
@@ -5241,6 +5260,15 @@ public partial class GameScene : Node2D
             $"smw-runtime: coin_pickup level={_currentLevelId} " +
             $"dragon={(pickup.DragonCoin ? 1 : 0)} coins={_coinCount} dragon_coins={_dragonCoinCount} score={_score} " +
             $"x={pickup.Rect.Position.X:0.00} y={pickup.Rect.Position.Y:0.00}");
+    }
+
+    private void ApplyPendingDragonCoinNormalCoins()
+    {
+        while (_pendingDragonCoinNormalCoins > 0)
+        {
+            _pendingDragonCoinNormalCoins--;
+            AddCoin("dragon_coin");
+        }
     }
 
     private void AddCoin(string source)
@@ -6476,6 +6504,7 @@ public partial class GameScene : Node2D
     public void DebugSetCoins(int coins)
     {
         _coinCount = Math.Clamp(coins, 0, CoinLifeThreshold - 1);
+        _pendingDragonCoinNormalCoins = 0;
         UpdateHud();
         UpdateDebugGizmos();
         GD.Print($"smw-test-coins: coins={_coinCount} lives={_lives} oneups={_oneUpCount}");
@@ -8711,6 +8740,7 @@ public partial class GameScene : Node2D
         _blockBreakCount = 0;
         _stompChainCounter = 0;
         _starPowerTimer = 0;
+        _pendingDragonCoinNormalCoins = 0;
         _state = MakeInitialPlayerState(entrance);
         ResetDebugMaxPlayerX();
         ResetPlayerAnimationState();
@@ -8798,6 +8828,7 @@ public partial class GameScene : Node2D
         _lives = StartingLives;
         _coinCount = 0;
         _dragonCoinCount = 0;
+        _pendingDragonCoinNormalCoins = 0;
         _oneUpCount = 0;
         _score = 0;
         _stompChainCounter = 0;
@@ -8828,6 +8859,7 @@ public partial class GameScene : Node2D
         _blockBreakCount = 0;
         _stompChainCounter = 0;
         _starPowerTimer = 0;
+        _pendingDragonCoinNormalCoins = 0;
         _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
         _pipeTransitionLatch = false;
         _entranceMotionFrames = 0;

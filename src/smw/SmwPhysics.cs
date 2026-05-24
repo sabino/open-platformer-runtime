@@ -418,8 +418,13 @@ public sealed class SmwPhysics
         }
 
         ApplyDucking(ref state, input);
-        ApplyJumpAndGravity(ref state, input);
-        ApplyHorizontal(ref state, input, usePostLandingAirDrag);
+        var slopePlayerBeforeJump = state.SlopePlayer;
+        var groundedBeforeJump = state.OnGround;
+        var jumpedThisFrame = ApplyJumpAndGravity(ref state, input);
+        var horizontalSlopePlayerOverride = jumpedThisFrame && groundedBeforeJump
+            ? slopePlayerBeforeJump
+            : (int?)null;
+        ApplyHorizontal(ref state, input, usePostLandingAirDrag, horizontalSlopePlayerOverride);
         if (usePostLandingAirDrag && state.PostLandingAirDragFrames > 0)
         {
             state.PostLandingAirDragFrames--;
@@ -703,7 +708,11 @@ public sealed class SmwPhysics
         state.Y += oldHeight - newHeight;
     }
 
-    private static void ApplyHorizontal(ref PlayerState state, FrameInput input, bool usePostLandingAirDrag)
+    private static void ApplyHorizontal(
+        ref PlayerState state,
+        FrameInput input,
+        bool usePostLandingAirDrag,
+        int? slopePlayerOverride = null)
     {
         var dir = 0;
         var horizontalSuppressed = state.OnGround && input.Down;
@@ -721,12 +730,13 @@ public sealed class SmwPhysics
             state.Facing = dir > 0 ? 1 : 0;
             var absSpeed = Math.Abs(state.XSpeed);
             var pMeterMode = UpdatePMeterEx(ref state, PMeterModeForHorizontal(state, input, absSpeed));
+            var slopePlayer = slopePlayerOverride ?? HorizontalSlopePlayerForState(state);
             ApplyNativeHorizontal(
                 ref state,
                 dir,
                 input.Run,
                 pMeterMode,
-                HorizontalSlopePlayerForState(state),
+                slopePlayer,
                 usePostLandingAirDrag);
         }
         else
@@ -739,7 +749,7 @@ public sealed class SmwPhysics
 
             if (state.XSpeed > 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useIceFriction: false);
+                ApplyNativeHorizontalDrag(ref state, slopePlayerOverride ?? HorizontalSlopePlayerForState(state), useIceFriction: false);
                 if (state.XSpeed < 0)
                 {
                     state.XSpeed = 0;
@@ -748,7 +758,7 @@ public sealed class SmwPhysics
             }
             else if (state.XSpeed < 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useIceFriction: false);
+                ApplyNativeHorizontalDrag(ref state, slopePlayerOverride ?? HorizontalSlopePlayerForState(state), useIceFriction: false);
                 if (state.XSpeed > 0)
                 {
                     state.XSpeed = 0;
@@ -757,7 +767,7 @@ public sealed class SmwPhysics
             }
             else if (state.OnGround && HorizontalSlopePlayerForState(state) != 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useIceFriction: false);
+                ApplyNativeHorizontalDrag(ref state, slopePlayerOverride ?? HorizontalSlopePlayerForState(state), useIceFriction: false);
             }
         }
     }
@@ -888,9 +898,10 @@ public sealed class SmwPhysics
         return dir > 0 ? 1 : 0;
     }
 
-    private static void ApplyJumpAndGravity(ref PlayerState state, FrameInput input)
+    private static bool ApplyJumpAndGravity(ref PlayerState state, FrameInput input)
     {
         var jumpStarted = input.JumpPressed || input.SpinPressed;
+        var jumpedThisFrame = false;
         if (state.OnGround && jumpStarted)
         {
             state.YSpeed = JumpYSpeedFor(state.XSpeed, input.SpinPressed);
@@ -902,6 +913,7 @@ public sealed class SmwPhysics
             state.InAirState = state.RunningTakeoff
                 ? NativeRunningJumpInAirState
                 : NativeNormalJumpInAirState;
+            jumpedThisFrame = true;
         }
         else if (state.OnGround)
         {
@@ -912,7 +924,7 @@ public sealed class SmwPhysics
             state.InAirState = 0;
             if (state.SlopeKind >= 0)
             {
-                return;
+                return false;
             }
             state.YSpeed = 0;
             state.SubYSpeed = 0;
@@ -920,7 +932,7 @@ public sealed class SmwPhysics
 
         if (TryApplyCapeFloatFallCap(ref state, input))
         {
-            return;
+            return jumpedThisFrame;
         }
 
         if (input.Jump || input.Spin)
@@ -932,6 +944,8 @@ public sealed class SmwPhysics
         {
             ApplyVerticalGravity(ref state, 0);
         }
+
+        return jumpedThisFrame;
     }
 
     private static bool TryApplyCapeFloatFallCap(ref PlayerState state, FrameInput input)
@@ -1122,7 +1136,7 @@ public sealed class SmwPhysics
             }
 
             var solid = solids[solidIndex];
-            if (bottom < solid.Position.Y - 1.0f || bottom > solid.Position.Y + 1.0f)
+            if (bottom < solid.Position.Y || bottom > solid.Position.Y + 1.0f)
             {
                 continue;
             }

@@ -131,7 +131,7 @@ state after_small_hurt
 EOF
 cat >"$REX_COMMAND_FILE" <<'EOF'
 pause
-spawn 528 264
+spawn 752 268
 powerup big
 step 3
 EOF
@@ -370,7 +370,7 @@ grep -q "smw-runtime: entrance level=105 source=1CB secondary=1 settings=6 spawn
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480 collision_rects=26 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=272,176 2>&1 | tee "$LOG_FILE"
-grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=1 dragon_coins=1" "$LOG_FILE"
+grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=0 dragon_coins=1" "$LOG_FILE"
 grep -q "score=1000" "$LOG_FILE"
 grep -q "smw-audio: sfx=dragon_coin port=3 command=01" "$LOG_FILE"
 grep -q "native=1" "$LOG_FILE"
@@ -393,8 +393,8 @@ grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "oneups=1"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$DRAGON_LIFE_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$DRAGON_LIFE_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-test-dragon-coins: dragon=4 lives=5 oneups=0" "$LOG_FILE"
-grep -q "smw-runtime: one_up level=105 source=dragon_coin_5 lives=6 oneups=1 coins=1 score=1000" "$LOG_FILE"
-grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=1 dragon_coins=5 score=1000" "$LOG_FILE"
+grep -q "smw-runtime: one_up level=105 source=dragon_coin_5 lives=6 oneups=1 coins=0 score=1000" "$LOG_FILE"
+grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=0 dragon_coins=5 score=1000" "$LOG_FILE"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "dragon=5"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "lives=6"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "oneups=1"
@@ -449,7 +449,7 @@ grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "gameover=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "clear=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "deaths=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "max_x=2770.00"
-grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=stomp:AB:dead"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=god:AB:1"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-test-spawn=2050,292 --smw-input-script="$PIPE_SCRIPT" 2>&1 | tee "$LOG_FILE"
 ! grep -q "pipe-debug screen=07" "$LOG_FILE"
