@@ -104,6 +104,30 @@ if [[ ! -s "$INPUT_SCRIPT" ]]; then
 fi
 
 mkdir -p "$OUT_DIR" "$ROOT/generated/smw/native-xdg"
+config_file="$ROOT/generated/smw/native-xdg/smw-clean-trace.ini"
+cat >"$config_file" <<'EOF'
+[General]
+Autosave = 0
+SavePlaythrough = 0
+DisableFrameDelay = 1
+AllowOpposingDirections = 0
+RunMode = Native
+
+[Graphics]
+Fullscreen = 0
+WindowScale = 3
+OutputMethod = SDL-Software
+VideoDriver = Wayland
+NoSpriteLimits = 1
+
+[Sound]
+EnableAudio = 0
+
+[GamepadMap]
+EnableGamepad1 = false
+EnableGamepad2 = false
+EOF
+rm -f "$ROOT/generated/smw/native-xdg/snesrev/smw_native/save0.sav"
 
 if [[ -z "$GODOT_INPUT" ]]; then
   if [[ -n "$LEVEL_START_FRAME" ]]; then
@@ -122,6 +146,11 @@ if [[ ! -s "$GODOT_INPUT" ]]; then
   exit 2
 fi
 
+NATIVE_FRAMES="$FRAMES"
+if [[ -n "$LEVEL_START_FRAME" ]]; then
+  NATIVE_FRAMES=$((LEVEL_START_FRAME + FRAMES))
+fi
+
 godot_commands="$OUT_DIR/godot-trace-live.commands"
 {
   printf 'trace_live %s tag=recording\n' "$FRAMES"
@@ -134,6 +163,7 @@ native_jsonl="$OUT_DIR/native.jsonl"
 godot_jsonl="$OUT_DIR/godot.jsonl"
 
 XDG_DATA_HOME="$ROOT/generated/smw/native-xdg" \
+SMW_NATIVE_CONFIG="$config_file" \
 "$NATIVE_RUNNER" \
   --native-only \
   --output-method SDL-Software \
@@ -141,7 +171,7 @@ XDG_DATA_HOME="$ROOT/generated/smw/native-xdg" \
   --disable-frame-delay \
   --input-script "$INPUT_SCRIPT" \
   --state-trace-every "$TRACE_EVERY" \
-  --frames "$FRAMES" \
+  --frames "$NATIVE_FRAMES" \
   >"$native_log" 2>&1
 
 SMW_SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}" \
@@ -155,15 +185,23 @@ SMW_SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}" \
   >"$godot_log" 2>&1
 
 set +e
-"$ROOT/tools/compare-recording-traces.py" \
+compare_args=(
   --native-log "$native_log" \
   --godot-log "$godot_log" \
   --native-jsonl "$native_jsonl" \
   --godot-jsonl "$godot_jsonl" \
   --tolerance "$TOLERANCE" \
-  --native-y-offset "$NATIVE_Y_OFFSET" \
-  --native-start-level "$NATIVE_START_LEVEL" \
-  --native-start-game-mode "$NATIVE_START_GAME_MODE"
+  --native-y-offset "$NATIVE_Y_OFFSET"
+)
+if [[ -n "$LEVEL_START_FRAME" ]]; then
+  compare_args+=(--native-start-frame "$LEVEL_START_FRAME")
+else
+  compare_args+=(
+    --native-start-level "$NATIVE_START_LEVEL"
+    --native-start-game-mode "$NATIVE_START_GAME_MODE"
+  )
+fi
+"$ROOT/tools/compare-recording-traces.py" "${compare_args[@]}"
 status=$?
 set -e
 

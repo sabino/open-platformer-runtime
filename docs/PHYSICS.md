@@ -32,6 +32,20 @@ Current implementation details:
 - `SMW_DEBUG_COLLISION_TRACE=1` and `SMW_DEBUG_SLOPE_TRACE=1` add low-level physics logs for rect intersections and ceiling-slope candidates during headless/RCON repros. They are intentionally environment-gated because normal traces are already verbose.
 - `tools/check-dotnet.sh` runs a C# physics smoke executable that verifies the flat-ground caps, native cap-drag step, P-meter sprint threshold behavior, friction step, imported horizontal max-speed table, native slope table decode, slope-player horizontal slide rows, and native-unit golden trajectories for sustained walk/run, small-jump hold/release, and ledge-fall probes.
 
+## Recording Sync Baseline
+
+The current trace workflow compares a clean native boot recording against Godot without native save states:
+
+- `tools/run-native-input-recording-wayland.sh` records the native `smw/` build from boot, stores timestamped full and level-start `.input` files under `generated/smw/recordings/`, and refreshes stable `latest-*` aliases for the harness.
+- `K` is the manual level-start marker when recording. The trace wrapper can also use an automatic active-level marker, but manual `K` is preferred when the user enters the level and wants the Godot slice to begin at that exact point.
+- `tools/run-recording-trace-compare.sh` now runs native long enough to reach the marked absolute frame, drops native records before that frame, and then compares against Godot frame 0 from the sliced input.
+
+Fresh trace status from the latest small-Mario Yoshi Island 1 recording:
+
+- Native and Godot now agree on initial `x=16.00` and `powerup=0` at the selected level-start slice, so the earlier Yoshi-house/wrong-level input problem is no longer the active blocker.
+- The first remaining divergence is vertical anchoring. Native reports raw `player_y=352`, which the current comparator normalizes to `288` with `--native-y-offset=-64`, and native stays grounded. Godot starts at `y=288`, but the Godot collision box treats that as a top-left coordinate; the foot probe sees no solid support until the top-left reaches about `304`. Normal entrances now seed `OnGround`, `InAirState=0`, and zero vertical speed, but the first physics step still loses grounded state because the anchor/collision interpretation disagrees with native.
+- The next physics task is to identify the native `player_ypos` anchor and small-Mario interaction box from the SMW routines, then update either the comparator offset or Godot player anchor so standing height, feet, and trace Y all describe the same point.
+
 This is not a complete reimplementation of every SMW physics branch yet. Missing pieces include the full native Map16 act-as/slope interaction table, ice, swimming, full cape flight, carrying, Yoshi, rope/net climbing, solid-sprite interaction, and exact takeoff behavior. The purpose of this slice is to establish the deterministic Godot core, asset feed, and regression surface before broadening the compatibility matrix.
 
 ## Exact-Port Rule

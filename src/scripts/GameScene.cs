@@ -5721,6 +5721,12 @@ public partial class GameScene : Node2D
                 state.Y |= 2;
                 StartEntranceMotion(entrance.EntranceSettings, 32, new Vector2(4.0f, -4.0f), ref state);
                 break;
+            default:
+                state.OnGround = true;
+                state.InAirState = 0;
+                state.YSpeed = 0;
+                state.SubYSpeed = 0;
+                break;
         }
     }
 

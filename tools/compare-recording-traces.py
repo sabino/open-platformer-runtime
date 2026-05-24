@@ -81,9 +81,16 @@ def drop_records(
 def filter_native_start(
     records: list[dict[str, int | float | str]],
     *,
+    frame: int | None,
     game_mode: int | None,
     level: int | None,
 ) -> tuple[list[dict[str, int | float | str]], int]:
+    if frame is not None:
+        for index, record in enumerate(records):
+            value = record.get("frame")
+            if isinstance(value, int) and value >= frame:
+                return records[index:], index
+        return [], len(records)
     if game_mode is None and level is None:
         return records, 0
     for index, record in enumerate(records):
@@ -148,6 +155,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--native-drop-records", type=int, default=0)
     parser.add_argument("--godot-drop-records", type=int, default=0)
     parser.add_argument(
+        "--native-start-frame",
+        type=int,
+        help="Drop native records before this absolute native frame. Takes precedence over game_mode/level filters.",
+    )
+    parser.add_argument(
         "--native-start-game-mode",
         type=int,
         help="Drop native records before the first record with this game_mode.",
@@ -169,6 +181,7 @@ def main(argv: list[str]) -> int:
     godot = parse_godot_trace(args.godot_log)
     native, native_auto_dropped = filter_native_start(
         native,
+        frame=args.native_start_frame,
         game_mode=args.native_start_game_mode,
         level=args.native_start_level,
     )
