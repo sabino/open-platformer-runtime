@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added the first native C# ROM extraction CLI slice under `tools/SmwAssetTool`: `extract-core` writes GFX32/GFX33, raw SPC upload banks, and global Map16 directly from the verified unheadered SMW USA ROM, while `verify-core` byte-compares those generated assets against direct C# extraction. `tools/check-dotnet.sh`, `tools/check-importer.sh`, and `tools/check-native-extractor.sh` now exercise that path when the ROM is available.
 - Added a standalone .NET generated-asset contract checker for `generated/smw`: it validates the manifest file graph, level `105`/`1CB` metadata, pipe exit target, sprite stream counts, Map16 projection anchors, player OAM export tables, palette dimensions, tileset/sprite GFX uploads, audio banks, and PNG/WAV headers. `tools/check-dotnet.sh` runs it when generated assets exist, and `tools/check-importer.sh` runs it after extraction.
 - Tightened runtime pipe-entry activation: the transition latch now arms only after Mario actually matches an imported pipe entrance, and downward pipe entrances require grounded overlap so held-down/falling/block-top probes do not accidentally fire the level-105 screen-07 pipe exit.
 - Added native PC controller bindings to the Godot input map: D-pad/left stick movement, A jump, B spin jump, X/right shoulder run-fire, and Start pause/menu start now feed the same C# action path as keyboard controls, with headless coverage for the startup input map.
