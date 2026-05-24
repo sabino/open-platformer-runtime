@@ -15,8 +15,12 @@ public partial class Main : Node2D
     private ColorRect? _gameBackground;
     private CheckBox? _audioToggle;
     private CheckBox? _debugToggle;
+    private CheckBox? _actorsToggle;
+    private CheckBox? _actorVisualsToggle;
     private bool _debugOverlays;
     private bool _audioEnabled = true;
+    private bool _actorsEnabled = true;
+    private bool _actorVisualsEnabled = true;
 
     public override void _Ready()
     {
@@ -31,6 +35,7 @@ public partial class Main : Node2D
 
         SetupInputMap();
         _audioEnabled = ShouldEnableAudio();
+        ApplyInitialMenuArgs();
         if (_audioEnabled)
         {
             _audio = new SmwAudio { Name = "SmwAudio" };
@@ -68,9 +73,9 @@ public partial class Main : Node2D
             {
                 _audioEnabled = false;
             }
-            else if (arg == "--smw-debug-overlays")
+            else if (ApplyStartupToggleArg(arg))
             {
-                _debugOverlays = true;
+                continue;
             }
             else if (arg.StartsWith("--smw-test-level=", StringComparison.Ordinal))
             {
@@ -236,6 +241,55 @@ public partial class Main : Node2D
         };
     }
 
+    private void ApplyInitialMenuArgs()
+    {
+        foreach (var arg in OS.GetCmdlineArgs())
+        {
+            ApplyStartupToggleArg(arg);
+        }
+    }
+
+    private bool ApplyStartupToggleArg(string arg)
+    {
+        if (arg == "--smw-debug-overlays")
+        {
+            _debugOverlays = true;
+            return true;
+        }
+        if (arg == "--smw-actors-off")
+        {
+            _actorsEnabled = false;
+            return true;
+        }
+        if (arg.StartsWith("--smw-actors=", StringComparison.Ordinal))
+        {
+            _actorsEnabled = ParseToggleArg(arg["--smw-actors=".Length..], _actorsEnabled);
+            return true;
+        }
+        if (arg == "--smw-actor-visuals-off")
+        {
+            _actorVisualsEnabled = false;
+            return true;
+        }
+        if (arg.StartsWith("--smw-actor-visuals=", StringComparison.Ordinal))
+        {
+            _actorVisualsEnabled = ParseToggleArg(arg["--smw-actor-visuals=".Length..], _actorVisualsEnabled);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool ParseToggleArg(string value, bool fallback)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "1" or "on" or "true" or "yes" or "enabled" => true,
+            "0" or "off" or "false" or "no" or "disabled" => false,
+            _ => fallback,
+        };
+    }
+
     public override void _UnhandledInput(InputEvent @event)
     {
         if (_game == null && @event.IsActionPressed("ui_accept"))
@@ -351,7 +405,7 @@ public partial class Main : Node2D
         };
         root.AddChild(previewPanel);
         AddMenuPlayerPreview(previewPanel);
-        GD.Print($"smw-menu: assets={(HasGeneratedAssetPack() ? 1 : 0)} audio={(_audioEnabled ? 1 : 0)} level_preview={(FileAccess.FileExists(MenuLevelPreviewPath) ? 1 : 0)} player_preview={(FileAccess.FileExists(MenuPlayerPreviewPath) ? 1 : 0)}");
+        GD.Print($"smw-menu: assets={(HasGeneratedAssetPack() ? 1 : 0)} audio={(_audioEnabled ? 1 : 0)} actors={(_actorsEnabled ? 1 : 0)} actor_visuals={(_actorVisualsEnabled ? 1 : 0)} level_preview={(FileAccess.FileExists(MenuLevelPreviewPath) ? 1 : 0)} player_preview={(FileAccess.FileExists(MenuPlayerPreviewPath) ? 1 : 0)}");
     }
 
     private static bool HasGeneratedAssetPack()
@@ -437,6 +491,25 @@ public partial class Main : Node2D
         };
         _debugToggle.Toggled += enabled => _debugOverlays = enabled;
         row.AddChild(_debugToggle);
+
+        var actorRow = new HBoxContainer();
+        panel.AddChild(actorRow);
+
+        _actorsToggle = new CheckBox
+        {
+            Text = "Actors",
+            ButtonPressed = _actorsEnabled,
+        };
+        _actorsToggle.Toggled += enabled => _actorsEnabled = enabled;
+        actorRow.AddChild(_actorsToggle);
+
+        _actorVisualsToggle = new CheckBox
+        {
+            Text = "Sprites",
+            ButtonPressed = _actorVisualsEnabled,
+        };
+        _actorVisualsToggle.Toggled += enabled => _actorVisualsEnabled = enabled;
+        actorRow.AddChild(_actorVisualsToggle);
     }
 
     private static Texture2D? LoadTexture(string path)
@@ -580,6 +653,8 @@ public partial class Main : Node2D
         {
             Name = "GameScene",
             DebugOverlays = _debugOverlays,
+            ActorsEnabled = _actorsEnabled,
+            ActorVisualsEnabled = _actorVisualsEnabled,
             Audio = _audio,
             AudioEnabled = _audioEnabled,
         };

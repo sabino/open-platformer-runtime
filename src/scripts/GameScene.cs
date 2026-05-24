@@ -290,6 +290,8 @@ public partial class GameScene : Node2D
     private readonly byte[] _debugRconReadBuffer = new byte[4096];
 
     public bool DebugOverlays { get; set; }
+    public bool ActorsEnabled { get; set; } = true;
+    public bool ActorVisualsEnabled { get; set; } = true;
     public SmwAudio? Audio { get; set; }
     public bool AudioEnabled { get; set; } = true;
 
@@ -297,6 +299,8 @@ public partial class GameScene : Node2D
     {
         GetViewport().TransparentBg = false;
         RenderingServer.SetDefaultClearColor(new Color(0.0f, 0.39f, 0.74f, 1.0f));
+        _debugActorsEnabled = ActorsEnabled;
+        _debugActorVisualsEnabled = ActorVisualsEnabled;
         _audio = Audio;
         if (_audio == null && AudioEnabled)
         {

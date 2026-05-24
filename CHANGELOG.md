@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added start-menu and CLI startup toggles for the partial runtime sprite layer: `Actors` / `Sprites` in the menu and `--smw-actors=off` / `--smw-actor-visuals=off` now disable actor logic or actor visuals before the Godot level scene builds, with headless coverage for the initial debug state.
 - Added the Star music preview to the in-game menu audio tester and headless audio preview gate, matching the starman runtime path already used during play.
 - Added native-unit C# physics golden trajectories for 60/120-frame walk/run probes, held/released small jumps, and ledge falls, so `tools/check-dotnet.sh` now catches pixel/subpixel movement drift beyond single-frame table checks.
 - Improved actors-on debug traversal through the Yoshi Island 1 goal section: the explorer now air-brakes only for rising side-overlap against the tall Clappin' Chuck (`0x95`), allowing the 5000-frame actors-on probe to stomp the Chuck and reach course clear with `deaths=0` and `max_x=5106.00`.

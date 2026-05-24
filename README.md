@@ -90,6 +90,8 @@ Pass `--smw-no-audio` or set `SMW_AUDIO=0` to disable the internal BRR/APU probe
 
 Pass `--smw-debug-overlays` to a Godot run when you want collision rectangles/outlines, slope lines, player hitbox/feet, camera bounds, pipe/goal triggers, sprite hitboxes, screen lines, object/sprite/coin/block markers, the debug HUD, the foot-tile Map16 probe, and the imported asset preview panel. Normal playable runs hide those overlays.
 
+The start menu also exposes `Actors` and `Sprites` toggles. For deterministic launches, pass `--smw-actors=off` or `--smw-actor-visuals=off` to disable runtime sprite logic or only hide their visuals before the level scene builds.
+
 Build the C# project:
 
 ```bash
