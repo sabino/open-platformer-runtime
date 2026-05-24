@@ -19,6 +19,7 @@ public sealed class SmwPhysics
     public const int BigPlayerHeight = 32;
     public const int PlayerHeight = BigPlayerHeight;
     public const int PlayerCollisionYOffset = 16;
+    public const int BigPlayerCollisionYOffset = 0;
 
     public const int NativeFlatWalkTurnAcceleration = 0x0280;
     public const int NativeFlatRunTurnAcceleration = 0x0500;
@@ -316,7 +317,6 @@ public sealed class SmwPhysics
     public void SetPowerup(ref PlayerState state, int powerup)
     {
         powerup = Math.Clamp(powerup, SmallPowerup, FirePowerup);
-        var oldHeight = PlayerHeightFor(state);
         state.Powerup = powerup;
         if (state.Powerup == SmallPowerup)
         {
@@ -326,8 +326,6 @@ public sealed class SmwPhysics
         {
             state.CapeFloatFrames = 0;
         }
-        var newHeight = PlayerHeightFor(state);
-        state.Y += oldHeight - newHeight;
     }
 
     public void Step(ref PlayerState state, FrameInput input, IReadOnlyList<Rect2> solids)
@@ -517,9 +515,16 @@ public sealed class SmwPhysics
         return PlayerHeightFor(state);
     }
 
+    public static int PlayerCollisionYOffsetFor(PlayerState state)
+    {
+        return state.Powerup == SmallPowerup || state.Ducking
+            ? PlayerCollisionYOffset
+            : BigPlayerCollisionYOffset;
+    }
+
     public static float PlayerCollisionTop(PlayerState state)
     {
-        return state.YFloat + PlayerCollisionYOffset;
+        return state.YFloat + PlayerCollisionYOffsetFor(state);
     }
 
     public static float PlayerCollisionBottom(PlayerState state)
@@ -527,14 +532,14 @@ public sealed class SmwPhysics
         return PlayerCollisionTop(state) + PlayerCollisionHeightFor(state);
     }
 
-    public static int AnchorYForCollisionTop(float collisionTop)
+    public static int AnchorYForCollisionTop(float collisionTop, PlayerState state)
     {
-        return (int)MathF.Round(collisionTop - PlayerCollisionYOffset);
+        return (int)MathF.Round(collisionTop - PlayerCollisionYOffsetFor(state));
     }
 
     public static int AnchorYForCollisionBottom(float collisionBottom, PlayerState state)
     {
-        return (int)MathF.Round(collisionBottom - PlayerCollisionYOffset - PlayerCollisionHeightFor(state));
+        return (int)MathF.Round(collisionBottom - PlayerCollisionYOffsetFor(state) - PlayerCollisionHeightFor(state));
     }
 
     public static int PlayerHeightForPowerup(int powerup)
@@ -702,10 +707,7 @@ public sealed class SmwPhysics
             return;
         }
 
-        var oldHeight = PlayerHeightFor(state);
         state.Ducking = shouldDuck;
-        var newHeight = PlayerHeightFor(state);
-        state.Y += oldHeight - newHeight;
     }
 
     private static void ApplyHorizontal(
@@ -1074,7 +1076,7 @@ public sealed class SmwPhysics
                 }
                 else if (state.YSpeed < 0)
                 {
-                    state.Y = AnchorYForCollisionTop(solid.Position.Y + solid.Size.Y);
+                    state.Y = AnchorYForCollisionTop(solid.Position.Y + solid.Size.Y, state);
                 }
                 state.SubY = 0;
                 state.SubYSpeed = 0;
@@ -1198,7 +1200,7 @@ public sealed class SmwPhysics
                     continue;
                 }
 
-                state.Y = AnchorYForCollisionTop(surfaceY);
+                state.Y = AnchorYForCollisionTop(surfaceY, state);
                 state.SubY = 0;
                 state.SubYSpeed = 0;
                 if (state.YSpeed < 0)

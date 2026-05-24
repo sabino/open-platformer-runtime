@@ -38,7 +38,10 @@ public partial class GameScene : Node2D
     private const int SpriteActorNativeWakeDelayFrames = 2;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
-    private const float RexStompMinimumTopPenetration = 4.0f;
+    private const float RexStompMinimumTopPenetration = 2.0f;
+    private const float SquishedRexStompMinimumTopPenetration = 8.0f;
+    private const int DefaultSpriteStompYSpeed = -48;
+    private const int NativeSpriteStompYSpeed = -88;
     private const float SlidingKoopaGroundDeceleration = 0.03125f;
     private const int NativeLevelStartSpriteWarmupFrames = 22;
     private const int NativePlayerHurtAnimationFrames = 0x2F;
@@ -51,10 +54,16 @@ public partial class GameScene : Node2D
     private const int JumpingPiranhaFallFrames = 24;
     private const float JumpingPiranhaTravelPixels = 32.0f;
     private const int WingedQuestionBlockCycleFrames = 64;
+    private const float SolidBlockActorSideProbeDepth = 4.0f;
+    private const float SolidBlockActorSideSnapInset = 1.5625f;
+    private const int SolidBlockActorSideCooldownFrames = 12;
     private const int PowerupItemEmergingState = 1;
     private const int PowerupItemActiveState = 2;
-    private const int PowerupItemEmergingFrames = 32;
+    private const int PowerupItemEmergingFrames = 64;
+    private const int PowerupItemEmergingCollectFrame = 56;
+    private const int NativePowerupAnimationFrames = 47;
     private const float PowerupItemEmergingPixels = 16.0f;
+    private const float PowerupItemCollectionMinOverlapX = 3.25f;
     private const float PowerupItemWalkSpeed = 1.0f;
     private const int InvisibleMushroomRevealCooldownFrames = 32;
     private const float InvisibleMushroomRevealYOffset = -15.0f;
@@ -258,6 +267,9 @@ public partial class GameScene : Node2D
     private int _levelTimerFrames = DefaultLevelTimerSeconds * NativeFramesPerSecond;
     private int _blockBreakCount;
     private int _deathCount;
+    private int _powerupAnimationFrames;
+    private int _powerupSettleFrames;
+    private int _pendingPowerup = -1;
     private int _inputScriptIndex;
     private int _inputScriptFrame;
     private int _inputScriptElapsedFrames;
@@ -319,6 +331,7 @@ public partial class GameScene : Node2D
         }
         LoadAssetPack();
         _state = MakeInitialPlayerState();
+        ResetPowerupAnimationState();
         ResetDebugMaxPlayerX();
         ResetPlayerAnimationState();
         BuildWorld();
@@ -361,6 +374,17 @@ public partial class GameScene : Node2D
             ? ReadCourseClearInput()
             : ReadFrameInput();
         _lastFrameInput = frameInput;
+        if (_powerupAnimationFrames > 0)
+        {
+            HandlePowerupAnimationFrame(frameInput, isDebugStep);
+            return;
+        }
+        if (_powerupSettleFrames > 0)
+        {
+            HandlePowerupSettleFrame(frameInput, isDebugStep);
+            return;
+        }
+
         var previousStateForActors = _state;
 
         var entranceLocked = _entranceMotionFrames > 0;
@@ -487,6 +511,88 @@ public partial class GameScene : Node2D
         }
     }
 
+    private void HandlePowerupAnimationFrame(SmwPhysics.FrameInput frameInput, bool isDebugStep)
+    {
+        UpdateCamera();
+        if (_player != null)
+        {
+            _player.Position = PlayerRenderPosition();
+        }
+        UpdatePlayerGraphic();
+        UpdateHud();
+        UpdateDebugGizmos();
+        PrintQueuedDebugTrace(frameInput);
+
+        _debugFrameCounter++;
+        _powerupAnimationFrames--;
+        if (_powerupAnimationFrames <= 0 && _pendingPowerup >= 0)
+        {
+            ApplyPendingPowerup();
+            _powerupSettleFrames = 1;
+        }
+
+        if (isDebugStep)
+        {
+            _debugStepFrames--;
+            if (_debugStepFrames <= 0 && _debugPaused)
+            {
+                PrintDebugState("step_done");
+            }
+        }
+    }
+
+    private void HandlePowerupSettleFrame(SmwPhysics.FrameInput frameInput, bool isDebugStep)
+    {
+        UpdateCamera();
+        if (_player != null)
+        {
+            _player.Position = PlayerRenderPosition();
+        }
+        UpdatePlayerGraphic();
+        UpdateHud();
+        UpdateDebugGizmos();
+        PrintQueuedDebugTrace(frameInput);
+
+        _debugFrameCounter++;
+        _powerupSettleFrames--;
+        if (isDebugStep)
+        {
+            _debugStepFrames--;
+            if (_debugStepFrames <= 0 && _debugPaused)
+            {
+                PrintDebugState("step_done");
+            }
+        }
+    }
+
+    private void ApplyPendingPowerup()
+    {
+        var powerup = Math.Clamp(_pendingPowerup, SmwPhysics.SmallPowerup, SmwPhysics.FirePowerup);
+        _pendingPowerup = -1;
+        _state.Powerup = powerup;
+        if (_state.Powerup == SmwPhysics.SmallPowerup)
+        {
+            _state.Ducking = false;
+        }
+        if (_state.Powerup != SmwPhysics.CapePowerup)
+        {
+            _state.CapeFloatFrames = 0;
+        }
+
+        _state.X += 2;
+        _state.XSpeed = 0;
+        _state.SubXSpeed = 0;
+        _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
+        UpdatePlayerGraphic(force: true);
+    }
+
+    private void ResetPowerupAnimationState()
+    {
+        _powerupAnimationFrames = 0;
+        _powerupSettleFrames = 0;
+        _pendingPowerup = -1;
+    }
+
     private readonly record struct PlacedMap16Tile(int X, int Y, int Map16, string Source);
     private readonly record struct SpriteSpawn(int X, int Y, int Screen, int SpriteId, int ExtraBits, int Offset);
     private readonly record struct SpriteOamTile(int Dx, int Dy, int Tile, int Prop, int Bank, bool Large);
@@ -543,6 +649,7 @@ public partial class GameScene : Node2D
         public float YSpeed { get; set; }
         public int MotionFrame { get; set; }
         public int InteractionCooldownFrames { get; set; }
+        public int SolidSideCooldownFrames { get; set; }
         public bool Used { get; set; }
         public bool Alive { get; set; } = true;
         public bool Active { get; set; }
@@ -3966,7 +4073,7 @@ public partial class GameScene : Node2D
     private void UpdatePlayerDebugGizmos()
     {
         var height = SmwPhysics.PlayerCollisionHeightFor(_state);
-        var offsetY = SmwPhysics.PlayerCollisionYOffset;
+        var offsetY = SmwPhysics.PlayerCollisionYOffsetFor(_state);
         if (_playerHitboxGizmo != null)
         {
             SetLineRect(_playerHitboxGizmo, new Rect2(new Vector2(0.0f, offsetY), new Vector2(SmwPhysics.PlayerWidth, height)));
@@ -4065,6 +4172,10 @@ public partial class GameScene : Node2D
             if (actor.InteractionCooldownFrames > 0)
             {
                 actor.InteractionCooldownFrames--;
+            }
+            if (actor.SolidSideCooldownFrames > 0)
+            {
+                actor.SolidSideCooldownFrames--;
             }
             UpdateSpriteActorMotion(actor);
             ApplySpriteActorVisualVisibility(actor);
@@ -4436,6 +4547,7 @@ public partial class GameScene : Node2D
             }
         }
 
+        ApplyPowerupItemGroundSpeed(actor);
         ApplySpriteActorGroundSpeed(actor, onSlope);
 
         if (actor.Y > GetLevelPixelBottom() + 128.0f)
@@ -4525,11 +4637,20 @@ public partial class GameScene : Node2D
         {
             actor.State = PowerupItemActiveState;
             actor.MotionFrame = 0;
-            if (actor.SpriteId is 0x74 or 0x78 && MathF.Abs(actor.XSpeed) < 0.01f)
-            {
-                actor.XSpeed = PowerupItemWalkSpeed;
-            }
         }
+    }
+
+    private static void ApplyPowerupItemGroundSpeed(RuntimeSpriteActor actor)
+    {
+        if (!actor.OnGround ||
+            actor.State != PowerupItemActiveState ||
+            actor.SpriteId is not (0x74 or 0x78) ||
+            MathF.Abs(actor.XSpeed) >= 0.01f)
+        {
+            return;
+        }
+
+        actor.XSpeed = PowerupItemWalkSpeed;
     }
 
     private static void UpdateFeatherItemMotion(RuntimeSpriteActor actor)
@@ -4607,6 +4728,11 @@ public partial class GameScene : Node2D
 
     private bool ResolvePlayerSolidBlockActorCollision(RuntimeSpriteActor actor, Rect2 previousPlayerRect)
     {
+        if (actor.SolidSideCooldownFrames > 0)
+        {
+            return false;
+        }
+
         var actorRect = actor.Rect;
         var playerRect = _physics.PlayerRect(_state);
         if (!playerRect.Intersects(actorRect))
@@ -4628,6 +4754,12 @@ public partial class GameScene : Node2D
         var actorBottom = actorRect.Position.Y + actorRect.Size.Y;
         var previousActorTop = actor.PreviousY + actor.Behavior.Hitbox.Position.Y;
         var previousActorBottom = previousActorTop + actor.Behavior.Hitbox.Size.Y;
+        var crossedActorLeftProbe =
+            previousRight < actorLeft + SolidBlockActorSideProbeDepth &&
+            playerRight >= actorLeft + SolidBlockActorSideProbeDepth;
+        var crossedActorRightProbe =
+            previousLeft > actorRight - SolidBlockActorSideProbeDepth &&
+            playerLeft <= actorRight - SolidBlockActorSideProbeDepth;
 
         if (_state.YSpeed >= 0 && previousBottom <= previousActorTop + 6.0f)
         {
@@ -4637,7 +4769,7 @@ public partial class GameScene : Node2D
 
         if (_state.YSpeed < 0 && previousTop >= previousActorBottom - 6.0f)
         {
-            _state.Y = SmwPhysics.AnchorYForCollisionTop(actorBottom);
+            _state.Y = SmwPhysics.AnchorYForCollisionTop(actorBottom, _state);
             _state.SubY = 0;
             _state.YSpeed = 16;
             _state.SubYSpeed = 0;
@@ -4650,22 +4782,22 @@ public partial class GameScene : Node2D
             return true;
         }
 
-        if (_state.XSpeed > 0 && previousRight <= actorLeft + 6.0f)
+        if (_state.XSpeed > 0 && crossedActorLeftProbe)
         {
-            _state.X = (int)MathF.Round(actorLeft - SmwPhysics.PlayerWidth);
-            _state.SubX = 0;
+            SetPlayerXFloat(actorLeft - SmwPhysics.PlayerWidth + SolidBlockActorSideSnapInset);
             _state.XSpeed = 0;
             _state.SubXSpeed = 0;
+            actor.SolidSideCooldownFrames = SolidBlockActorSideCooldownFrames;
             _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
             return true;
         }
 
-        if (_state.XSpeed < 0 && previousLeft >= actorRight - 6.0f)
+        if (_state.XSpeed < 0 && crossedActorRightProbe)
         {
-            _state.X = (int)MathF.Round(actorRight);
-            _state.SubX = 0;
+            SetPlayerXFloat(actorRight - SolidBlockActorSideSnapInset);
             _state.XSpeed = 0;
             _state.SubXSpeed = 0;
+            actor.SolidSideCooldownFrames = SolidBlockActorSideCooldownFrames;
             _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
             return true;
         }
@@ -4684,7 +4816,7 @@ public partial class GameScene : Node2D
         }
         else if (minOverlap == overlapFromBottom)
         {
-            _state.Y = SmwPhysics.AnchorYForCollisionTop(actorBottom);
+            _state.Y = SmwPhysics.AnchorYForCollisionTop(actorBottom, _state);
             _state.SubY = 0;
             _state.YSpeed = Math.Max(16, _state.YSpeed);
             _state.SubYSpeed = 0;
@@ -4696,22 +4828,46 @@ public partial class GameScene : Node2D
         }
         else if (overlapFromLeft < overlapFromRight)
         {
-            _state.X = (int)MathF.Round(actorLeft - SmwPhysics.PlayerWidth);
-            _state.SubX = 0;
+            if (!crossedActorLeftProbe)
+            {
+                return false;
+            }
+
+            SetPlayerXFloat(actorLeft - SmwPhysics.PlayerWidth + SolidBlockActorSideSnapInset);
             _state.XSpeed = 0;
             _state.SubXSpeed = 0;
+            actor.SolidSideCooldownFrames = SolidBlockActorSideCooldownFrames;
             _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
         }
         else
         {
-            _state.X = (int)MathF.Round(actorRight);
-            _state.SubX = 0;
+            if (!crossedActorRightProbe)
+            {
+                return false;
+            }
+
+            SetPlayerXFloat(actorRight - SolidBlockActorSideSnapInset);
             _state.XSpeed = 0;
             _state.SubXSpeed = 0;
+            actor.SolidSideCooldownFrames = SolidBlockActorSideCooldownFrames;
             _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
         }
 
         return true;
+    }
+
+    private void SetPlayerXFloat(float x)
+    {
+        var whole = (int)MathF.Floor(x);
+        var sub = (int)MathF.Round((x - whole) * 256.0f);
+        if (sub >= 256)
+        {
+            whole++;
+            sub -= 256;
+        }
+
+        _state.X = whole;
+        _state.SubX = Math.Clamp(sub, 0, 255);
     }
 
     private bool TriggerSolidBlockActorReward(RuntimeSpriteActor actor)
@@ -4830,7 +4986,7 @@ public partial class GameScene : Node2D
         }
 
         _worldRoot?.AddChild(node);
-        _spriteActors.Add(new RuntimeSpriteActor
+        var actor = new RuntimeSpriteActor
         {
             Node = node,
             Body = body,
@@ -4840,7 +4996,7 @@ public partial class GameScene : Node2D
             PreviousX = x,
             PreviousY = startY,
             HomeY = finalY,
-            XSpeed = initialXSpeed ?? (spriteId is 0x74 or 0x78 ? PowerupItemWalkSpeed : 0.0f),
+            XSpeed = initialXSpeed ?? (state == PowerupItemEmergingState ? 0.0f : behavior.InitialXSpeed),
             YSpeed = initialYSpeed,
             WakeScreen = wakeScreen,
             ContentIndex = WorldTileXNibble(x) & 0x03,
@@ -4851,7 +5007,16 @@ public partial class GameScene : Node2D
             Visuals = visuals,
             Behavior = behavior,
             State = state,
-        });
+        };
+
+        if (state == PowerupItemEmergingState)
+        {
+            _spriteActors.Insert(0, actor);
+        }
+        else
+        {
+            _spriteActors.Add(actor);
+        }
     }
 
     public void DebugSpawnPowerupItem(int spriteId, Vector2 position)
@@ -4888,7 +5053,6 @@ public partial class GameScene : Node2D
         if (!actor.Alive ||
             !actor.Active ||
             !actor.Behavior.CanInteract ||
-            (IsPowerupItemSprite(actor.SpriteId) && actor.State == PowerupItemEmergingState) ||
             (IsPowerupItemSprite(actor.SpriteId) && actor.InteractionCooldownFrames > 0) ||
             (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0) ||
             !playerRect.Intersects(actorRect))
@@ -4904,6 +5068,16 @@ public partial class GameScene : Node2D
 
         if (IsPowerupItemSprite(actor.SpriteId))
         {
+            if (actor.State == PowerupItemEmergingState && actor.MotionFrame < PowerupItemEmergingCollectFrame)
+            {
+                return false;
+            }
+
+            if (!HasPowerupItemCollectionOverlap(playerRect, actorRect))
+            {
+                return false;
+            }
+
             CollectPowerupItem(actor);
             return true;
         }
@@ -4920,7 +5094,7 @@ public partial class GameScene : Node2D
         var crossedActorTop = previousBottom <= actorTop + 20.0f && playerBottom >= actorTop - 2.0f;
         var topContact = playerBottom <= actorTop + 32.0f;
         var minimumTopPenetration = actor.SpriteId == 0xAB
-            ? actor.State == 1 ? RexStompMinimumTopPenetration * 2.0f : RexStompMinimumTopPenetration
+            ? actor.State == 1 ? SquishedRexStompMinimumTopPenetration : RexStompMinimumTopPenetration
             : 0.0f;
         var penetratedActorTop = playerBottom >= actorTop + minimumTopPenetration;
         _lastActorContact =
@@ -4937,19 +5111,26 @@ public partial class GameScene : Node2D
             if (TryStompRex(actor))
             {
                 AwardSpriteStompReward(actor, "stomp:AB:1");
-                BoostPlayerAfterSpriteStomp();
+                BoostPlayerAfterSpriteStomp(actor);
                 return true;
             }
 
             actor.Alive = false;
             _lastActorEvent = $"stomp:{actor.SpriteId:X2}:dead";
             AwardSpriteStompReward(actor, _lastActorEvent);
-            BoostPlayerAfterSpriteStomp();
+            BoostPlayerAfterSpriteStomp(actor);
             return true;
         }
 
         HurtPlayerFromActor(actor);
         return true;
+    }
+
+    private static bool HasPowerupItemCollectionOverlap(Rect2 playerRect, Rect2 actorRect)
+    {
+        var overlapX = MathF.Min(playerRect.Position.X + playerRect.Size.X, actorRect.Position.X + actorRect.Size.X) -
+            MathF.Max(playerRect.Position.X, actorRect.Position.X);
+        return overlapX >= PowerupItemCollectionMinOverlapX;
     }
 
     private void RevealInvisibleMushroom(RuntimeSpriteActor actor)
@@ -4983,23 +5164,17 @@ public partial class GameScene : Node2D
         {
             case 0x74:
                 AddScore(PowerupRewardScore);
-                _physics.SetPowerup(ref _state, SmwPhysics.BigPowerup);
-                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
-                UpdatePlayerGraphic(force: true);
+                StartPowerupAnimation(SmwPhysics.BigPowerup);
                 _audio?.PlayBlockReward();
                 break;
             case 0x75:
                 AddScore(PowerupRewardScore);
-                _physics.SetPowerup(ref _state, SmwPhysics.FirePowerup);
-                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
-                UpdatePlayerGraphic(force: true);
+                StartPowerupAnimation(SmwPhysics.FirePowerup);
                 _audio?.PlayBlockReward();
                 break;
             case 0x77:
                 AddScore(PowerupRewardScore);
-                _physics.SetPowerup(ref _state, SmwPhysics.CapePowerup);
-                _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
-                UpdatePlayerGraphic(force: true);
+                StartPowerupAnimation(SmwPhysics.CapePowerup);
                 _audio?.PlayBlockReward();
                 break;
             case 0x76:
@@ -5015,6 +5190,12 @@ public partial class GameScene : Node2D
         GD.Print(
             $"smw-runtime: item_collect level={_currentLevelId} sprite={actor.SpriteId:X2} " +
             $"x={actor.X:0.00} y={actor.Y:0.00} pow={_state.Powerup} star={_starPowerTimer:X2} score={_score} lives={_lives} oneups={_oneUpCount}");
+    }
+
+    private void StartPowerupAnimation(int powerup)
+    {
+        _pendingPowerup = powerup;
+        _powerupAnimationFrames = NativePowerupAnimationFrames;
     }
 
     private void ActivateStarPower()
@@ -5096,9 +5277,11 @@ public partial class GameScene : Node2D
         return true;
     }
 
-    private void BoostPlayerAfterSpriteStomp()
+    private void BoostPlayerAfterSpriteStomp(RuntimeSpriteActor actor)
     {
-        _state.YSpeed = -48;
+        _state.YSpeed = actor.SpriteId == 0xAB && _lastFrameInput.Jump
+            ? NativeSpriteStompYSpeed
+            : DefaultSpriteStompYSpeed;
         _state.SubYSpeed = 0;
         _state.OnGround = false;
         _audio?.PlaySpinJump();
@@ -5171,6 +5354,7 @@ public partial class GameScene : Node2D
 
         _playerHurtCooldown = NativePlayerPostPowerdownInvulnerabilityFrames;
         _playerAnimTimer = Math.Max(_playerAnimTimer, NativePlayerHurtAnimationFrames);
+        ResetPowerupAnimationState();
         _physics.SetPowerup(ref _state, SmwPhysics.SmallPowerup);
         _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
         UpdatePlayerGraphic(force: true);
@@ -5752,12 +5936,7 @@ public partial class GameScene : Node2D
     private static int PlayerRenderYOffsetForState(int powerup, bool ducking)
     {
         const int nativeOamYBias = -1;
-        if (powerup == SmwPhysics.SmallPowerup || ducking)
-        {
-            return nativeOamYBias;
-        }
-
-        return nativeOamYBias + SmwPhysics.BigPlayerHeight - SmwPhysics.SmallPlayerHeight;
+        return nativeOamYBias;
     }
 
     private ImageTexture? PlayerTextureForPowerup(int powerup)
@@ -6426,6 +6605,7 @@ public partial class GameScene : Node2D
         _entranceMotionAction = 0;
         _entranceMotionPixelsPerFrame = Vector2.Zero;
         _pipeTransitionLatch = false;
+        ResetPowerupAnimationState();
         _state.X = (int)MathF.Round(position.X);
         _state.Y = (int)MathF.Round(position.Y);
         _state.SubX = 0;
@@ -6450,6 +6630,7 @@ public partial class GameScene : Node2D
 
     public void DebugSetPlayerPowerup(int powerup)
     {
+        ResetPowerupAnimationState();
         _physics.SetPowerup(ref _state, powerup);
         _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
         if (_player != null)
@@ -7454,6 +7635,7 @@ public partial class GameScene : Node2D
         _entranceMotionAction = 0;
         _entranceMotionPixelsPerFrame = Vector2.Zero;
         _pipeTransitionLatch = false;
+        ResetPowerupAnimationState();
         _state = checkpoint.State;
         _starPowerTimer = checkpoint.StarPowerTimer;
         _cameraX = checkpoint.CameraX;
@@ -8150,6 +8332,7 @@ public partial class GameScene : Node2D
         return
             $"track_9f={DescribeTrackedActor(0x9F)} " +
             $"track_ab={DescribeTrackedActor(0xAB)} " +
+            $"track_74={DescribeTrackedActor(0x74)} " +
             $"track_83={DescribeTrackedActor(0x83)} " +
             $"track_bd={DescribeTrackedActor(0xBD)}";
     }
@@ -8742,6 +8925,7 @@ public partial class GameScene : Node2D
         _starPowerTimer = 0;
         _pendingDragonCoinNormalCoins = 0;
         _state = MakeInitialPlayerState(entrance);
+        ResetPowerupAnimationState();
         ResetDebugMaxPlayerX();
         ResetPlayerAnimationState();
         _cameraInitialized = false;
@@ -8865,6 +9049,7 @@ public partial class GameScene : Node2D
         _entranceMotionFrames = 0;
         HidePauseLabel();
         _state = MakeInitialPlayerState();
+        ResetPowerupAnimationState();
         ResetPlayerAnimationState();
         _cameraInitialized = false;
         UpdateCamera();
