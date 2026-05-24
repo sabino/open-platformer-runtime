@@ -10,6 +10,10 @@ internal static class Program
 {
     private const string SmwUsSha1 = "6B47BB75D16514B6A476AA0C73A683A2A4C18765";
     private const int SmwUsRomSize = 0x80000;
+    private const int ObjectPaletteAddress = 0x00B250;
+    private const int PlayerPaletteAddress = 0x00B2C8;
+    private const int PaletteBlack = 0x0000;
+    private const int PaletteWhite = 0x7FDD;
     private static readonly int[] LevelVerticalTable =
     [
         0x00, 0x00, 0x80, 0x01, 0x81, 0x02, 0x82, 0x03,
@@ -17,6 +21,20 @@ internal static class Program
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
     ];
+    private static readonly PlayerTableSpec[] PlayerOamTableSpecs =
+    [
+        new("player_xy_disp_index_index", 0x00DCEC, 70, "u8"),
+        new("player_xy_disp_index", 0x00DD32, 28, "u8"),
+        new("x_disp", 0x00DD4E, 114, "s16"),
+        new("y_disp", 0x00DE32, 114, "s16"),
+        new("powerup_tileset_index", 0x00DF16, 4, "u8"),
+        new("tiles_index", 0x00DF4C, 192, "u8"),
+        new("tiles", 0x00DFDA, 50, "u8"),
+        new("head_tile_pointer_index", 0x00E00C, 192, "u8"),
+        new("body_tile_pointer_index", 0x00E0CC, 192, "u8"),
+        new("tile_x_flip", 0x00E18C, 2, "u8"),
+    ];
+    private static readonly string[] PlayerPaletteNames = ["mario", "luigi", "fire_mario", "fire_luigi"];
 
     public static int Main(string[] args)
     {
@@ -36,6 +54,8 @@ internal static class Program
                 "verify-levels" when args.Length == 3 => VerifyLevels(args[1], args[2]),
                 "extract-audio-previews" when args.Length == 3 => ExtractAudioPreviews(args[1], args[2]),
                 "verify-audio-previews" when args.Length == 3 => VerifyAudioPreviews(args[1], args[2]),
+                "extract-player-metadata" when args.Length == 3 => ExtractPlayerMetadata(args[1], args[2]),
+                "verify-player-metadata" when args.Length == 3 => VerifyPlayerMetadata(args[1], args[2]),
                 _ => UsageError(args),
             };
         }
@@ -142,6 +162,25 @@ internal static class Program
         }
 
         Console.WriteLine($"smw-asset-tool: verified native BRR audio previews for samples {string.Join(",", manifest.DecodedSamples.Select(sample => sample.Id))}");
+        return 0;
+    }
+
+    private static int ExtractPlayerMetadata(string romPath, string outDir)
+    {
+        var rom = Rom.Load(romPath);
+        var outputRoot = Path.GetFullPath(outDir);
+        Directory.CreateDirectory(outputRoot);
+        WriteJson(Path.Combine(outputRoot, "native_player_metadata.json"), BuildPlayerMetadata(rom).ToSerializable());
+        Console.WriteLine($"smw-asset-tool: extracted native player metadata to {outputRoot}");
+        return 0;
+    }
+
+    private static int VerifyPlayerMetadata(string romPath, string generatedDir)
+    {
+        var rom = Rom.Load(romPath);
+        var generatedRoot = Path.GetFullPath(generatedDir);
+        VerifyGeneratedPlayerMetadata(generatedRoot, BuildPlayerMetadata(rom));
+        Console.WriteLine("smw-asset-tool: verified native player OAM tables and palettes");
         return 0;
     }
 
@@ -758,6 +797,104 @@ internal static class Program
         }
     }
 
+    private static PlayerMetadata BuildPlayerMetadata(Rom rom)
+    {
+        var paletteVariants = new List<PlayerPaletteVariant>();
+        for (var i = 0; i < PlayerPaletteNames.Length; i++)
+        {
+            paletteVariants.Add(new PlayerPaletteVariant(i, PlayerPaletteNames[i], BuildPlayerSpritePaletteWords(rom, i)));
+        }
+
+        var tilePointerTables = new Dictionary<string, int[]>(StringComparer.Ordinal)
+        {
+            ["head"] = rom.GetBytes(0x00E00C, 192).Select(value => (int)value).ToArray(),
+            ["body"] = rom.GetBytes(0x00E0CC, 192).Select(value => (int)value).ToArray(),
+            ["walking_pose_count"] = rom.GetBytes(0x00DC78, 4).Select(value => (int)value).ToArray(),
+            ["animation_speed_table"] = rom.GetBytes(0x00DC7C, 112).Select(value => (int)value).ToArray(),
+        };
+
+        var oamTables = PlayerOamTableSpecs
+            .Select(spec => new PlayerOamTable(
+                Name: spec.Name,
+                SourceAddress: spec.Address,
+                Count: spec.Count,
+                Format: spec.Format,
+                Values: ReadPlayerTableValues(rom, spec)))
+            .ToList();
+
+        return new PlayerMetadata(rom.Sha1, paletteVariants, tilePointerTables, oamTables);
+    }
+
+    private static int[] BuildPlayerSpritePaletteWords(Rom rom, int player)
+    {
+        var palette = Enumerable.Repeat(PaletteBlack, 16).ToArray();
+        palette[0] = PaletteBlack;
+        palette[1] = PaletteWhite;
+        CopyPaletteWords(palette, color: 2, rom.GetWords(ObjectPaletteAddress + 4 * 0x0C, 6));
+        CopyPaletteWords(palette, color: 6, rom.GetWords(PlayerPaletteAddress + Math.Clamp(player, 0, 3) * 0x14, 10));
+        return palette;
+    }
+
+    private static void CopyPaletteWords(int[] target, int color, int[] words)
+    {
+        for (var i = 0; i < words.Length && color + i < target.Length; i++)
+        {
+            target[color + i] = words[i];
+        }
+    }
+
+    private static int[] ReadPlayerTableValues(Rom rom, PlayerTableSpec spec)
+    {
+        return spec.Format switch
+        {
+            "u8" => rom.GetBytes(spec.Address, spec.Count).Select(value => (int)value).ToArray(),
+            "s16" => rom.GetWords(spec.Address, spec.Count).Select(Signed16).ToArray(),
+            _ => throw new InvalidOperationException($"unsupported player table format {spec.Format} for {spec.Name}"),
+        };
+    }
+
+    private static int Signed16(int word)
+    {
+        return (word & 0x8000) != 0 ? word - 0x10000 : word;
+    }
+
+    private static void VerifyGeneratedPlayerMetadata(string generatedRoot, PlayerMetadata expected)
+    {
+        var path = Path.Combine(generatedRoot, "player", "player_graphics.json");
+        Check(File.Exists(path), $"generated player graphics metadata missing: {path}");
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        var root = document.RootElement;
+
+        var palette = Required(root, "palette");
+        CheckJsonArrayEquals(Required(palette, "snes_bgr555"), expected.PaletteVariants[0].SnesBgr555, "player base palette");
+        var variants = RequiredArray(palette, "variants").ToArray();
+        Check(variants.Length == expected.PaletteVariants.Count, "player palette variant count mismatch");
+        for (var i = 0; i < expected.PaletteVariants.Count; i++)
+        {
+            var expectedVariant = expected.PaletteVariants[i];
+            var actualVariant = variants[i];
+            Check(Required(actualVariant, "index").GetInt32() == expectedVariant.Index, $"player palette variant {i} index mismatch");
+            Check((Required(actualVariant, "name").GetString() ?? "") == expectedVariant.Name, $"player palette variant {i} name mismatch");
+            CheckJsonArrayEquals(Required(actualVariant, "snes_bgr555"), expectedVariant.SnesBgr555, $"player palette variant {i}");
+        }
+
+        var tilePointerTables = Required(root, "tile_pointer_tables");
+        foreach (var (name, values) in expected.TilePointerTables)
+        {
+            CheckJsonArrayEquals(Required(tilePointerTables, name), values, $"player tile pointer table {name}");
+        }
+
+        var oamTables = Required(root, "oam_tables");
+        foreach (var expectedTable in expected.OamTables)
+        {
+            var actualTable = Required(oamTables, expectedTable.Name);
+            Check((Required(actualTable, "source_addr").GetString() ?? "") == $"0x{expectedTable.SourceAddress:X6}", $"player OAM table {expectedTable.Name} source address mismatch");
+            Check(Required(actualTable, "count").GetInt32() == expectedTable.Count, $"player OAM table {expectedTable.Name} count mismatch");
+            Check((Required(actualTable, "format").GetString() ?? "") == expectedTable.Format, $"player OAM table {expectedTable.Name} format mismatch");
+            CheckJsonArrayEquals(Required(actualTable, "values"), expectedTable.Values, $"player OAM table {expectedTable.Name}");
+        }
+    }
+
     private static (byte[] Data, int CompressedLength) SmwDecompress(Rom rom, int address)
     {
         var result = new List<byte>();
@@ -866,6 +1003,8 @@ internal static class Program
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-levels <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-audio-previews <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-audio-previews <rom.sfc> <generated/smw>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-player-metadata <rom.sfc> <out-dir>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-player-metadata <rom.sfc> <generated/smw>");
     }
 
     private static void Check(bool condition, string message)
@@ -897,6 +1036,8 @@ internal static class Program
         Check(actual.SequenceEqual(expected), $"{description} mismatch");
     }
 
+    private sealed record PlayerTableSpec(string Name, int Address, int Count, string Format);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -904,6 +1045,55 @@ internal static class Program
     };
 
     private sealed record AudioBank(string Name, int SourceAddress, int Length, byte[] Suffix);
+
+    private sealed record PlayerMetadata(
+        string SourceRomSha1,
+        List<PlayerPaletteVariant> PaletteVariants,
+        Dictionary<string, int[]> TilePointerTables,
+        List<PlayerOamTable> OamTables)
+    {
+        public object ToSerializable()
+        {
+            return new
+            {
+                schema_version = 1,
+                source_rom_sha1 = SourceRomSha1,
+                palette = new
+                {
+                    variants = PaletteVariants.Select(variant => variant.ToSerializable()).ToArray(),
+                },
+                tile_pointer_tables = TilePointerTables.ToDictionary(pair => pair.Key, pair => pair.Value),
+                oam_tables = OamTables.ToDictionary(table => table.Name, table => table.ToSerializable()),
+            };
+        }
+    }
+
+    private sealed record PlayerPaletteVariant(int Index, string Name, int[] SnesBgr555)
+    {
+        public object ToSerializable()
+        {
+            return new
+            {
+                index = Index,
+                name = Name,
+                snes_bgr555 = SnesBgr555,
+            };
+        }
+    }
+
+    private sealed record PlayerOamTable(string Name, int SourceAddress, int Count, string Format, int[] Values)
+    {
+        public object ToSerializable()
+        {
+            return new
+            {
+                source_addr = $"0x{SourceAddress:X6}",
+                count = Count,
+                format = Format,
+                values = Values,
+            };
+        }
+    }
 
     private sealed record AudioPreviewManifest(
         string SourceRomSha1,
@@ -1290,6 +1480,17 @@ internal static class Program
         public int GetWord(int address)
         {
             return GetByte(address) | (GetByte(address + 1) << 8);
+        }
+
+        public int[] GetWords(int address, int count)
+        {
+            var words = new int[count];
+            for (var i = 0; i < count; i++)
+            {
+                words[i] = GetWord(address + i * 2);
+            }
+
+            return words;
         }
 
         public int Get24(int address)

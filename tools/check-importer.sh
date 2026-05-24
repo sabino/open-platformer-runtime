@@ -10,6 +10,7 @@ dotnet run --project tests/SmwAssetCheck/SmwAssetCheck.csproj -- "$OUT_DIR"
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-core "$ROM_PATH" "$OUT_DIR"
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-levels "$ROM_PATH" "$OUT_DIR"
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-audio-previews "$ROM_PATH" "$OUT_DIR"
+dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-player-metadata "$ROM_PATH" "$OUT_DIR"
 
 python3 - "$OUT_DIR" "$ROM_PATH" <<'PY'
 import importlib.util
