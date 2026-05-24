@@ -111,9 +111,9 @@ step 1
 EOF
 cat >"$ACTOR_COMMAND_FILE" <<'EOF'
 pause
-spawn 528 304
+spawn 512 304
 powerup big
-step 1
+step 3
 state after_actor_hit
 EOF
 cat >"$HURT_BLINK_COMMAND_FILE" <<'EOF'
@@ -124,16 +124,16 @@ trace_oam 8 none tag=hurt_blink
 EOF
 cat >"$SMALL_HURT_COMMAND_FILE" <<'EOF'
 pause
-spawn 528 304
+spawn 512 264
 powerup small
-step 1
+step 3
 state after_small_hurt
 EOF
 cat >"$REX_COMMAND_FILE" <<'EOF'
 pause
-spawn 528 248
+spawn 528 264
 powerup big
-step 1
+step 3
 EOF
 cat >"$BANZAI_UNDER_COMMAND_FILE" <<'EOF'
 pause
@@ -469,9 +469,9 @@ grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "pow=0" "$LOG_FILE"
 grep -q "hurt=127" "$LOG_FILE"
 grep -q "xs=0 ys=0" "$LOG_FILE"
-grep -q "x=528.00 y=304.00" "$LOG_FILE"
-grep -q "actor_event=hurt:AB:0" "$LOG_FILE"
-grep -q "actor_contact=AB:0:" "$LOG_FILE"
+grep -q "x=512.00 y=288.00" "$LOG_FILE"
+grep -q "actor_event=hurt:9F:0" "$LOG_FILE"
+grep -q "actor_contact=9F:0:" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 12 --smw-test-autostart --smw-debug-command-file="$HURT_BLINK_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$HURT_BLINK_COMMAND_FILE" "$LOG_FILE"
@@ -486,9 +486,9 @@ grep -q "smw-debug-state: tag=after_start_idle" "$LOG_FILE"
 grep "smw-debug-state: tag=after_start_idle" "$LOG_FILE" | grep -q "actors_active=1"
 ! grep "smw-debug-state: tag=after_start_idle" "$LOG_FILE" | grep -q "actors_active=32"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "actor_event=hurt:BD:0" "$LOG_FILE"
-grep -q "x=16.00 y=304.00" "$LOG_FILE"
-grep -q "pow=0" "$LOG_FILE"
+grep -q "actor_event=none" "$LOG_FILE"
+grep -q "x=16.00 y=272.00" "$LOG_FILE"
+grep -q "pow=1" "$LOG_FILE"
 grep -q "deaths=0" "$LOG_FILE"
 ! grep -q "x=0.00" "$LOG_FILE"
 
@@ -496,7 +496,7 @@ grep -q "deaths=0" "$LOG_FILE"
 grep -q "smw-debug: command_file=$SMALL_HURT_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-runtime: player_death level=105 cause=hurt count=1" "$LOG_FILE"
 grep -q "smw-debug-state: tag=after_small_hurt" "$LOG_FILE"
-grep -q "actor_event=death:hurt:AB:0" "$LOG_FILE"
+grep -q "actor_event=death:hurt:9F:0" "$LOG_FILE"
 grep -q "x=16.00 y=288.00" "$LOG_FILE"
 grep -q "lives=4" "$LOG_FILE"
 grep -q "deaths=1" "$LOG_FILE"

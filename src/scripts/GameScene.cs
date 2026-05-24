@@ -19,7 +19,10 @@ public partial class GameScene : Node2D
     private const int SnesSpriteAtlasColumns = 16;
     private const float LogicalViewportWidth = 256.0f;
     private const float LogicalViewportHeight = 224.0f;
-    private const float CameraHorizontalAnchor = 0x80;
+    private const float CameraHorizontalInitialFocus = 0x80;
+    private const float CameraHorizontalRightFocus = 0x60;
+    private const float CameraHorizontalLeftFocus = 0x90;
+    private const float CameraHorizontalFocusStep = 2.0f;
     private const float CameraHorizontalBand = 12.0f;
     private const float CameraVerticalUpper = 0x64;
     private const float CameraVerticalLower = 0x7C;
@@ -27,10 +30,12 @@ public partial class GameScene : Node2D
     private const float CameraMaxScrollDownPerFrame = 5.0f;
     private const int SpriteActorWidth = 16;
     private const int SpriteActorHeight = 16;
-    private const float SpriteActorWakeMargin = 48.0f;
+    private const float SpriteActorWakeLeftMargin = 48.0f;
+    private const float SpriteActorWakeRightMargin = 32.0f;
     private const float SpriteActorSleepMargin = 160.0f;
     private const float SpriteActorVerticalWakeMargin = 80.0f;
     private const float SpriteActorVerticalSleepMargin = 128.0f;
+    private const int SpriteActorNativeWakeDelayFrames = 2;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
     private const float SlidingKoopaGroundDeceleration = 0.03125f;
@@ -217,6 +222,7 @@ public partial class GameScene : Node2D
     private string _currentLevelMusicPreview = "Level";
     private float _cameraX;
     private float _cameraY;
+    private float _cameraHorizontalFocus = CameraHorizontalInitialFocus;
     private bool _cameraInitialized;
     private bool _debugCameraLocked;
     private Vector2 _debugCameraLockPosition;
@@ -503,6 +509,7 @@ public partial class GameScene : Node2D
         string LevelId,
         float CameraX,
         float CameraY,
+        float CameraHorizontalFocus,
         int StarPowerTimer,
         int Frame);
     private readonly record struct LevelEntrance(
@@ -538,6 +545,7 @@ public partial class GameScene : Node2D
         public bool Active { get; set; }
         public bool AlwaysActive { get; init; }
         public bool OnGround { get; set; }
+        public int WakeDelayFrames { get; set; }
         public int WakeScreen { get; init; }
         public required List<Node> Visuals { get; init; }
         public required SpriteActorBehavior Behavior { get; set; }
@@ -2341,9 +2349,9 @@ public partial class GameScene : Node2D
     {
         return spriteId switch
         {
-            0x9F => new SpriteActorBehavior(new Rect2(8, 8, 52, 46), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.35f),
+            0x9F => new SpriteActorBehavior(new Rect2(8, 8, 52, 46), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.5f),
             0x95 => new SpriteActorBehavior(new Rect2(0, -4, 15, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
-            0xAB => new SpriteActorBehavior(new Rect2(2, -8, 12, 19), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.42f),
+            0xAB => new SpriteActorBehavior(new Rect2(2, -8, 12, 19), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.5f),
             0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -2.0f),
             0x74 or 0x78 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: PowerupItemWalkSpeed),
             0x75 or 0x76 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: 0.0f),
@@ -4025,10 +4033,23 @@ public partial class GameScene : Node2D
 
             actor.PreviousX = actor.X;
             actor.PreviousY = actor.Y;
+            var wasActive = actor.Active;
             actor.Active = IsSpriteActorAwake(actor);
             ApplySpriteActorVisualVisibility(actor);
             if (!actor.Active)
             {
+                actor.WakeDelayFrames = 0;
+                actor.Node.Position = new Vector2(actor.X, actor.Y);
+                continue;
+            }
+
+            if (!wasActive && !actor.AlwaysActive)
+            {
+                actor.WakeDelayFrames = SpriteActorNativeWakeDelayFrames;
+            }
+            if (actor.WakeDelayFrames > 0)
+            {
+                actor.WakeDelayFrames--;
                 actor.Node.Position = new Vector2(actor.X, actor.Y);
                 continue;
             }
@@ -4438,8 +4459,20 @@ public partial class GameScene : Node2D
             return true;
         }
 
-        var xMargin = actor.Active ? SpriteActorSleepMargin : SpriteActorWakeMargin;
-        var yMargin = actor.Active ? SpriteActorVerticalSleepMargin : SpriteActorVerticalWakeMargin;
+        if (!actor.Active)
+        {
+            var cameraTileX = MathF.Floor(_cameraX / Map16TileSize) * Map16TileSize;
+            var wakeLeft = cameraTileX - SpriteActorWakeLeftMargin;
+            var wakeRight = cameraTileX + LogicalViewportWidth + SpriteActorWakeRightMargin;
+            var wakeYMargin = SpriteActorVerticalWakeMargin;
+            return actor.X >= wakeLeft &&
+                actor.X <= wakeRight &&
+                actor.Y >= _cameraY - wakeYMargin &&
+                actor.Y <= _cameraY + LogicalViewportHeight + wakeYMargin;
+        }
+
+        var xMargin = SpriteActorSleepMargin;
+        var yMargin = SpriteActorVerticalSleepMargin;
         var activeWindow = new Rect2(
             _cameraX - xMargin,
             _cameraY - yMargin,
@@ -7338,7 +7371,14 @@ public partial class GameScene : Node2D
     private string DebugSaveCheckpoint(string slot)
     {
         slot = NormalizeCheckpointSlot(slot);
-        _debugCheckpoints[slot] = new DebugCheckpoint(_state, _currentLevelId, _cameraX, _cameraY, _starPowerTimer, _debugFrameCounter);
+        _debugCheckpoints[slot] = new DebugCheckpoint(
+            _state,
+            _currentLevelId,
+            _cameraX,
+            _cameraY,
+            _cameraHorizontalFocus,
+            _starPowerTimer,
+            _debugFrameCounter);
         var line =
             $"smw-debug-checkpoint: action=save slot={slot} level={_currentLevelId} frame={_debugFrameCounter} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
@@ -7368,6 +7408,7 @@ public partial class GameScene : Node2D
         _starPowerTimer = checkpoint.StarPowerTimer;
         _cameraX = checkpoint.CameraX;
         _cameraY = checkpoint.CameraY;
+        _cameraHorizontalFocus = checkpoint.CameraHorizontalFocus;
         _cameraInitialized = true;
         RefreshPlayerDebugPresentation(forceGraphic: true);
         var line =
@@ -8857,19 +8898,34 @@ public partial class GameScene : Node2D
 
         if (!_cameraInitialized)
         {
-            _cameraX = Math.Clamp(_state.XFloat - CameraHorizontalAnchor, 0.0f, maxCameraX);
+            _cameraHorizontalFocus = CameraHorizontalInitialFocus;
+            _cameraX = Math.Clamp(_state.XFloat - _cameraHorizontalFocus, 0.0f, maxCameraX);
             _cameraY = Math.Clamp(_state.YFloat - CameraVerticalLower, 0.0f, maxCameraY);
             _cameraInitialized = true;
         }
 
+        var previousCameraX = _cameraX;
         var playerScreenX = _state.XFloat - _cameraX;
-        if (playerScreenX < CameraHorizontalAnchor - CameraHorizontalBand)
+        if (playerScreenX < _cameraHorizontalFocus - CameraHorizontalBand)
         {
-            _cameraX -= CameraHorizontalAnchor - CameraHorizontalBand - playerScreenX;
+            _cameraX -= _cameraHorizontalFocus - CameraHorizontalBand - playerScreenX;
         }
-        else if (playerScreenX > CameraHorizontalAnchor + CameraHorizontalBand)
+        else if (playerScreenX > _cameraHorizontalFocus + CameraHorizontalBand)
         {
-            _cameraX += playerScreenX - (CameraHorizontalAnchor + CameraHorizontalBand);
+            _cameraX += playerScreenX - (_cameraHorizontalFocus + CameraHorizontalBand);
+        }
+
+        if (_cameraX > previousCameraX)
+        {
+            _cameraHorizontalFocus = MathF.Max(
+                CameraHorizontalRightFocus,
+                _cameraHorizontalFocus - CameraHorizontalFocusStep);
+        }
+        else if (_cameraX < previousCameraX)
+        {
+            _cameraHorizontalFocus = MathF.Min(
+                CameraHorizontalLeftFocus,
+                _cameraHorizontalFocus + CameraHorizontalFocusStep);
         }
 
         var playerScreenY = _state.YFloat - _cameraY;
