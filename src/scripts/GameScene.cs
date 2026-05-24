@@ -38,8 +38,9 @@ public partial class GameScene : Node2D
     private const int SpriteActorNativeWakeDelayFrames = 2;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
-    private const float RexStompMinimumTopPenetration = 2.0f;
+    private const float RexStompMinimumTopPenetration = 1.75f;
     private const float SquishedRexStompMinimumTopPenetration = 8.0f;
+    private const float BigSquishedRexStompMinimumTopPenetration = 5.0f;
     private const int DefaultSpriteStompYSpeed = -48;
     private const int NativeSpriteStompYSpeed = -88;
     private const int NativeHeldJumpGravity = 3;
@@ -5188,7 +5189,11 @@ public partial class GameScene : Node2D
         var crossedActorTop = previousBottom <= actorTop + 20.0f && playerBottom >= actorTop - 2.0f;
         var topContact = playerBottom <= actorTop + 32.0f;
         var minimumTopPenetration = actor.SpriteId == 0xAB
-            ? actor.State == 1 ? SquishedRexStompMinimumTopPenetration : RexStompMinimumTopPenetration
+            ? actor.State == 1
+                ? _state.Powerup == SmwPhysics.SmallPowerup
+                    ? SquishedRexStompMinimumTopPenetration
+                    : BigSquishedRexStompMinimumTopPenetration
+                : RexStompMinimumTopPenetration
             : 0.0f;
         var penetratedActorTop = playerBottom >= actorTop + minimumTopPenetration;
         var projectedFallingBottom = ProjectedFallingPlayerBottom(previousPlayerRect, previousPlayerState);
@@ -7964,7 +7969,7 @@ public partial class GameScene : Node2D
             $"head={DescribeSensorPoint(centerX, top + 1.0f)} " +
             $"side_l={DescribeSensorPoint(left, middleY)} side_r={DescribeSensorPoint(right - 1.0f, middleY)} " +
             $"foot_l={DescribeSensorPoint(footLeftX, footY)} foot_c={DescribeSensorPoint(centerX, footY)} foot_r={DescribeSensorPoint(footRightX, footY)} " +
-            $"floor_slope={slope}";
+            $"floor_slope={slope} {DescribeSolidsNear(playerRect.GetCenter(), 64.0f)}";
         return line;
     }
 

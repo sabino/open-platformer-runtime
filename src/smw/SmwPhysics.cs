@@ -36,6 +36,7 @@ public sealed class SmwPhysics
     private const int PostLandingAirDragFrameCount = 48;
     private const float StepUpTolerance = 12.0f;
     private const float MaxHorizontalCollisionCorrection = 64.0f;
+    private const float NativeHorizontalWallSlack = 1.0f;
 
     public static readonly sbyte[] PMeterDeltaTable =
     [
@@ -1038,6 +1039,9 @@ public sealed class SmwPhysics
                     continue;
                 }
 
+                var allowVerticalForWallSlack = solidVerticalEnabled == null ||
+                    solidIndex >= solidVerticalEnabled.Count ||
+                    solidVerticalEnabled[solidIndex];
                 var allowStepUp = solidStepUpEnabled == null ||
                     solidIndex >= solidStepUpEnabled.Count ||
                     solidStepUpEnabled[solidIndex];
@@ -1047,10 +1051,14 @@ public sealed class SmwPhysics
                     steppedOntoSolid = true;
                     continue;
                 }
-
+                if (allowStepUp && ShouldPassUnsupportedTallStepEdge(state, solid, rect))
+                {
+                    continue;
+                }
                 if (state.XSpeed > 0)
                 {
-                    var resolvedX = solid.Position.X - PlayerWidth;
+                    var wallSlack = !state.OnGround && allowVerticalForWallSlack ? NativeHorizontalWallSlack : 0.0f;
+                    var resolvedX = solid.Position.X - PlayerWidth + wallSlack;
                     if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
                     {
                         continue;
@@ -1060,7 +1068,8 @@ public sealed class SmwPhysics
                 }
                 else if (state.XSpeed < 0)
                 {
-                    var resolvedX = solid.Position.X + solid.Size.X;
+                    var wallSlack = !state.OnGround && allowVerticalForWallSlack ? NativeHorizontalWallSlack : 0.0f;
+                    var resolvedX = solid.Position.X + solid.Size.X - wallSlack;
                     if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
                     {
                         continue;
@@ -1084,6 +1093,11 @@ public sealed class SmwPhysics
 
                 if (state.YSpeed > 0)
                 {
+                    if (!HasNativeSolidSupport(state, solid))
+                    {
+                        continue;
+                    }
+
                     state.Y = AnchorYForCollisionBottom(solid.Position.Y, state);
                     state.OnGround = true;
                     state.InAirState = 0;
@@ -1091,6 +1105,11 @@ public sealed class SmwPhysics
                 }
                 else if (state.YSpeed < 0)
                 {
+                    if (!HasNativeVerticalCenterOverlap(state, solid))
+                    {
+                        continue;
+                    }
+
                     state.Y = AnchorYForCollisionTop(solid.Position.Y + solid.Size.Y, state);
                 }
                 state.SubY = 0;
@@ -1125,12 +1144,28 @@ public sealed class SmwPhysics
         {
             return false;
         }
+        if (solid.Size.Y > 16.0f && !HasNativeSolidSupport(state, solid))
+        {
+            return false;
+        }
 
         state.Y = AnchorYForCollisionBottom(solidTop, state);
         state.SubY = 0;
         state.SubYSpeed = 0;
         state.RunningTakeoff = false;
         return true;
+    }
+
+    private static bool ShouldPassUnsupportedTallStepEdge(PlayerState state, Rect2 solid, Rect2 playerRect)
+    {
+        if (state.YSpeed < 0 || solid.Size.Y <= 16.0f || HasNativeSolidSupport(state, solid))
+        {
+            return false;
+        }
+
+        var solidTop = solid.Position.Y;
+        var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+        return playerBottom > solidTop && playerBottom <= solidTop + StepUpTolerance;
     }
 
     private static bool IsStandingOnSolid(
@@ -1158,9 +1193,7 @@ public sealed class SmwPhysics
                 continue;
             }
 
-            var rectRight = rect.Position.X + rect.Size.X;
-            var solidRight = solid.Position.X + solid.Size.X;
-            if (rectRight <= solid.Position.X || rect.Position.X >= solidRight)
+            if (!HasNativeSolidSupport(state, solid))
             {
                 continue;
             }
@@ -1169,6 +1202,23 @@ public sealed class SmwPhysics
         }
 
         return false;
+    }
+
+    private static bool HasNativeSolidSupport(PlayerState state, Rect2 solid)
+    {
+        var supportX = state.XSpeed switch
+        {
+            > 0 => state.XFloat + 5.0f,
+            < 0 => state.XFloat + PlayerWidth - 5.0f,
+            _ => state.XFloat + PlayerWidth * 0.5f,
+        };
+        return supportX >= solid.Position.X && supportX < solid.Position.X + solid.Size.X;
+    }
+
+    private static bool HasNativeVerticalCenterOverlap(PlayerState state, Rect2 solid)
+    {
+        var centerX = state.XFloat + PlayerWidth * 0.5f;
+        return centerX >= solid.Position.X && centerX < solid.Position.X + solid.Size.X;
     }
 
     private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes, float previousBottom, bool wasOnGround)
