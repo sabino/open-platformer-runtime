@@ -7196,7 +7196,8 @@ public partial class GameScene : Node2D
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
             $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
-            $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()}");
+            $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()} " +
+            DescribeNearestActorTraceFields());
 
         if (_debugTraceOam)
         {
@@ -7929,6 +7930,27 @@ public partial class GameScene : Node2D
 
     private string DescribeNearestActor()
     {
+        var nearest = FindNearestActor();
+        return nearest == null
+            ? "none"
+            : $"{nearest.SpriteId:X2}:{nearest.State}:{nearest.X:0.00},{nearest.Y:0.00}";
+    }
+
+    private string DescribeNearestActorTraceFields()
+    {
+        var nearest = FindNearestActor();
+        if (nearest == null)
+        {
+            return "near_id=-- near_state=-1 near_x=0.00 near_y=0.00 near_xs=0.00 near_ys=0.00 near_active=0";
+        }
+
+        return
+            $"near_id={nearest.SpriteId:X2} near_state={nearest.State} near_x={nearest.X:0.00} near_y={nearest.Y:0.00} " +
+            $"near_xs={nearest.XSpeed:0.00} near_ys={nearest.YSpeed:0.00} near_active={(IsSpriteActorDebugActive(nearest) ? 1 : 0)}";
+    }
+
+    private RuntimeSpriteActor? FindNearestActor()
+    {
         RuntimeSpriteActor? nearest = null;
         var nearestDistance = float.MaxValue;
         var playerCenter = _physics.PlayerRect(_state).GetCenter();
@@ -7949,9 +7971,7 @@ public partial class GameScene : Node2D
             nearest = actor;
         }
 
-        return nearest == null
-            ? "none"
-            : $"{nearest.SpriteId:X2}:{nearest.State}:{nearest.X:0.00},{nearest.Y:0.00}";
+        return nearest;
     }
 
     private string DescribeActorsNear(float radius)

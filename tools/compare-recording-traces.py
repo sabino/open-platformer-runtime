@@ -109,6 +109,35 @@ def number(record: dict[str, int | float | str], key: str) -> float | None:
     return None
 
 
+def format_id(value: int | float | str | None) -> str:
+    if isinstance(value, int):
+        return f"{value:02X}"
+    if isinstance(value, float) and value.is_integer():
+        return f"{int(value):02X}"
+    if isinstance(value, str):
+        return value
+    return "?"
+
+
+def actor_summary(native: dict[str, int | float | str], godot: dict[str, int | float | str]) -> str:
+    native_id = format_id(native.get("near_sprite_id"))
+    godot_id = format_id(godot.get("near_id"))
+    native_status = native.get("near_sprite_status", "?")
+    godot_state = godot.get("near_state", "?")
+    native_x = native.get("near_sprite_x", "?")
+    native_y = native.get("near_sprite_y", "?")
+    godot_x = godot.get("near_x", "?")
+    godot_y = godot.get("near_y", "?")
+    native_xspeed = native.get("near_sprite_xspeed", "?")
+    native_yspeed = native.get("near_sprite_yspeed", "?")
+    godot_xspeed = godot.get("near_xs", "?")
+    godot_yspeed = godot.get("near_ys", "?")
+    return (
+        f"native_near={native_id}:{native_status}:{native_x},{native_y}:xs={native_xspeed}:ys={native_yspeed} "
+        f"godot_near={godot_id}:{godot_state}:{godot_x},{godot_y}:xs={godot_xspeed}:ys={godot_yspeed}"
+    )
+
+
 def compare(
     native: list[dict[str, int | float | str]],
     godot: list[dict[str, int | float | str]],
@@ -138,7 +167,8 @@ def compare(
                 f"native_frame={n.get('frame', '?')} godot_frame={g.get('frame', '?')} "
                 f"native_x={nx:.2f} godot_x={gx:.2f} dx={gx - nx:.2f} "
                 f"native_y={ny:.2f} native_y_adjusted={adjusted_ny:.2f} godot_y={gy:.2f} dy={gy - adjusted_ny:.2f} "
-                f"native_powerup={int(npow)} godot_powerup={int(gpow)}"
+                f"native_powerup={int(npow)} godot_powerup={int(gpow)} "
+                f"{actor_summary(n, g)}"
             )
     if len(native) != len(godot):
         return 1, f"trace_length_mismatch native={len(native)} godot={len(godot)} comparable={count}"
