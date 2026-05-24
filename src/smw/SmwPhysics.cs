@@ -706,12 +706,12 @@ public sealed class SmwPhysics
     private static void ApplyHorizontal(ref PlayerState state, FrameInput input, bool usePostLandingAirDrag)
     {
         var dir = 0;
-        var duckingOnGround = state.Ducking && state.OnGround;
-        if (!duckingOnGround && input.Left)
+        var horizontalSuppressed = state.OnGround && input.Down;
+        if (!horizontalSuppressed && input.Left)
         {
             dir--;
         }
-        if (!duckingOnGround && input.Right)
+        if (!horizontalSuppressed && input.Right)
         {
             dir++;
         }
@@ -739,7 +739,7 @@ public sealed class SmwPhysics
 
             if (state.XSpeed > 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useGroundFriction: !usePostLandingAirDrag);
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useIceFriction: false);
                 if (state.XSpeed < 0)
                 {
                     state.XSpeed = 0;
@@ -748,7 +748,7 @@ public sealed class SmwPhysics
             }
             else if (state.XSpeed < 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useGroundFriction: !usePostLandingAirDrag);
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useIceFriction: false);
                 if (state.XSpeed > 0)
                 {
                     state.XSpeed = 0;
@@ -757,7 +757,7 @@ public sealed class SmwPhysics
             }
             else if (state.OnGround && HorizontalSlopePlayerForState(state) != 0)
             {
-                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useGroundFriction: !usePostLandingAirDrag);
+                ApplyNativeHorizontalDrag(ref state, HorizontalSlopePlayerForState(state), useIceFriction: false);
             }
         }
     }
@@ -809,7 +809,7 @@ public sealed class SmwPhysics
         var target = HorizontalMaxSpeedTable[Math.Clamp(targetIndex, 0, HorizontalMaxSpeedTable.Length - 1)];
         if (ShouldApplyNativeFlatDrag(state.XSpeed, target))
         {
-            ApplyNativeHorizontalDrag(ref state, slopePlayer, useGroundFriction: state.OnGround && !usePostLandingAirDrag);
+            ApplyNativeHorizontalDrag(ref state, slopePlayer, useIceFriction: false);
             return;
         }
 
@@ -833,7 +833,7 @@ public sealed class SmwPhysics
         return x == t || ((t ^ ((x - t) & 0xFF)) & 0x80) == 0;
     }
 
-    private static void ApplyNativeHorizontalDrag(ref PlayerState state, int slopePlayer, bool useGroundFriction)
+    private static void ApplyNativeHorizontalDrag(ref PlayerState state, int slopePlayer, bool useIceFriction)
     {
         var k = (slopePlayer & 0xFF) >> 2;
         var j = (slopePlayer & 0xFF) >> 1;
@@ -843,7 +843,7 @@ public sealed class SmwPhysics
         }
 
         var tableIndex = Math.Clamp(j >> 1, 0, HorizontalDecelerationTable.Length - 1);
-        AddXAccel(ref state, useGroundFriction ? HorizontalGroundFrictionTable[tableIndex] : HorizontalDecelerationTable[tableIndex]);
+        AddXAccel(ref state, useIceFriction ? HorizontalGroundFrictionTable[tableIndex] : HorizontalDecelerationTable[tableIndex]);
         ClampNativeHorizontalDragToTarget(ref state, tableIndex, k >> 1);
     }
 

@@ -379,9 +379,9 @@ public static class PhysicsSmoke
         state.OnGround = true;
         state.XSpeed = 0x14;
         physics.Step(ref state, new SmwPhysics.FrameInput(), []);
-        if (state.XSpeed != 0x13 || state.SubXSpeed != 0xE0)
+        if (state.XSpeed != 0x13 || state.SubXSpeed != 0x00)
         {
-            Console.Error.WriteLine($"expected ground friction 0x0020, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
+            Console.Error.WriteLine($"expected native normal-ground drag 0x0100, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
             return false;
         }
 
@@ -389,7 +389,7 @@ public static class PhysicsSmoke
         state.OnGround = true;
         state.XSpeed = 0x14;
         physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, []);
-        if (state.XSpeed != 0x13 || state.SubXSpeed != 0xE0)
+        if (state.XSpeed != 0x13 || state.SubXSpeed != 0x00)
         {
             Console.Error.WriteLine($"expected held walk cap to use native table drag, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
             return false;
@@ -399,7 +399,7 @@ public static class PhysicsSmoke
         state.OnGround = true;
         state.XSpeed = 0x24;
         physics.Step(ref state, new SmwPhysics.FrameInput { Right = true, Run = true }, []);
-        if (state.XSpeed != 0x23 || state.SubXSpeed != 0xE0)
+        if (state.XSpeed != 0x23 || state.SubXSpeed != 0x00)
         {
             Console.Error.WriteLine($"expected held run cap to use native table drag, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
             return false;
@@ -464,12 +464,12 @@ public static class PhysicsSmoke
         if (!ExpectState(
             "walk60",
             walk,
-            x: 82,
-            subX: 112,
+            x: 81,
+            subX: 80,
             y: 52,
             subY: 0,
             xSpeed: 20,
-            subXSpeed: 32,
+            subXSpeed: 0,
             ySpeed: 6,
             onGround: true,
             pMeter: 0,
@@ -486,12 +486,12 @@ public static class PhysicsSmoke
         if (!ExpectState(
             "walk120",
             walk,
-            x: 158,
-            subX: 96,
+            x: 155,
+            subX: 144,
             y: 52,
             subY: 0,
             xSpeed: 20,
-            subXSpeed: 192,
+            subXSpeed: 0,
             ySpeed: 6,
             onGround: true,
             pMeter: 0,
@@ -510,12 +510,12 @@ public static class PhysicsSmoke
         if (!ExpectState(
             "run60",
             run,
-            x: 123,
+            x: 122,
             subX: 16,
             y: 52,
             subY: 0,
-            xSpeed: 36,
-            subXSpeed: 96,
+            xSpeed: 35,
+            subXSpeed: 0,
             ySpeed: 6,
             onGround: true,
             pMeter: 72,
@@ -532,12 +532,12 @@ public static class PhysicsSmoke
         if (!ExpectState(
             "run120",
             run,
-            x: 286,
-            subX: 144,
+            x: 283,
+            subX: 160,
             y: 52,
             subY: 0,
-            xSpeed: 48,
-            subXSpeed: 96,
+            xSpeed: 47,
+            subXSpeed: 128,
             ySpeed: 6,
             onGround: true,
             pMeter: 112,
@@ -662,7 +662,7 @@ public static class PhysicsSmoke
         state.OnGround = true;
         state.SlopePlayer = 0x28;
         physics.Step(ref state, new SmwPhysics.FrameInput(), []);
-        if (state.XSpeed != -1 || state.SubXSpeed != 0x80)
+        if (state.XSpeed != -2 || state.SubXSpeed != 0x00)
         {
             Console.Error.WriteLine($"expected no-input steep-left slope to apply native downslope drag, got xs={state.XSpeed} sub=0x{state.SubXSpeed:X2}");
             return false;
@@ -672,7 +672,7 @@ public static class PhysicsSmoke
         state.OnGround = true;
         state.SlopePlayer = 0x30;
         physics.Step(ref state, new SmwPhysics.FrameInput(), []);
-        if (state.XSpeed != 0 || state.SubXSpeed != 0x80)
+        if (state.XSpeed != 2 || state.SubXSpeed != 0x00)
         {
             Console.Error.WriteLine($"expected no-input steep-right slope to apply native downslope drag, got xs={state.XSpeed} sub=0x{state.SubXSpeed:X2}");
             return false;
@@ -759,6 +759,14 @@ public static class PhysicsSmoke
         if (state.Ducking || SmwPhysics.PlayerHeightFor(state) != SmwPhysics.SmallPlayerHeight)
         {
             Console.Error.WriteLine($"expected small Mario down input to keep normal small hitbox, got duck={state.Ducking} h={SmwPhysics.PlayerHeightFor(state)}");
+            return false;
+        }
+
+        state.XSpeed = 0x14;
+        physics.Step(ref state, new SmwPhysics.FrameInput { Down = true, Right = true, Run = true }, floor);
+        if (state.XSpeed != 0x13 || state.SubXSpeed != 0x00)
+        {
+            Console.Error.WriteLine($"expected small grounded down input to suppress horizontal acceleration, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
             return false;
         }
 

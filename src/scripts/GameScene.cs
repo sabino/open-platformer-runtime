@@ -87,7 +87,7 @@ public partial class GameScene : Node2D
     private const int AutoplayExploreStuckJumpThreshold = 75;
     private const int AutoplayExploreStuckJumpPeriod = 40;
     private const int AutoplayExploreStuckJumpHeldFrames = 12;
-    private const float AutoplayExploreActorJumpAheadPixels = 56.0f;
+    private const float AutoplayExploreActorJumpAheadPixels = 96.0f;
     private const float AutoplayExploreActorJumpBehindPixels = 8.0f;
     private const float AutoplayExploreActorVerticalRangePixels = 72.0f;
     private const float AutoplayExploreActorPeriodicSuppressAheadPixels = 128.0f;
@@ -494,7 +494,8 @@ public partial class GameScene : Node2D
         bool Stompable,
         bool TerrainCollision,
         bool Gravity,
-        float InitialXSpeed);
+        float InitialXSpeed,
+        Rect2? TerrainHitbox = null);
     private readonly record struct PipeEntrance(
         Rect2 Rect,
         int Screen,
@@ -547,10 +548,14 @@ public partial class GameScene : Node2D
         public bool OnGround { get; set; }
         public int WakeDelayFrames { get; set; }
         public int WakeScreen { get; init; }
+        public int ContentIndex { get; init; }
         public required List<Node> Visuals { get; init; }
         public required SpriteActorBehavior Behavior { get; set; }
         public int State { get; set; }
         public Rect2 Rect => new(X + Behavior.Hitbox.Position.X, Y + Behavior.Hitbox.Position.Y, Behavior.Hitbox.Size.X, Behavior.Hitbox.Size.Y);
+        public Rect2 TerrainRect => Behavior.TerrainHitbox is { } terrainHitbox
+            ? new Rect2(X + terrainHitbox.Position.X, Y + terrainHitbox.Position.Y, terrainHitbox.Size.X, terrainHitbox.Size.Y)
+            : Rect;
     }
 
     private sealed class PlayerFireball
@@ -889,8 +894,7 @@ public partial class GameScene : Node2D
         var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
         foreach (var actor in _spriteActors)
         {
-            if (actor.SpriteId != 0x95 ||
-                !IsAutoplayAvoidanceActor(actor) ||
+            if (!IsAutoplayAvoidanceActor(actor) ||
                 !actor.Behavior.Stompable)
             {
                 continue;
@@ -1976,6 +1980,7 @@ public partial class GameScene : Node2D
             HomeY = actorY,
             XSpeed = behavior.InitialXSpeed,
             WakeScreen = spawn.Screen,
+            ContentIndex = WorldTileXNibble(spawn.X) & 0x03,
             MotionFrame = InitialSpriteMotionFrame(spawn),
             Visuals = visuals,
             Behavior = behavior,
@@ -2350,8 +2355,9 @@ public partial class GameScene : Node2D
         return spriteId switch
         {
             0x9F => new SpriteActorBehavior(new Rect2(8, 8, 52, 46), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.5f),
+            0x83 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -0.75f),
             0x95 => new SpriteActorBehavior(new Rect2(0, -4, 15, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
-            0xAB => new SpriteActorBehavior(new Rect2(2, -8, 12, 19), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.5f),
+            0xAB => new SpriteActorBehavior(new Rect2(2, -8, 12, 19), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.5f, TerrainHitbox: new Rect2(0, 0, 16, 16)),
             0xBD => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -2.0f),
             0x74 or 0x78 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: PowerupItemWalkSpeed),
             0x75 or 0x76 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: true, Gravity: true, InitialXSpeed: 0.0f),
@@ -4349,7 +4355,8 @@ public partial class GameScene : Node2D
         }
 
         actor.X += actor.XSpeed;
-        var rect = actor.Rect;
+        var terrainHitbox = actor.Behavior.TerrainHitbox ?? actor.Behavior.Hitbox;
+        var rect = actor.TerrainRect;
         if (actor.Behavior.TerrainCollision)
         {
             foreach (var solid in _solids)
@@ -4361,14 +4368,14 @@ public partial class GameScene : Node2D
 
                 if (actor.XSpeed > 0)
                 {
-                    actor.X = solid.Position.X - actor.Behavior.Hitbox.Position.X - actor.Behavior.Hitbox.Size.X;
+                    actor.X = solid.Position.X - terrainHitbox.Position.X - terrainHitbox.Size.X;
                 }
                 else if (actor.XSpeed < 0)
                 {
-                    actor.X = solid.Position.X + solid.Size.X - actor.Behavior.Hitbox.Position.X;
+                    actor.X = solid.Position.X + solid.Size.X - terrainHitbox.Position.X;
                 }
                 actor.XSpeed = -actor.XSpeed;
-                rect = actor.Rect;
+                rect = actor.TerrainRect;
             }
         }
 
@@ -4378,7 +4385,7 @@ public partial class GameScene : Node2D
         }
         actor.Y += actor.YSpeed;
         actor.OnGround = false;
-        rect = actor.Rect;
+        rect = actor.TerrainRect;
         var onSlope = false;
         if (actor.Behavior.TerrainCollision)
         {
@@ -4391,22 +4398,22 @@ public partial class GameScene : Node2D
 
                 if (actor.YSpeed >= 0)
                 {
-                    actor.Y = solid.Position.Y - actor.Behavior.Hitbox.Position.Y - actor.Behavior.Hitbox.Size.Y;
+                    actor.Y = solid.Position.Y - terrainHitbox.Position.Y - terrainHitbox.Size.Y;
                     actor.YSpeed = 0.0f;
                     actor.OnGround = true;
                 }
                 else
                 {
-                    actor.Y = solid.Position.Y + solid.Size.Y - actor.Behavior.Hitbox.Position.Y;
+                    actor.Y = solid.Position.Y + solid.Size.Y - terrainHitbox.Position.Y;
                     actor.YSpeed = 0.0f;
                 }
-                rect = actor.Rect;
+                rect = actor.TerrainRect;
             }
         }
 
         if (actor.Behavior.TerrainCollision)
         {
-            rect = actor.Rect;
+            rect = actor.TerrainRect;
             var probeX = rect.GetCenter().X;
             var bottom = rect.Position.Y + rect.Size.Y;
             if (SmwPhysics.TryResolveFloorSlopeFromAbove(
@@ -4420,7 +4427,7 @@ public partial class GameScene : Node2D
                 belowTolerance: 16.0f,
                 out var slopeY))
             {
-                actor.Y = slopeY - actor.Behavior.Hitbox.Position.Y - actor.Behavior.Hitbox.Size.Y;
+                actor.Y = slopeY - terrainHitbox.Position.Y - terrainHitbox.Size.Y;
                 actor.YSpeed = 0.0f;
                 actor.OnGround = true;
                 onSlope = true;
@@ -4491,8 +4498,15 @@ public partial class GameScene : Node2D
 
     private static void UpdateWingedQuestionBlockMotion(RuntimeSpriteActor actor)
     {
+        if (actor.Used)
+        {
+            actor.XSpeed = 0.0f;
+            return;
+        }
+
         var frame = actor.MotionFrame % WingedQuestionBlockCycleFrames;
         actor.MotionFrame = (actor.MotionFrame + 1) % WingedQuestionBlockCycleFrames;
+        actor.X += actor.XSpeed;
         var wave = frame < WingedQuestionBlockCycleFrames / 2
             ? frame
             : WingedQuestionBlockCycleFrames - frame;
@@ -4706,7 +4720,7 @@ public partial class GameScene : Node2D
         }
 
         actor.Used = true;
-        var contentIndex = WorldTileXNibble(actor.X) & 0x03;
+        var contentIndex = actor.ContentIndex & 0x03;
         var reward = contentIndex switch
         {
             0 => "coin",
@@ -4827,6 +4841,7 @@ public partial class GameScene : Node2D
             XSpeed = initialXSpeed ?? (spriteId is 0x74 or 0x78 ? PowerupItemWalkSpeed : 0.0f),
             YSpeed = initialYSpeed,
             WakeScreen = wakeScreen,
+            ContentIndex = WorldTileXNibble(x) & 0x03,
             Active = true,
             AlwaysActive = true,
             MotionFrame = 0,
@@ -7321,7 +7336,8 @@ public partial class GameScene : Node2D
             $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
             $"score={_score} coins={_coinCount} dragon={_dragonCoinCount} lives={_lives} oneups={_oneUpCount} " +
             $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()} " +
-            DescribeNearestActorTraceFields());
+            DescribeNearestActorTraceFields() + " " +
+            DescribeTrackedActorTraceFields());
 
         if (_debugTraceOam)
         {
@@ -8095,6 +8111,26 @@ public partial class GameScene : Node2D
             $"near_xs={nearest.XSpeed:0.00} near_ys={nearest.YSpeed:0.00} near_active={(IsSpriteActorDebugActive(nearest) ? 1 : 0)}";
     }
 
+    private string DescribeTrackedActorTraceFields()
+    {
+        return
+            $"track_9f={DescribeTrackedActor(0x9F)} " +
+            $"track_ab={DescribeTrackedActor(0xAB)} " +
+            $"track_83={DescribeTrackedActor(0x83)} " +
+            $"track_bd={DescribeTrackedActor(0xBD)}";
+    }
+
+    private string DescribeTrackedActor(int spriteId)
+    {
+        var actor = _spriteActors
+            .Where(item => item.Alive && item.SpriteId == spriteId)
+            .OrderBy(item => item.Rect.GetCenter().DistanceSquaredTo(_physics.PlayerRect(_state).GetCenter()))
+            .FirstOrDefault();
+        return actor == null
+            ? "none"
+            : $"{actor.State}:{actor.X:0.00},{actor.Y:0.00}:{actor.XSpeed:0.00},{actor.YSpeed:0.00}:{(IsSpriteActorDebugActive(actor) ? 1 : 0)}";
+    }
+
     private RuntimeSpriteActor? FindNearestActor()
     {
         RuntimeSpriteActor? nearest = null;
@@ -8135,7 +8171,7 @@ public partial class GameScene : Node2D
             .OrderBy(item => item.DistanceSq)
             .Take(8)
             .Select(item =>
-                $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}:visuals={item.Actor.Visuals.Count}:visible={(item.Actor.Node.Visible ? 1 : 0)}:active={(IsSpriteActorDebugActive(item.Actor) ? 1 : 0)}");
+                $"{item.Actor.SpriteId:X2}:state={item.Actor.State}:pos={item.Actor.X:0.00},{item.Actor.Y:0.00}:rect={item.Actor.Rect.Position.X:0.00},{item.Actor.Rect.Position.Y:0.00},{item.Actor.Rect.Size.X:0.00},{item.Actor.Rect.Size.Y:0.00}:terrain={item.Actor.TerrainRect.Position.X:0.00},{item.Actor.TerrainRect.Position.Y:0.00},{item.Actor.TerrainRect.Size.X:0.00},{item.Actor.TerrainRect.Size.Y:0.00}:visuals={item.Actor.Visuals.Count}:visible={(item.Actor.Node.Visible ? 1 : 0)}:active={(IsSpriteActorDebugActive(item.Actor) ? 1 : 0)}");
         var description = string.Join(" | ", actors);
         return string.IsNullOrEmpty(description) ? "none" : description;
     }

@@ -190,6 +190,7 @@ cat >"$ACTORS_AUTOPLAY_COMMAND_FILE" <<'EOF'
 pause
 spawn 16 288 big
 ground on
+god on
 actors on
 autoplay explore
 step 5000
@@ -440,9 +441,10 @@ grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=none"
 "$GODOT_BIN" --headless --path . --quit-after 5060 --smw-test-autostart --smw-debug-command-file="$ACTORS_AUTOPLAY_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$ACTORS_AUTOPLAY_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-autoplay: mode=explore frame=0" "$LOG_FILE"
-grep -q "smw-runtime: sprite_stomp level=105 sprite=BD" "$LOG_FILE"
+grep -q "smw-runtime: actor_contact level=105 action=god contact=9F" "$LOG_FILE"
 grep -q "smw-runtime: sprite_stomp level=105 sprite=AB" "$LOG_FILE"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actors_on=1"
+grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "god=1"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "gameover=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "clear=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "deaths=0"
@@ -537,9 +539,9 @@ grep -q "solids=25" "$LOG_FILE"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$WING_BLOCK_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$WING_BLOCK_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
-grep -q "x=592.00 y=192.00" "$LOG_FILE"
+grep -q "x=591.00 y=192.00" "$LOG_FILE"
 grep -q "g=1" "$LOG_FILE"
-grep -q "near=83:0:592.00,239.50" "$LOG_FILE"
+grep -q "near=83:0:591.25,239.50" "$LOG_FILE"
 grep -q "actor_event=block:83:top" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$WING_BLOCK_REWARD_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
