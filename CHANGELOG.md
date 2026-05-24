@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added native-source playthrough recording support: `tools/run-native-recording-wayland.sh` launches `/path/to/native-reference` visibly on Wayland and converts the newest manual/playthrough snapshot to a Godot input script via `tools/convert-native-snapshot-input.py`, which decodes the native `StateRecorder` joypad log; `tools/run-recorded-input-wayland.sh` replays the latest capture in Godot. Also added a renamed external TAS diagnostic path (`tools/prepare-tas-diagnostic.sh`, `tools/run-tas-diagnostic.sh`, `tools/check-tas-diagnostic.sh`) and clarified that TASVideos `3849S` is not a Yoshi's Island 1 sync baseline.
 - Preserved native zero-distance slope snap values for Map16 pipe/slope tiles instead of widening them to the fallback tolerance, while keeping the current temporary `0x01C5`/`0x01C7` diagonal-pipe traversal support until the full Map16 act-as routine is ported; added a physics smoke regression for zero-snap contact.
 - Expanded the generated/internal BRR sample probe set to match the runtime SFX fallback sample IDs `07`, `08`, `09`, `0E`, and `10`; the menu now exposes five sample buttons, the importer writes all five preview WAVs, and the native C# audio verifier byte-checks all five decodes.
 - Added native C# extraction/verification for generated palette assets: `SmwAssetTool` now has `extract-palettes` and `verify-palettes`, checks global palette tables plus level `105`/`1CB` CGRAM assembly from the ROM/header palette indexes, and the local gates run the verifier.

@@ -63,7 +63,7 @@ cat >"$INPUT_SCRIPT" <<'EOF'
 @allow-opposing-directions
 1 Start
 1 right run
-1 right run jump
+1 Right+Y+B
 1 L,R,Select
 EOF
 printf '1 down\n' >"$PIPE_SCRIPT"

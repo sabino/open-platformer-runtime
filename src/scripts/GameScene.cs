@@ -8253,7 +8253,7 @@ public partial class GameScene : Node2D
         }
 
         var parts = line.Split(
-            [' ', '\t', ',', ':', ';'],
+            [' ', '\t', ',', ':', ';', '+'],
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length == 0)
         {
