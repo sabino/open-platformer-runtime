@@ -18,6 +18,7 @@ if [[ -f "$ROM_PATH" && -f generated/smw/manifest.json ]]; then
   dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-audio-previews "$ROM_PATH" generated/smw
   dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-player-metadata "$ROM_PATH" generated/smw
   dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-entrance-tables "$ROM_PATH" generated/smw
+  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-palettes "$ROM_PATH" generated/smw
 else
   echo "smw-asset-tool: skipped native ROM verification (ROM or generated assets missing)"
 fi

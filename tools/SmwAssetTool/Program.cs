@@ -10,8 +10,15 @@ internal static class Program
 {
     private const string SmwUsSha1 = "6B47BB75D16514B6A476AA0C73A683A2A4C18765";
     private const int SmwUsRomSize = 0x80000;
+    private const int BgPaletteAddress = 0x00B0B0;
+    private const int FgPaletteAddress = 0x00B190;
     private const int ObjectPaletteAddress = 0x00B250;
     private const int PlayerPaletteAddress = 0x00B2C8;
+    private const int SpritePaletteAddress = 0x00B318;
+    private const int Layer3PaletteAddress = 0x00B170;
+    private const int BerryPaletteAddress = 0x00B674;
+    private const int BackAreaColorAddress = 0x00B0A0;
+    private const int AnimatedColorAddress = 0x00B60C;
     private const int PaletteBlack = 0x0000;
     private const int PaletteWhite = 0x7FDD;
     private static readonly int[] LevelVerticalTable =
@@ -45,6 +52,18 @@ internal static class Program
         new("secondary_x_05fc00", 0x05FC00, 0x200),
         new("secondary_y_05fa00", 0x05FA00, 0x200),
     ];
+    private static readonly PaletteTableSpec[] GlobalPaletteSpecs =
+    [
+        new("sky", 0x00B0A0, 16),
+        new("background", 0x00B0B0, 96),
+        new("layer3", 0x00B170, 16),
+        new("foreground", 0x00B190, 96),
+        new("objects", 0x00B250, 60),
+        new("player", 0x00B2C8, 40),
+        new("sprites", 0x00B318, 84),
+        new("flashing", 0x00B60C, 16),
+        new("yoshi_berry", 0x00B674, 21),
+    ];
     private static readonly string[] PlayerPaletteNames = ["mario", "luigi", "fire_mario", "fire_luigi"];
 
     public static int Main(string[] args)
@@ -69,6 +88,8 @@ internal static class Program
                 "verify-player-metadata" when args.Length == 3 => VerifyPlayerMetadata(args[1], args[2]),
                 "extract-entrance-tables" when args.Length == 3 => ExtractEntranceTables(args[1], args[2]),
                 "verify-entrance-tables" when args.Length == 3 => VerifyEntranceTables(args[1], args[2]),
+                "extract-palettes" when args.Length == 3 => ExtractPalettes(args[1], args[2]),
+                "verify-palettes" when args.Length == 3 => VerifyPalettes(args[1], args[2]),
                 _ => UsageError(args),
             };
         }
@@ -213,6 +234,30 @@ internal static class Program
         var generatedRoot = Path.GetFullPath(generatedDir);
         VerifyGeneratedEntranceTables(generatedRoot, BuildEntranceTables(rom));
         Console.WriteLine("smw-asset-tool: verified native entrance and secondary-exit tables");
+        return 0;
+    }
+
+    private static int ExtractPalettes(string romPath, string outDir)
+    {
+        var rom = Rom.Load(romPath);
+        var outputRoot = Path.GetFullPath(outDir);
+        var palettes = BuildPaletteAssets(rom);
+        WriteJson(Path.Combine(outputRoot, "palettes", "global_palettes.json"), palettes.Global.ToSerializable());
+        foreach (var level in palettes.Levels)
+        {
+            WriteJson(Path.Combine(outputRoot, "palettes", $"level_{level.LevelId}_palette.json"), level.ToSerializable());
+        }
+
+        Console.WriteLine($"smw-asset-tool: extracted native palette assets to {outputRoot}");
+        return 0;
+    }
+
+    private static int VerifyPalettes(string romPath, string generatedDir)
+    {
+        var rom = Rom.Load(romPath);
+        var generatedRoot = Path.GetFullPath(generatedDir);
+        VerifyGeneratedPalettes(generatedRoot, BuildPaletteAssets(rom));
+        Console.WriteLine("smw-asset-tool: verified native global and level palettes");
         return 0;
     }
 
@@ -964,6 +1009,151 @@ internal static class Program
             "secondary entrance 1CB return-to-105 anchor mismatch");
     }
 
+    private static PaletteAssets BuildPaletteAssets(Rom rom)
+    {
+        var globalSets = GlobalPaletteSpecs
+            .Select(spec => new PaletteSet(spec.Name, rom.GetWords(spec.Address, spec.WordCount)))
+            .ToList();
+        var summaries = BuildLevelSummaries(rom, [0x105, 0x1CB]);
+        var levels = summaries.Values
+            .Select(summary => BuildLevelPalette(rom, summary.LevelId, summary.Header))
+            .ToList();
+        return new PaletteAssets(new GlobalPalettes(globalSets), levels);
+    }
+
+    private static LevelPalette BuildLevelPalette(Rom rom, string levelId, LevelHeader header)
+    {
+        var words = Enumerable.Repeat(0, 256).ToArray();
+        for (var row = 0; row < 16; row++)
+        {
+            words[row * 16] = PaletteBlack;
+            words[row * 16 + 1] = PaletteWhite;
+        }
+
+        var backAreaColor = rom.GetWord(BackAreaColorAddress + header.BackgroundColor * 2);
+        var bgWords = rom.GetWords(BgPaletteAddress + header.BgPalette * 0x18, 12);
+        CopyPaletteWords(words, row: 0, color: 2, bgWords.Take(6).ToArray());
+        CopyPaletteWords(words, row: 1, color: 2, bgWords.Skip(6).ToArray());
+
+        var fgWords = rom.GetWords(FgPaletteAddress + header.FgPalette * 0x18, 12);
+        CopyPaletteWords(words, row: 2, color: 2, fgWords.Take(6).ToArray());
+        CopyPaletteWords(words, row: 3, color: 2, fgWords.Skip(6).ToArray());
+
+        for (var row = 4; row < 14; row++)
+        {
+            CopyPaletteWords(words, row, color: 2, rom.GetWords(ObjectPaletteAddress + (row - 4) * 0x0C, 6));
+        }
+
+        CopyPaletteWords(words, row: 8, color: 6, rom.GetWords(PlayerPaletteAddress, 10));
+
+        var spriteWords = rom.GetWords(SpritePaletteAddress + header.SpritePalette * 0x18, 12);
+        CopyPaletteWords(words, row: 14, color: 2, spriteWords.Take(6).ToArray());
+        CopyPaletteWords(words, row: 15, color: 2, spriteWords.Skip(6).ToArray());
+
+        for (var row = 0; row < 2; row++)
+        {
+            CopyPaletteWords(words, row, color: 8, rom.GetWords(Layer3PaletteAddress + row * 0x10, 8));
+        }
+
+        for (var offset = 0; offset < 3; offset++)
+        {
+            var berryWords = rom.GetWords(BerryPaletteAddress + offset * 0x0E, 7);
+            CopyPaletteWords(words, row: offset + 2, color: 9, berryWords);
+            CopyPaletteWords(words, row: offset + 9, color: 9, berryWords);
+        }
+
+        words[6 * 16 + 4] = rom.GetWord(AnimatedColorAddress);
+
+        return new LevelPalette(
+            LevelId: levelId,
+            Source: "vanilla_header_tables",
+            BackAreaColor: backAreaColor,
+            Words: words,
+            HeaderIndexes: new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["background_color"] = header.BackgroundColor,
+                ["bg_palette"] = header.BgPalette,
+                ["fg_palette"] = header.FgPalette,
+                ["sprite_palette"] = header.SpritePalette,
+            });
+    }
+
+    private static void CopyPaletteWords(int[] target, int row, int color, IReadOnlyList<int> words)
+    {
+        var start = row * 16 + color;
+        for (var i = 0; i < words.Count && start + i < target.Length; i++)
+        {
+            target[start + i] = words[i];
+        }
+    }
+
+    private static int[][] SnesWordsToRgb(IReadOnlyList<int> words)
+    {
+        var colors = new int[words.Count][];
+        for (var i = 0; i < words.Count; i++)
+        {
+            var word = words[i];
+            var r5 = word & 0x1F;
+            var g5 = (word >> 5) & 0x1F;
+            var b5 = (word >> 10) & 0x1F;
+            colors[i] =
+            [
+                (r5 << 3) | (r5 >> 2),
+                (g5 << 3) | (g5 >> 2),
+                (b5 << 3) | (b5 >> 2),
+            ];
+        }
+
+        return colors;
+    }
+
+    private static void VerifyGeneratedPalettes(string generatedRoot, PaletteAssets expected)
+    {
+        var globalPath = Path.Combine(generatedRoot, "palettes", "global_palettes.json");
+        Check(File.Exists(globalPath), $"generated global palette file missing: {globalPath}");
+        using (var document = JsonDocument.Parse(File.ReadAllText(globalPath)))
+        {
+            var root = document.RootElement;
+            foreach (var set in expected.Global.Sets)
+            {
+                var actual = Required(root, set.Name);
+                CheckJsonArrayEquals(Required(actual, "snes_bgr555"), set.Words, $"global palette {set.Name}");
+                CheckRgbArrayEquals(Required(actual, "rgb888"), SnesWordsToRgb(set.Words), $"global palette {set.Name} rgb");
+            }
+        }
+
+        foreach (var level in expected.Levels)
+        {
+            var path = Path.Combine(generatedRoot, "palettes", $"level_{level.LevelId}_palette.json");
+            Check(File.Exists(path), $"generated level palette file missing: {path}");
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            var root = document.RootElement;
+            Check((Required(root, "status").GetString() ?? "") == "preview", $"level {level.LevelId} palette status mismatch");
+            Check((Required(root, "source").GetString() ?? "") == level.Source, $"level {level.LevelId} palette source mismatch");
+            Check((Required(root, "level_id").GetString() ?? "") == level.LevelId, $"level {level.LevelId} palette id mismatch");
+            Check(Required(Required(root, "back_area_color"), "snes_bgr555").GetInt32() == level.BackAreaColor, $"level {level.LevelId} back area color mismatch");
+            CheckJsonArrayEquals(Required(root, "snes_bgr555"), level.Words, $"level {level.LevelId} palette");
+            CheckRgbArrayEquals(Required(root, "rgb888"), SnesWordsToRgb(level.Words), $"level {level.LevelId} palette rgb");
+            var headerIndexes = Required(root, "header_palette_indexes");
+            foreach (var (key, value) in level.HeaderIndexes)
+            {
+                Check(Required(headerIndexes, key).GetInt32() == value, $"level {level.LevelId} palette header index {key} mismatch");
+            }
+        }
+    }
+
+    private static void CheckRgbArrayEquals(JsonElement element, IReadOnlyList<int[]> expected, string description)
+    {
+        Check(element.ValueKind == JsonValueKind.Array, $"{description} should be an array");
+        var actual = element.EnumerateArray().ToArray();
+        Check(actual.Length == expected.Count, $"{description} length mismatch");
+        for (var i = 0; i < actual.Length; i++)
+        {
+            var rgb = actual[i].EnumerateArray().Select(value => value.GetInt32()).ToArray();
+            Check(rgb.SequenceEqual(expected[i]), $"{description} mismatch at color {i}");
+        }
+    }
+
     private static (byte[] Data, int CompressedLength) SmwDecompress(Rom rom, int address)
     {
         var result = new List<byte>();
@@ -1076,6 +1266,8 @@ internal static class Program
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-player-metadata <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-entrance-tables <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-entrance-tables <rom.sfc> <generated/smw>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-palettes <rom.sfc> <out-dir>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-palettes <rom.sfc> <generated/smw>");
     }
 
     private static void Check(bool condition, string message)
@@ -1110,6 +1302,8 @@ internal static class Program
     private sealed record PlayerTableSpec(string Name, int Address, int Count, string Format);
 
     private sealed record EntranceTableSpec(string Name, int Address, int Length);
+
+    private sealed record PaletteTableSpec(string Name, int Address, int WordCount);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -1188,6 +1382,66 @@ internal static class Program
     }
 
     private sealed record EntranceTable(string Name, int SourceAddress, int[] Values);
+
+    private sealed record PaletteAssets(GlobalPalettes Global, List<LevelPalette> Levels);
+
+    private sealed record GlobalPalettes(List<PaletteSet> Sets)
+    {
+        public object ToSerializable()
+        {
+            return Sets
+                .OrderBy(set => set.Name, StringComparer.Ordinal)
+                .ToDictionary(
+                    set => set.Name,
+                    set => new
+                    {
+                        rgb888 = SnesWordsToRgb(set.Words),
+                        snes_bgr555 = set.Words,
+                    },
+                    StringComparer.Ordinal);
+        }
+    }
+
+    private sealed record PaletteSet(string Name, int[] Words);
+
+    private sealed record LevelPalette(
+        string LevelId,
+        string Source,
+        int BackAreaColor,
+        int[] Words,
+        Dictionary<string, int> HeaderIndexes)
+    {
+        public object ToSerializable()
+        {
+            return new
+            {
+                back_area_color = new
+                {
+                    rgb888 = SnesWordsToRgb([BackAreaColor])[0],
+                    snes_bgr555 = BackAreaColor,
+                },
+                file = $"palettes/level_{LevelId}_palette.json",
+                header_palette_indexes = HeaderIndexes,
+                layout = new
+                {
+                    colors_per_row = 16,
+                    rows = 16,
+                    sprite_rows = "rows 8-15 are used by OAM sprite palettes",
+                    tilemap_palette_bits = "bits 10-12 select CGRAM rows 0-7 for BG/FG Map16 rendering",
+                },
+                level_id = LevelId,
+                notes = new[]
+                {
+                    "Vanilla palette assembly follows the header-selected tables documented by SMW Central and the speedrunning level-data notes.",
+                    "Lunar Magic custom palette pointers at $0EF600 are recognized when a supported ROM exposes them.",
+                },
+                rgb888 = SnesWordsToRgb(Words),
+                snes_bgr555 = Words,
+                source = Source,
+                status = "preview",
+            };
+        }
+    }
 
     private sealed record AudioPreviewManifest(
         string SourceRomSha1,

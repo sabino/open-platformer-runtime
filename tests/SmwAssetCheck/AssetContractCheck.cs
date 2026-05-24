@@ -280,6 +280,17 @@ public static class AssetContractCheck
 
     private static void CheckPalettes(string generatedRoot)
     {
+        using (var globalPalettes = LoadJson(Path.Combine(generatedRoot, "palettes/global_palettes.json")))
+        {
+            var global = globalPalettes.RootElement;
+            Check(RequiredArray(Required(global, "background"), "snes_bgr555").Count() == 96, "global background palette length mismatch");
+            Check(RequiredArray(Required(global, "foreground"), "snes_bgr555").Count() == 96, "global foreground palette length mismatch");
+            Check(RequiredArray(Required(global, "sprites"), "snes_bgr555").Count() == 84, "global sprite palette length mismatch");
+            Check(RequiredArray(Required(global, "player"), "snes_bgr555").Count() == 40, "global player palette length mismatch");
+            var playerPrefix = RequiredArray(Required(global, "player"), "snes_bgr555").Select(value => value.GetInt32()).Take(8).ToArray();
+            Check(playerPrefix.SequenceEqual([0x635F, 0x581D, 0x000A, 0x391F, 0x44C4, 0x4E08, 0x6770, 0x30B6]), "global player palette prefix mismatch");
+        }
+
         foreach (var relative in new[] { "palettes/level_105_palette.json", "palettes/level_1CB_palette.json" })
         {
             using var palette = LoadJson(Path.Combine(generatedRoot, relative));

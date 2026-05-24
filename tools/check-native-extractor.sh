@@ -9,3 +9,4 @@ dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-levels "$R
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-audio-previews "$ROM_PATH" "$GENERATED_DIR"
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-player-metadata "$ROM_PATH" "$GENERATED_DIR"
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-entrance-tables "$ROM_PATH" "$GENERATED_DIR"
+dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-palettes "$ROM_PATH" "$GENERATED_DIR"
