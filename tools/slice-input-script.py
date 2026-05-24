@@ -27,9 +27,12 @@ def slice_segments(
     *,
     start_frame: int,
     max_frames: int | None,
+    prepad_frames: int = 0,
 ) -> tuple[list[tuple[int, str]], int]:
     output: list[tuple[int, str]] = []
-    emitted = 0
+    source_emitted = 0
+    if prepad_frames > 0:
+        output.append((prepad_frames, "None"))
     cursor = 0
     end_frame = None if max_frames is None else start_frame + max_frames
 
@@ -56,9 +59,9 @@ def slice_segments(
             output[-1] = (output[-1][0] + keep_frames, buttons)
         else:
             output.append((keep_frames, buttons))
-        emitted += keep_frames
+        source_emitted += keep_frames
 
-    return output, emitted
+    return output, source_emitted
 
 
 def main() -> int:
@@ -67,26 +70,50 @@ def main() -> int:
     parser.add_argument("output", type=Path)
     parser.add_argument("--start-frame", type=int, required=True)
     parser.add_argument("--frames", type=int)
+    parser.add_argument(
+        "--prepad-frames",
+        type=int,
+        default=0,
+        help="Insert this many neutral frames before the sliced source input.",
+    )
     args = parser.parse_args()
 
     if args.start_frame < 0:
         parser.error("--start-frame must be >= 0")
     if args.frames is not None and args.frames <= 0:
         parser.error("--frames must be > 0")
+    if args.prepad_frames < 0:
+        parser.error("--prepad-frames must be >= 0")
 
-    segments, emitted = slice_segments(args.input, start_frame=args.start_frame, max_frames=args.frames)
+    segments, source_emitted = slice_segments(
+        args.input,
+        start_frame=args.start_frame,
+        max_frames=args.frames,
+        prepad_frames=args.prepad_frames,
+    )
+    emitted = source_emitted + args.prepad_frames
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8", newline="\n") as handle:
         handle.write("# smw-input-slice v1\n")
         handle.write(f"# source={args.input}\n")
         handle.write(f"# start_frame={args.start_frame}\n")
+        handle.write(f"# prepad_frames={args.prepad_frames}\n")
         if args.frames is not None:
             handle.write(f"# requested_frames={args.frames}\n")
+        handle.write(f"# source_emitted_frames={source_emitted}\n")
         handle.write(f"# emitted_frames={emitted}\n")
         for frames, buttons in segments:
             handle.write(f"{frames} {buttons}\n")
 
-    print(f"input_slice_schema=1 source={args.input} output={args.output} start_frame={args.start_frame} emitted_frames={emitted}")
+    print(
+        "input_slice_schema=1"
+        f" source={args.input}"
+        f" output={args.output}"
+        f" start_frame={args.start_frame}"
+        f" prepad_frames={args.prepad_frames}"
+        f" source_emitted_frames={source_emitted}"
+        f" emitted_frames={emitted}"
+    )
     return 0 if emitted > 0 else 1
 
 

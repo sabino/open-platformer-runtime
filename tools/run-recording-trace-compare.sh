@@ -11,6 +11,7 @@ FRAMES="${SMW_TRACE_FRAMES:-600}"
 TRACE_EVERY="${SMW_TRACE_EVERY:-1}"
 TOLERANCE="${SMW_TRACE_TOLERANCE:-1.0}"
 NATIVE_Y_OFFSET="${SMW_TRACE_NATIVE_Y_OFFSET:--64.0}"
+GODOT_INPUT_DELAY="${SMW_TRACE_GODOT_INPUT_DELAY:-2}"
 LEVEL_START_FRAME=""
 NATIVE_START_LEVEL="${SMW_TRACE_NATIVE_START_LEVEL:-41}"
 NATIVE_START_GAME_MODE="${SMW_TRACE_NATIVE_START_GAME_MODE:-20}"
@@ -33,6 +34,7 @@ Options:
   --out-dir DIR               Output directory for logs/jsonl.
   --tolerance PX              Position tolerance in pixels.
   --native-y-offset PX        Native player_y offset before comparing to Godot.
+  --godot-input-delay N       Neutral frames prepended to sliced Godot input. Default 2.
   --native-start-level ID     First native level id to compare. Default 41.
   --native-start-game-mode ID First native game_mode to compare. Default 20.
   --help                      Print this text.
@@ -73,6 +75,10 @@ while [[ $# -gt 0 ]]; do
       shift
       NATIVE_Y_OFFSET="${1:?--native-y-offset expects a value}"
       ;;
+    --godot-input-delay)
+      shift
+      GODOT_INPUT_DELAY="${1:?--godot-input-delay expects a value}"
+      ;;
     --native-start-level)
       shift
       NATIVE_START_LEVEL="${1:?--native-start-level expects a value}"
@@ -100,6 +106,10 @@ if [[ ! -x "$NATIVE_RUNNER" ]]; then
 fi
 if [[ ! -s "$INPUT_SCRIPT" ]]; then
   echo "run-recording-trace-compare: missing input script: $INPUT_SCRIPT" >&2
+  exit 2
+fi
+if ! [[ "$GODOT_INPUT_DELAY" =~ ^[0-9]+$ ]]; then
+  echo "run-recording-trace-compare: --godot-input-delay must be a non-negative integer" >&2
   exit 2
 fi
 
@@ -132,11 +142,11 @@ rm -f "$ROOT/generated/smw/native-xdg/snesrev/smw_native/save0.sav"
 if [[ -z "$GODOT_INPUT" ]]; then
   if [[ -n "$LEVEL_START_FRAME" ]]; then
     GODOT_INPUT="$OUT_DIR/godot-level-start.input"
-    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME" --frames "$FRAMES" >/dev/null
+    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME" --frames "$FRAMES" --prepad-frames "$GODOT_INPUT_DELAY" >/dev/null
   elif [[ -s "$INPUT_SCRIPT.markers" ]]; then
     LEVEL_START_FRAME="$("$ROOT/tools/select-input-marker.py" "$INPUT_SCRIPT.markers")"
     GODOT_INPUT="$OUT_DIR/godot-level-start.input"
-    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME" --frames "$FRAMES" >/dev/null
+    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME" --frames "$FRAMES" --prepad-frames "$GODOT_INPUT_DELAY" >/dev/null
   else
     GODOT_INPUT="$INPUT_SCRIPT"
   fi
@@ -190,6 +200,7 @@ compare_args=(
   --godot-log "$godot_log" \
   --native-jsonl "$native_jsonl" \
   --godot-jsonl "$godot_jsonl" \
+  --expected-comparable-records "$FRAMES" \
   --tolerance "$TOLERANCE" \
   --native-y-offset "$NATIVE_Y_OFFSET"
 )
@@ -209,4 +220,5 @@ printf 'native_log=%s\n' "$native_log"
 printf 'godot_log=%s\n' "$godot_log"
 printf 'native_jsonl=%s\n' "$native_jsonl"
 printf 'godot_jsonl=%s\n' "$godot_jsonl"
+printf 'godot_input_delay=%s\n' "$GODOT_INPUT_DELAY"
 exit "$status"

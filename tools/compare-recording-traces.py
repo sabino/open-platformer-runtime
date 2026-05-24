@@ -155,10 +155,16 @@ def compare(
     *,
     tolerance: float,
     native_y_offset: float,
+    expected_comparable_records: int | None,
 ) -> tuple[int, str]:
     count = min(len(native), len(godot))
     if count == 0:
         return 2, "no comparable trace records"
+    if expected_comparable_records is not None and count < expected_comparable_records:
+        return 2, (
+            f"not_enough_trace_records expected={expected_comparable_records} "
+            f"native={len(native)} godot={len(godot)} comparable={count}"
+        )
 
     for index in range(count):
         n = native[index]
@@ -183,6 +189,11 @@ def compare(
                 f"{actor_summary(n, g)}"
             )
     if len(native) != len(godot):
+        if expected_comparable_records is not None and count >= expected_comparable_records:
+            return 0, (
+                f"traces_match comparable_records={count} tolerance={tolerance} "
+                f"native_extra={len(native) - count} godot_extra={len(godot) - count}"
+            )
         return 1, f"trace_length_mismatch native={len(native)} godot={len(godot)} comparable={count}"
     return 0, f"traces_match records={count} tolerance={tolerance}"
 
@@ -217,6 +228,11 @@ def main(argv: list[str]) -> int:
         default=-64.0,
         help="Offset applied to native player_y before comparing to Godot world Y.",
     )
+    parser.add_argument(
+        "--expected-comparable-records",
+        type=int,
+        help="Minimum number of overlapping records required for a successful match.",
+    )
     args = parser.parse_args(argv)
 
     native = parse_native_trace(args.native_log)
@@ -231,7 +247,13 @@ def main(argv: list[str]) -> int:
     godot = drop_records(godot, args.godot_drop_records)
     write_jsonl(args.native_jsonl, native)
     write_jsonl(args.godot_jsonl, godot)
-    code, message = compare(native, godot, tolerance=args.tolerance, native_y_offset=args.native_y_offset)
+    code, message = compare(
+        native,
+        godot,
+        tolerance=args.tolerance,
+        native_y_offset=args.native_y_offset,
+        expected_comparable_records=args.expected_comparable_records,
+    )
     print("trace_compare_schema=1")
     print(f"native_records={len(native)}")
     print(f"godot_records={len(godot)}")

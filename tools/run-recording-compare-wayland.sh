@@ -6,6 +6,7 @@ INPUT_SCRIPT="${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-nativ
 GODOT_INPUT=""
 LEVEL_START_FRAME=""
 FRAMES=""
+GODOT_INPUT_DELAY="${SMW_RECORDING_GODOT_INPUT_DELAY:-${SMW_TRACE_GODOT_INPUT_DELAY:-2}}"
 GODOT_EXTRA=()
 NATIVE_EXTRA=()
 
@@ -22,6 +23,7 @@ Options:
   --godot-input FILE       Godot/level-start .input script. Overrides slicing.
   --level-start-frame N    Slice --input at frame N for Godot.
   --frames COUNT           Limit sliced Godot input length.
+  --godot-input-delay N    Neutral frames prepended to sliced Godot input. Default 2.
   --godot-arg ARG          Extra argument passed to Godot.
   --native-arg ARG         Extra argument passed to smw_native.
   --help                   Print this text.
@@ -45,6 +47,10 @@ while [[ $# -gt 0 ]]; do
     --frames)
       shift
       FRAMES="${1:?--frames expects a value}"
+      ;;
+    --godot-input-delay)
+      shift
+      GODOT_INPUT_DELAY="${1:?--godot-input-delay expects a value}"
       ;;
     --godot-arg)
       shift
@@ -71,11 +77,15 @@ if [[ ! -s "$INPUT_SCRIPT" ]]; then
   echo "run-recording-compare-wayland: missing input script: $INPUT_SCRIPT" >&2
   exit 2
 fi
+if ! [[ "$GODOT_INPUT_DELAY" =~ ^[0-9]+$ ]]; then
+  echo "run-recording-compare-wayland: --godot-input-delay must be a non-negative integer" >&2
+  exit 2
+fi
 
 if [[ -z "$GODOT_INPUT" ]]; then
   if [[ -n "$LEVEL_START_FRAME" ]]; then
     GODOT_INPUT="$ROOT/generated/smw/recordings/latest-level-start-slice.input"
-    slice_args=("--start-frame" "$LEVEL_START_FRAME")
+    slice_args=("--start-frame" "$LEVEL_START_FRAME" "--prepad-frames" "$GODOT_INPUT_DELAY")
     if [[ -n "$FRAMES" ]]; then
       slice_args+=("--frames" "$FRAMES")
     fi
@@ -83,7 +93,7 @@ if [[ -z "$GODOT_INPUT" ]]; then
   elif [[ -s "$INPUT_SCRIPT.markers" ]]; then
     LEVEL_START_FRAME="$("$ROOT/tools/select-input-marker.py" "$INPUT_SCRIPT.markers")"
     GODOT_INPUT="$ROOT/generated/smw/recordings/latest-level-start-slice.input"
-    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME"
+    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME" --prepad-frames "$GODOT_INPUT_DELAY"
   else
     GODOT_INPUT="$INPUT_SCRIPT"
   fi
