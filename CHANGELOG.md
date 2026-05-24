@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added native PC controller bindings to the Godot input map: D-pad/left stick movement, A jump, B spin jump, X/right shoulder run-fire, and Start pause/menu start now feed the same C# action path as keyboard controls, with headless coverage for the startup input map.
 - Added start-menu and CLI startup toggles for the partial runtime sprite layer: `Actors` / `Sprites` in the menu and `--smw-actors=off` / `--smw-actor-visuals=off` now disable actor logic or actor visuals before the Godot level scene builds, with headless coverage for the initial debug state.
 - Added the Star music preview to the in-game menu audio tester and headless audio preview gate, matching the starman runtime path already used during play.
 - Added native-unit C# physics golden trajectories for 60/120-frame walk/run probes, held/released small jumps, and ledge falls, so `tools/check-dotnet.sh` now catches pixel/subpixel movement drift beyond single-frame table checks.

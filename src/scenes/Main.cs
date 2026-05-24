@@ -307,6 +307,19 @@ public partial class Main : Node2D
         AddKeyAction("smw_spin", Key.X);
         AddKeyAction("smw_run", Key.Shift, Key.C);
         AddKeyAction("smw_start", Key.Enter);
+
+        AddJoyButtonAction("smw_left", JoyButton.DpadLeft);
+        AddJoyButtonAction("smw_right", JoyButton.DpadRight);
+        AddJoyButtonAction("smw_down", JoyButton.DpadDown);
+        AddJoyAxisAction("smw_left", JoyAxis.LeftX, -1.0f);
+        AddJoyAxisAction("smw_right", JoyAxis.LeftX, 1.0f);
+        AddJoyAxisAction("smw_down", JoyAxis.LeftY, 1.0f);
+        AddJoyButtonAction("smw_jump", JoyButton.A);
+        AddJoyButtonAction("smw_spin", JoyButton.B);
+        AddJoyButtonAction("smw_run", JoyButton.X, JoyButton.RightShoulder);
+        AddJoyButtonAction("smw_start", JoyButton.Start);
+        AddJoyButtonAction("ui_accept", JoyButton.A, JoyButton.Start);
+        GD.Print("smw-input-map: keyboard=1 gamepad=1 buttons=10 axes=3");
     }
 
     private static void AddKeyAction(StringName action, params Key[] keys)
@@ -334,6 +347,59 @@ public partial class Main : Node2D
                 InputMap.ActionAddEvent(action, inputEvent);
             }
         }
+    }
+
+    private static void AddJoyButtonAction(StringName action, params JoyButton[] buttons)
+    {
+        if (!InputMap.HasAction(action))
+        {
+            InputMap.AddAction(action);
+        }
+
+        foreach (var button in buttons)
+        {
+            var exists = false;
+            foreach (var existing in InputMap.ActionGetEvents(action))
+            {
+                if (existing is InputEventJoypadButton buttonEvent &&
+                    buttonEvent.ButtonIndex == button)
+                {
+                    exists = true;
+                    break;
+                }
+            }
+
+            if (!exists)
+            {
+                var inputEvent = new InputEventJoypadButton { ButtonIndex = button };
+                InputMap.ActionAddEvent(action, inputEvent);
+            }
+        }
+    }
+
+    private static void AddJoyAxisAction(StringName action, JoyAxis axis, float axisValue)
+    {
+        if (!InputMap.HasAction(action))
+        {
+            InputMap.AddAction(action);
+        }
+
+        foreach (var existing in InputMap.ActionGetEvents(action))
+        {
+            if (existing is InputEventJoypadMotion motionEvent &&
+                motionEvent.Axis == axis &&
+                MathF.Abs(motionEvent.AxisValue - axisValue) < 0.001f)
+            {
+                return;
+            }
+        }
+
+        var inputEvent = new InputEventJoypadMotion
+        {
+            Axis = axis,
+            AxisValue = axisValue,
+        };
+        InputMap.ActionAddEvent(action, inputEvent);
     }
 
     private void ShowMenu()

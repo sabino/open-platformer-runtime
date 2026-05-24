@@ -68,6 +68,7 @@ EOF
 printf '1 down\n' >"$PIPE_SCRIPT"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 2>&1 | tee "$LOG_FILE"
+grep -q "smw-input-map: keyboard=1 gamepad=1 buttons=10 axes=3" "$LOG_FILE"
 grep -q "smw-menu-audio: samples=3 buttons=3" "$LOG_FILE"
 grep -q "sfx_buttons=6 music_buttons=4" "$LOG_FILE"
 grep -q "smw-menu: assets=1 audio=1 actors=1 actor_visuals=1 level_preview=1 player_preview=1" "$LOG_FILE"
