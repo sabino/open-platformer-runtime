@@ -7243,8 +7243,8 @@ public partial class GameScene : Node2D
         GD.Print(
             $"smw-debug-trace: tag={_debugTraceTag} i={_debugTraceFrame}/{_debugTraceTotalFrames} " +
             $"frame={_debugFrameCounter} input={DescribeFrameInput(frameInput)} " +
-            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} " +
-            $"xs={_state.XSpeed} ys={_state.YSpeed} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} subx={_state.SubX} suby={_state.SubY} " +
+            $"xs={_state.XSpeed} ys={_state.YSpeed} subxs={_state.SubXSpeed} subys={_state.SubYSpeed} " +
             $"p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +

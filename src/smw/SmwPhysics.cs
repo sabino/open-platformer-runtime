@@ -360,11 +360,12 @@ public sealed class SmwPhysics
         IReadOnlyList<bool>? solidVerticalEnabled,
         IReadOnlyList<SlopeSurface> slopes)
     {
-        ApplyDucking(ref state, input);
+        var preserveTerrainlessGround = state.OnGround && solids.Count == 0 && slopes.Count == 0;
+        var preservedSlopeKind = state.SlopeKind;
+        var preservedSlopePlayer = state.SlopePlayer;
+        var preservedSlopeType = state.SlopeType;
         var previousBottom = PlayerCollisionBottom(state);
-        ApplyJumpAndGravity(ref state, input);
-        ApplyHorizontal(ref state, input);
-
+        var previousYSpeed = state.YSpeed;
         IntegrateX(ref state);
         var steppedOntoSolid = ResolveAxis(ref state, solids, solidStepUpEnabled, solidVerticalEnabled, horizontal: true);
 
@@ -386,6 +387,13 @@ public sealed class SmwPhysics
         {
             state.OnGround = true;
         }
+        if (preserveTerrainlessGround)
+        {
+            state.OnGround = true;
+            state.SlopeKind = preservedSlopeKind;
+            state.SlopePlayer = preservedSlopePlayer;
+            state.SlopeType = preservedSlopeType;
+        }
         if (state.OnGround)
         {
             state.InAirState = 0;
@@ -394,6 +402,15 @@ public sealed class SmwPhysics
         {
             state.InAirState = NativeFallingInAirState;
         }
+
+        if (!state.OnGround && previousYSpeed < 0 && state.YSpeed == 0)
+        {
+            return;
+        }
+
+        ApplyDucking(ref state, input);
+        ApplyJumpAndGravity(ref state, input);
+        ApplyHorizontal(ref state, input);
     }
 
     public void Step(
@@ -438,7 +455,7 @@ public sealed class SmwPhysics
     public static void ClampHorizontalLevelBounds(ref PlayerState state, int levelLeft, int levelRight)
     {
         var maxX = Math.Max(levelLeft, levelRight - PlayerWidth);
-        if (state.XFloat < levelLeft)
+        if (state.XFloat <= levelLeft)
         {
             state.X = levelLeft;
             state.SubX = 0;
@@ -448,7 +465,7 @@ public sealed class SmwPhysics
                 state.SubXSpeed = 0;
             }
         }
-        else if (state.XFloat > maxX)
+        else if (state.XFloat >= maxX)
         {
             state.X = maxX;
             state.SubX = 0;
@@ -873,9 +890,12 @@ public sealed class SmwPhysics
             state.JumpHeldFrames = 0;
             state.CapeFloatFrames = 0;
             state.InAirState = 0;
+            if (state.SlopeKind >= 0)
+            {
+                return;
+            }
             state.YSpeed = 0;
             state.SubYSpeed = 0;
-            return;
         }
 
         if (TryApplyCapeFloatFallCap(ref state, input))
@@ -1150,6 +1170,7 @@ public sealed class SmwPhysics
                 if (state.YSpeed < 0)
                 {
                     state.YSpeed = 0;
+                    state.InAirState = 0;
                 }
                 return;
             }

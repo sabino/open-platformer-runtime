@@ -138,6 +138,17 @@ def actor_summary(native: dict[str, int | float | str], godot: dict[str, int | f
     )
 
 
+def player_motion_summary(native: dict[str, int | float | str], godot: dict[str, int | float | str]) -> str:
+    return (
+        f"native_sub={native.get('player_subx', '?')},{native.get('player_suby', '?')} "
+        f"godot_sub={godot.get('subx', '?')},{godot.get('suby', '?')} "
+        f"native_speed={native.get('player_xspeed', '?')},{native.get('player_yspeed', '?')} "
+        f"godot_speed={godot.get('xs', '?')},{godot.get('ys', '?')} "
+        f"native_subspeed={native.get('player_subxspeed', '?')},{native.get('player_subyspeed', '?')} "
+        f"godot_subspeed={godot.get('subxs', '?')},{godot.get('subys', '?')}"
+    )
+
+
 def compare(
     native: list[dict[str, int | float | str]],
     godot: list[dict[str, int | float | str]],
@@ -168,6 +179,7 @@ def compare(
                 f"native_x={nx:.2f} godot_x={gx:.2f} dx={gx - nx:.2f} "
                 f"native_y={ny:.2f} native_y_adjusted={adjusted_ny:.2f} godot_y={gy:.2f} dy={gy - adjusted_ny:.2f} "
                 f"native_powerup={int(npow)} godot_powerup={int(gpow)} "
+                f"{player_motion_summary(n, g)} "
                 f"{actor_summary(n, g)}"
             )
     if len(native) != len(godot):
