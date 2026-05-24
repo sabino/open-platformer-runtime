@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SMW_ROOT="${SMW_NATIVE_ROOT:-/path/to/native-reference}"
+NATIVE_RUNNER="$SMW_ROOT/tools/run-wayland.sh"
+INPUT_SCRIPT="${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-recording.input}"
+GODOT_INPUT=""
+OUT_DIR="${SMW_TRACE_OUT_DIR:-$ROOT/generated/smw/traces}"
+FRAMES="${SMW_TRACE_FRAMES:-600}"
+TRACE_EVERY="${SMW_TRACE_EVERY:-1}"
+TOLERANCE="${SMW_TRACE_TOLERANCE:-1.0}"
+NATIVE_Y_OFFSET="${SMW_TRACE_NATIVE_Y_OFFSET:--64.0}"
+LEVEL_START_FRAME=""
+NATIVE_START_LEVEL="${SMW_TRACE_NATIVE_START_LEVEL:-41}"
+NATIVE_START_GAME_MODE="${SMW_TRACE_NATIVE_START_GAME_MODE:-20}"
+
+usage() {
+  cat <<'EOF'
+Usage: tools/run-recording-trace-compare.sh [options]
+
+Runs native smw/ from cold boot with --input-script in an isolated generated
+XDG data directory, runs Godot with the matching level-start input, normalizes
+both traces, and reports the first position/power-up divergence. This path does
+not replay, copy, or overwrite native save-state slots.
+
+Options:
+  --frames COUNT              Number of frames to run and trace.
+  --trace-every COUNT         Native state trace cadence.
+  --input FILE                Full native/game-start .input script.
+  --godot-input FILE          Godot/level-start .input script.
+  --level-start-frame N       Slice --input at frame N for Godot.
+  --out-dir DIR               Output directory for logs/jsonl.
+  --tolerance PX              Position tolerance in pixels.
+  --native-y-offset PX        Native player_y offset before comparing to Godot.
+  --native-start-level ID     First native level id to compare. Default 41.
+  --native-start-game-mode ID First native game_mode to compare. Default 20.
+  --help                      Print this text.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --frames)
+      shift
+      FRAMES="${1:?--frames expects a value}"
+      ;;
+    --trace-every)
+      shift
+      TRACE_EVERY="${1:?--trace-every expects a value}"
+      ;;
+    --input)
+      shift
+      INPUT_SCRIPT="${1:?--input expects a path}"
+      ;;
+    --godot-input)
+      shift
+      GODOT_INPUT="${1:?--godot-input expects a path}"
+      ;;
+    --level-start-frame)
+      shift
+      LEVEL_START_FRAME="${1:?--level-start-frame expects a value}"
+      ;;
+    --out-dir)
+      shift
+      OUT_DIR="${1:?--out-dir expects a path}"
+      ;;
+    --tolerance)
+      shift
+      TOLERANCE="${1:?--tolerance expects a value}"
+      ;;
+    --native-y-offset)
+      shift
+      NATIVE_Y_OFFSET="${1:?--native-y-offset expects a value}"
+      ;;
+    --native-start-level)
+      shift
+      NATIVE_START_LEVEL="${1:?--native-start-level expects a value}"
+      ;;
+    --native-start-game-mode)
+      shift
+      NATIVE_START_GAME_MODE="${1:?--native-start-game-mode expects a value}"
+      ;;
+    --help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "run-recording-trace-compare: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if [[ ! -x "$NATIVE_RUNNER" ]]; then
+  echo "run-recording-trace-compare: missing native runner: $NATIVE_RUNNER" >&2
+  exit 2
+fi
+if [[ ! -s "$INPUT_SCRIPT" ]]; then
+  echo "run-recording-trace-compare: missing input script: $INPUT_SCRIPT" >&2
+  exit 2
+fi
+
+mkdir -p "$OUT_DIR" "$ROOT/generated/smw/native-xdg"
+
+if [[ -z "$GODOT_INPUT" ]]; then
+  if [[ -n "$LEVEL_START_FRAME" ]]; then
+    GODOT_INPUT="$OUT_DIR/godot-level-start.input"
+    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME" --frames "$FRAMES" >/dev/null
+  else
+    GODOT_INPUT="$INPUT_SCRIPT"
+  fi
+fi
+if [[ ! -s "$GODOT_INPUT" ]]; then
+  echo "run-recording-trace-compare: missing Godot input script: $GODOT_INPUT" >&2
+  exit 2
+fi
+
+godot_commands="$OUT_DIR/godot-trace-live.commands"
+{
+  printf 'trace_live %s tag=recording\n' "$FRAMES"
+  printf 'state recording_done\n'
+} >"$godot_commands"
+
+native_log="$OUT_DIR/native.log"
+godot_log="$OUT_DIR/godot.log"
+native_jsonl="$OUT_DIR/native.jsonl"
+godot_jsonl="$OUT_DIR/godot.jsonl"
+
+XDG_DATA_HOME="$ROOT/generated/smw/native-xdg" \
+"$NATIVE_RUNNER" \
+  --native-only \
+  --output-method SDL-Software \
+  --no-audio \
+  --disable-frame-delay \
+  --input-script "$INPUT_SCRIPT" \
+  --state-trace-every "$TRACE_EVERY" \
+  --frames "$FRAMES" \
+  >"$native_log" 2>&1
+
+SMW_SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}" \
+"$ROOT/tools/run-wayland.sh" \
+  --quit-after "$FRAMES" \
+  --smw-test-autostart \
+  --smw-test-powerup=small \
+  --smw-no-audio \
+  --smw-input-script="$GODOT_INPUT" \
+  --smw-debug-command-file="$godot_commands" \
+  >"$godot_log" 2>&1
+
+set +e
+"$ROOT/tools/compare-recording-traces.py" \
+  --native-log "$native_log" \
+  --godot-log "$godot_log" \
+  --native-jsonl "$native_jsonl" \
+  --godot-jsonl "$godot_jsonl" \
+  --tolerance "$TOLERANCE" \
+  --native-y-offset "$NATIVE_Y_OFFSET" \
+  --native-start-level "$NATIVE_START_LEVEL" \
+  --native-start-game-mode "$NATIVE_START_GAME_MODE"
+status=$?
+set -e
+
+printf 'native_log=%s\n' "$native_log"
+printf 'godot_log=%s\n' "$godot_log"
+printf 'native_jsonl=%s\n' "$native_jsonl"
+printf 'godot_jsonl=%s\n' "$godot_jsonl"
+exit "$status"

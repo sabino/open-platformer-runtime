@@ -56,7 +56,7 @@ public partial class GameScene : Node2D
     private const float GoalTapeDownSpeed = 1.0f;
     private const float GoalTapeUpSpeed = -1.0f;
     private const int CourseClearWalkoutMaxFrames = 420;
-    private const int DefaultPlayerPowerup = SmwPhysics.BigPowerup;
+    private const int DefaultPlayerPowerup = SmwPhysics.SmallPowerup;
     private const int StartingLives = 5;
     private const int MaxLives = 99;
     private const int DefaultLevelTimerSeconds = 300;

@@ -13,6 +13,7 @@ fi
 
 exec "$ROOT/tools/run-wayland.sh" \
   --smw-test-autostart \
+  --smw-test-powerup=small \
   --smw-debug-overlays \
   --smw-input-script="$INPUT_SCRIPT" \
   "$@"

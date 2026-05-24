@@ -9,6 +9,10 @@ if [[ ! -x "$GODOT_BIN" ]]; then
   exit 2
 fi
 
+if [[ "${SMW_SKIP_DOTNET_BUILD:-0}" != "1" ]]; then
+  dotnet build SmwGodotNative.csproj --no-restore >/dev/null
+fi
+
 if [[ "${XDG_SESSION_TYPE:-}" == "wayland" || -n "${WAYLAND_DISPLAY:-}" ]]; then
   if command -v swaymsg >/dev/null; then
     swaymsg "workspace $SWAY_WORKSPACE" >/dev/null || true
