@@ -2306,7 +2306,7 @@ def extract_audio_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
     ram, upload_blocks = parse_spc_upload(sample_bank)
     payload["sample_upload_blocks"] = upload_blocks
     directory_base = 0x8000
-    for sample_id in (9, 14, 16):
+    for sample_id in (7, 8, 9, 14, 16):
         entry = directory_base + sample_id * 4
         start = ram[entry] | (ram[entry + 1] << 8)
         loop = ram[entry + 2] | (ram[entry + 3] << 8)

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Expanded the generated/internal BRR sample probe set to match the runtime SFX fallback sample IDs `07`, `08`, `09`, `0E`, and `10`; the menu now exposes five sample buttons, the importer writes all five preview WAVs, and the native C# audio verifier byte-checks all five decodes.
 - Added native C# extraction/verification for generated palette assets: `SmwAssetTool` now has `extract-palettes` and `verify-palettes`, checks global palette tables plus level `105`/`1CB` CGRAM assembly from the ROM/header palette indexes, and the local gates run the verifier.
 - Added native C# extraction/verification for the entrance and secondary-exit tables in `levels/secondary_tables.json`: `SmwAssetTool` now has `extract-entrance-tables` and `verify-entrance-tables`, the local gates run the verifier, and the asset contract checks the level `105`, level `1CB`, and secondary `1CB -> 105` entrance anchors used by the pipe transition path.
 - Added a headless title-start probe for the Godot menu: `--smw-title-start` now shows the real start menu, defers one frame, then starts the playable level through the same path used by Enter/Start and the menu button, with headless coverage proving level `105` loads from that flow.

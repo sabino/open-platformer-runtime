@@ -70,7 +70,7 @@ printf '1 down\n' >"$PIPE_SCRIPT"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 2>&1 | tee "$LOG_FILE"
 grep -q "smw-input-map: keyboard=1 gamepad=1 buttons=10 axes=3" "$LOG_FILE"
-grep -q "smw-menu-audio: samples=3 buttons=3" "$LOG_FILE"
+grep -q "smw-menu-audio: samples=5 buttons=5" "$LOG_FILE"
 grep -q "sfx_buttons=6 music_buttons=4" "$LOG_FILE"
 grep -q "smw-menu: assets=1 audio=1 actors=1 actor_visuals=1 level_preview=1 player_preview=1" "$LOG_FILE"
 ! grep -q "smw-runtime: level=" "$LOG_FILE"
@@ -328,7 +328,7 @@ spawn 4828 282 big
 trace 12 none tag=goal_walkout
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
-grep -q "smw-audio: internal_apu=1 samples=3" "$LOG_FILE"
+grep -q "smw-audio: internal_apu=1 samples=5" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480 collision_rects=26 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
 grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
@@ -341,7 +341,7 @@ grep -q "smw-runtime: level_music level=105 music_index=0 bank=Level" "$LOG_FILE
 
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-no-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: disabled=1" "$LOG_FILE"
-grep -q "smw-menu-audio: samples=0 buttons=3" "$LOG_FILE"
+grep -q "smw-menu-audio: samples=0 buttons=5" "$LOG_FILE"
 grep -q "sfx_buttons=6 music_buttons=4" "$LOG_FILE"
 ! grep -q "smw-audio: internal_apu=1" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480" "$LOG_FILE"
@@ -419,7 +419,7 @@ grep -q "smw-test-powerup: powerup=0 height=16 render_y=-17 player_palette=0" "$
 grep -q "smw-test-spawn: x=880.00 y=304.00" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-audio-sample=09 2>&1 | tee "$LOG_FILE"
-grep -q "smw-audio: sample_preview sample=09 available=1 samples=3" "$LOG_FILE"
+grep -q "smw-audio: sample_preview sample=09 available=1 samples=5" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-input-script="$INPUT_SCRIPT" 2>&1 | tee "$LOG_FILE"
 grep -q "smw-input-script: loaded path=$INPUT_SCRIPT segments=4 frames=4" "$LOG_FILE"

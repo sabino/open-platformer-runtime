@@ -39,7 +39,7 @@ public partial class SmwAudio : Node
     private int _lastSfxPointer;
     private int _lastSfxNoteCount;
 
-    public static readonly int[] ProbeSampleIds = [9, 14, 16];
+    public static readonly int[] ProbeSampleIds = [7, 8, 9, 14, 16];
 
     public override void _Ready()
     {

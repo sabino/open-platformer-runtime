@@ -64,6 +64,7 @@ internal static class Program
         new("flashing", 0x00B60C, 16),
         new("yoshi_berry", 0x00B674, 21),
     ];
+    private static readonly int[] AudioPreviewSampleIds = [7, 8, 9, 14, 16];
     private static readonly string[] PlayerPaletteNames = ["mario", "luigi", "fire_mario", "fire_luigi"];
 
     public static int Main(string[] args)
@@ -714,7 +715,7 @@ internal static class Program
         var sampleBank = rom.GetBytes(0x0F8000, 28538);
         var (ram, uploadBlocks) = ParseSpcUpload(sampleBank);
         var decodedSamples = new List<AudioPreviewSample>();
-        foreach (var sampleId in new[] { 9, 14, 16 })
+        foreach (var sampleId in AudioPreviewSampleIds)
         {
             var entry = 0x8000 + sampleId * 4;
             var start = ram[entry] | (ram[entry + 1] << 8);

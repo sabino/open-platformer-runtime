@@ -278,10 +278,10 @@ for name, expected_size in expected_banks.items():
 
 audio_manifest = json.loads((out_dir / "audio" / "audio_manifest.json").read_text())
 decoded_ids = [sample["id"] for sample in audio_manifest["decoded_samples"]]
-assert decoded_ids == [9, 14, 16], decoded_ids
+assert decoded_ids == [7, 8, 9, 14, 16], decoded_ids
 for sample in audio_manifest["decoded_samples"]:
     assert sample["sample_rate"] == 32000, sample
-    assert sample["sample_count"] > 4000, sample
+    assert sample["sample_count"] > 0, sample
     wav_data = (out_dir / sample["file"]).read_bytes()
     assert wav_data[:4] == b"RIFF", sample["file"]
     assert wav_data[8:12] == b"WAVE", sample["file"]

@@ -315,7 +315,8 @@ public static class AssetContractCheck
 
         using var audioManifest = LoadJson(Path.Combine(generatedRoot, Required(audio, "file").GetString() ?? ""));
         var decodedSamples = RequiredArray(audioManifest.RootElement, "decoded_samples").ToArray();
-        Check(decodedSamples.Length >= 3, "audio decoded sample preview count too small");
+        var sampleIds = decodedSamples.Select(sample => Required(sample, "id").GetInt32()).ToArray();
+        Check(sampleIds.SequenceEqual([7, 8, 9, 14, 16]), "audio decoded sample preview IDs mismatch");
         foreach (var sample in decodedSamples)
         {
             Check(Required(sample, "sample_rate").GetInt32() == 32000, "decoded sample rate mismatch");
