@@ -12,6 +12,7 @@ TRACE_EVERY="${SMW_TRACE_EVERY:-1}"
 TOLERANCE="${SMW_TRACE_TOLERANCE:-1.0}"
 NATIVE_Y_OFFSET="${SMW_TRACE_NATIVE_Y_OFFSET:--64.0}"
 GODOT_INPUT_DELAY="${SMW_TRACE_GODOT_INPUT_DELAY:-2}"
+GODOT_TRACE_TIMEOUT_SECONDS="${SMW_TRACE_GODOT_TIMEOUT_SECONDS:-120}"
 LEVEL_START_FRAME=""
 NATIVE_START_LEVEL="${SMW_TRACE_NATIVE_START_LEVEL:-41}"
 NATIVE_START_GAME_MODE="${SMW_TRACE_NATIVE_START_GAME_MODE:-20}"
@@ -163,8 +164,7 @@ fi
 
 godot_commands="$OUT_DIR/godot-trace-live.commands"
 {
-  printf 'trace_live %s tag=recording\n' "$FRAMES"
-  printf 'state recording_done\n'
+  printf 'trace_live %s tag=recording quit_when_done\n' "$FRAMES"
 } >"$godot_commands"
 
 native_log="$OUT_DIR/native.log"
@@ -192,7 +192,31 @@ SMW_SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}" \
   --smw-no-audio \
   --smw-input-script="$GODOT_INPUT" \
   --smw-debug-command-file="$godot_commands" \
-  >"$godot_log" 2>&1
+  >"$godot_log" 2>&1 &
+godot_runner_pid=$!
+godot_completed=0
+for _ in $(seq 1 $((GODOT_TRACE_TIMEOUT_SECONDS * 5))); do
+  if ! kill -0 "$godot_runner_pid" 2>/dev/null; then
+    wait "$godot_runner_pid"
+    godot_completed=1
+    break
+  fi
+  if rg -q 'smw-debug-state: tag=recording_done' "$godot_log" 2>/dev/null; then
+    godot_completed=1
+    pkill -TERM -P "$godot_runner_pid" 2>/dev/null || true
+    kill -TERM "$godot_runner_pid" 2>/dev/null || true
+    wait "$godot_runner_pid" 2>/dev/null || true
+    break
+  fi
+  sleep 0.2
+done
+if [[ "$godot_completed" != "1" ]]; then
+  pkill -TERM -P "$godot_runner_pid" 2>/dev/null || true
+  kill -TERM "$godot_runner_pid" 2>/dev/null || true
+  wait "$godot_runner_pid" 2>/dev/null || true
+  echo "run-recording-trace-compare: Godot trace did not finish within ${GODOT_TRACE_TIMEOUT_SECONDS}s" >&2
+  exit 1
+fi
 
 set +e
 compare_args=(

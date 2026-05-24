@@ -8,6 +8,10 @@ public sealed class SmwPhysics
         System.Environment.GetEnvironmentVariable("SMW_DEBUG_COLLISION_TRACE") == "1";
     private static readonly bool DebugSlopeTrace =
         System.Environment.GetEnvironmentVariable("SMW_DEBUG_SLOPE_TRACE") == "1";
+    private const float SteepPipeAirborneGroundFlagDepth = 8.0f;
+    private const int SteepPipeLooseGroundFrameCount = 3;
+    private const int SteepPipeLooseGroundFirstCarryYSpeed = 0x3D;
+    private const int SteepPipeLooseGroundPreJumpYSpeed = -0x1A;
 
     public const int PlayerWidth = 14;
     public const int SmallPowerup = 0;
@@ -225,6 +229,8 @@ public sealed class SmwPhysics
         public int SlopePlayer;
         public int SlopeType;
         public int PostLandingAirDragFrames;
+        public int LooseSteepSlopeGroundFrames;
+        public int LooseSteepSlopeKind;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -423,6 +429,15 @@ public sealed class SmwPhysics
             ? slopePlayerBeforeJump
             : (int?)null;
         ApplyHorizontal(ref state, input, usePostLandingAirDrag, horizontalSlopePlayerOverride);
+        if (jumpedThisFrame &&
+            groundedBeforeJump &&
+            state.Powerup != SmallPowerup &&
+            slopePlayerBeforeJump == 0x28 &&
+            state.XSpeed > 0 &&
+            state.XSpeed <= 8)
+        {
+            AddXAccel(ref state, 0x0080);
+        }
         if (usePostLandingAirDrag && state.PostLandingAirDragFrames > 0)
         {
             state.PostLandingAirDragFrames--;
@@ -1214,9 +1229,37 @@ public sealed class SmwPhysics
 
         if (!TryResolvePlayerFloorSlopeFromAbove(state, top, bottom, previousBottom, wasOnGround, slopes, out var floorY, out var floorSlope))
         {
+            if (state.LooseSteepSlopeGroundFrames > 0)
+            {
+                ApplyLooseSteepSlopeGround(ref state, state.LooseSteepSlopeKind);
+                return;
+            }
+
+            state.LooseSteepSlopeGroundFrames = 0;
+            state.LooseSteepSlopeKind = 32;
+            return;
+        }
+        if (floorSlope.NativeSlopeKind is >= 20 and <= 23 && state.LooseSteepSlopeGroundFrames > 0)
+        {
+            ApplyLooseSteepSlopeGround(ref state, floorSlope.NativeSlopeKind);
             return;
         }
 
+        if (!wasOnGround && floorSlope.NativeSlopeKind is >= 20 and <= 23)
+        {
+            if (bottom >= floorY + SteepPipeAirborneGroundFlagDepth)
+            {
+                ApplyNativeSlopeMetadata(ref state, floorSlope);
+                state.OnGround = true;
+                state.RunningTakeoff = false;
+                state.LooseSteepSlopeGroundFrames = SteepPipeLooseGroundFrameCount;
+                state.LooseSteepSlopeKind = floorSlope.NativeSlopeKind;
+            }
+
+            return;
+        }
+
+        floorY = AdjustPlayerFloorYForNativeSlope(floorY, floorSlope, state);
         state.Y = AnchorYForCollisionBottom(floorY, state);
         state.SubY = 0;
         state.SubYSpeed = 0;
@@ -1224,6 +1267,15 @@ public sealed class SmwPhysics
         state.OnGround = true;
         state.InAirState = 0;
         state.RunningTakeoff = false;
+        state.LooseSteepSlopeGroundFrames = 0;
+        state.LooseSteepSlopeKind = 32;
+    }
+
+    private static float AdjustPlayerFloorYForNativeSlope(float floorY, SlopeSurface slope, PlayerState state)
+    {
+        return slope.NativeSlopeKind == 12 && state.XSpeed > 8
+            ? floorY + 1.0f
+            : floorY;
     }
 
     private static bool TryResolvePlayerFloorSlopeFromAbove(
@@ -1236,9 +1288,9 @@ public sealed class SmwPhysics
         out float floorY,
         out SlopeSurface floorSlope)
     {
-        var leftProbe = state.XFloat + 2.0f;
-        var nativeCenterProbe = state.XFloat + 8.0f;
-        var rightProbe = state.XFloat + PlayerWidth - 2.0f;
+        var leftProbe = state.X + 2.0f;
+        var nativeCenterProbe = state.X + 8.0f;
+        var rightProbe = state.X + PlayerWidth - 2.0f;
         Span<float> probes = stackalloc float[3];
         var probeCount = 3;
         if (!wasOnGround)
@@ -1282,32 +1334,6 @@ public sealed class SmwPhysics
             {
                 FindMatchingFloorSlope(probeX, floorY, slopes, out floorSlope);
                 return true;
-            }
-        }
-
-        if (!wasOnGround && state.XSpeed != 0)
-        {
-            probes[0] = state.XSpeed < 0 ? leftProbe : rightProbe;
-            probes[1] = state.XSpeed < 0 ? rightProbe : leftProbe;
-            for (var probeIndex = 0; probeIndex < 2; probeIndex++)
-            {
-                var probeX = probes[probeIndex];
-                if (TryResolveNativeKindRangeFloorSlopeFromAbove(
-                    probeX,
-                    top,
-                    bottom,
-                    previousBottom,
-                    state.YSpeed,
-                    slopes,
-                    minNativeKind: 20,
-                    maxNativeKind: 23,
-                    aboveTolerance: aboveTolerance,
-                    belowTolerance: 16.0f,
-                    out floorY,
-                    out floorSlope))
-                {
-                    return true;
-                }
             }
         }
 
@@ -1375,16 +1401,9 @@ public sealed class SmwPhysics
 
     private static void ApplyNativeSlopeContact(ref PlayerState state, SlopeSurface slope)
     {
-        var kind = slope.NativeSlopeKind;
-        if (kind < 0 || kind >= NativeSlopePlayerTable.Length)
-        {
-            kind = 32;
-        }
+        ApplyNativeSlopeMetadata(ref state, slope);
 
-        state.SlopeKind = kind;
-        state.SlopePlayer = NativeSlopePlayerTable[kind];
-        state.SlopeType = NativeSlopeTypeTable[kind];
-
+        var kind = state.SlopeKind;
         var stationaryKind = kind;
         if (kind < 0x1C && state.XSpeed != 0)
         {
@@ -1406,6 +1425,40 @@ public sealed class SmwPhysics
         {
             state.YSpeed = stationaryYSpeed;
         }
+    }
+
+    private static void ApplyLooseSteepSlopeGround(ref PlayerState state, int kind)
+    {
+        ApplyNativeSlopeMetadataForKind(ref state, kind);
+        state.OnGround = true;
+        state.RunningTakeoff = false;
+        state.LooseSteepSlopeKind = state.SlopeKind;
+        state.LooseSteepSlopeGroundFrames = Math.Max(0, state.LooseSteepSlopeGroundFrames - 1);
+        if (state.LooseSteepSlopeGroundFrames == 2 && state.YSpeed > SteepPipeLooseGroundFirstCarryYSpeed)
+        {
+            state.YSpeed = SteepPipeLooseGroundFirstCarryYSpeed;
+        }
+        else if (state.LooseSteepSlopeGroundFrames == 1 && state.YSpeed > SteepPipeLooseGroundPreJumpYSpeed)
+        {
+            state.YSpeed = SteepPipeLooseGroundPreJumpYSpeed;
+        }
+    }
+
+    private static void ApplyNativeSlopeMetadata(ref PlayerState state, SlopeSurface slope)
+    {
+        ApplyNativeSlopeMetadataForKind(ref state, slope.NativeSlopeKind);
+    }
+
+    private static void ApplyNativeSlopeMetadataForKind(ref PlayerState state, int kind)
+    {
+        if (kind < 0 || kind >= NativeSlopePlayerTable.Length)
+        {
+            kind = 32;
+        }
+
+        state.SlopeKind = kind;
+        state.SlopePlayer = NativeSlopePlayerTable[kind];
+        state.SlopeType = NativeSlopeTypeTable[kind];
     }
 
     private static bool FindMatchingFloorSlope(

@@ -42,6 +42,7 @@ public partial class GameScene : Node2D
     private const float SquishedRexStompMinimumTopPenetration = 8.0f;
     private const int DefaultSpriteStompYSpeed = -48;
     private const int NativeSpriteStompYSpeed = -88;
+    private const int NativeHeldJumpGravity = 3;
     private const float SlidingKoopaGroundDeceleration = 0.03125f;
     private const int NativeLevelStartSpriteWarmupFrames = 22;
     private const int NativePlayerHurtAnimationFrames = 0x2F;
@@ -165,6 +166,7 @@ public partial class GameScene : Node2D
     private readonly List<bool> _solidStepUpEnabled = [];
     private readonly List<bool> _solidVerticalEnabled = [];
     private readonly List<SmwPhysics.SlopeSurface> _slopes = [];
+    private readonly List<SmwPhysics.SlopeSurface> _spriteSlopes = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
     private readonly List<Godot.Collections.Dictionary> _levelObjects = [];
     private readonly List<Godot.Collections.Dictionary> _layer2Objects = [];
@@ -303,6 +305,7 @@ public partial class GameScene : Node2D
     private string _debugTraceTag = "trace";
     private bool _debugTraceOam;
     private bool _debugTraceSensors;
+    private bool _debugTraceQuitWhenDone;
     private bool _debugActorsEnabled = true;
     private bool _debugActorVisualsEnabled = true;
     private bool _debugInvincible;
@@ -430,7 +433,7 @@ public partial class GameScene : Node2D
 
         TrySpawnPlayerFireball(frameInput);
         UpdatePlayerGraphic();
-        if (UpdateSpriteActors(_physics.PlayerRect(previousStateForActors)))
+        if (UpdateSpriteActors(previousStateForActors))
         {
             if (_player != null)
             {
@@ -2640,6 +2643,7 @@ public partial class GameScene : Node2D
         _solidStepUpEnabled.Clear();
         _solidVerticalEnabled.Clear();
         _slopes.Clear();
+        _spriteSlopes.Clear();
         _diagonalPipeFloorCells.Clear();
         _diagonalPipeBodyCells.Clear();
         _diagonalPipeCeilingCells.Clear();
@@ -2696,6 +2700,10 @@ public partial class GameScene : Node2D
         foreach (var slope in BuildSlopeSurfaces(slopeTiles))
         {
             AddSlope(slope, debugVisible);
+        }
+        foreach (var slope in BuildSpriteSlopeSurfaces(slopeTiles))
+        {
+            _spriteSlopes.Add(slope);
         }
     }
 
@@ -3161,6 +3169,20 @@ public partial class GameScene : Node2D
         return slopes;
     }
 
+    private static List<SmwPhysics.SlopeSurface> BuildSpriteSlopeSurfaces(IReadOnlyList<PlacedMap16Tile> slopeTiles)
+    {
+        var slopes = new List<SmwPhysics.SlopeSurface>();
+        foreach (var tile in slopeTiles)
+        {
+            if (TryBuildSpriteSlopeTileSurface(tile, out var slope))
+            {
+                slopes.Add(slope);
+            }
+        }
+
+        return slopes;
+    }
+
     private static bool TryBuildSlopeTileSurface(PlacedMap16Tile tile, out SmwPhysics.SlopeSurface slope)
     {
         var x0 = tile.X * Map16TileSize;
@@ -3193,6 +3215,31 @@ public partial class GameScene : Node2D
 
         slope = default;
         return false;
+    }
+
+    private static bool TryBuildSpriteSlopeTileSurface(PlacedMap16Tile tile, out SmwPhysics.SlopeSurface slope)
+    {
+        var x0 = tile.X * Map16TileSize;
+        var y0 = tile.Y * Map16TileSize + LevelVisualYOffset;
+        var x1 = x0 + Map16TileSize;
+        var y1 = y0 + Map16TileSize;
+
+        if (tile.Source == "right_diagonal_pipe")
+        {
+            if (IsDiagonalPipeCeilingTile(tile))
+            {
+                slope = MakeLinearSlopeSurface(x0, y1, x1, y0, ceiling: true);
+                return true;
+            }
+
+            if (IsDiagonalPipeFloorTile(tile))
+            {
+                slope = MakeLinearSlopeSurface(x0, y1, x1, y0);
+                return true;
+            }
+        }
+
+        return TryBuildSlopeTileSurface(tile, out slope);
     }
 
     private static bool TryBuildStandardSlopeTileSurface(
@@ -3230,6 +3277,23 @@ public partial class GameScene : Node2D
             snapDistance = -1.0f;
         }
         return new SmwPhysics.SlopeSurface(x0, y0, x1, y1, ceiling, nativeKind, snapDistance);
+    }
+
+    private static SmwPhysics.SlopeSurface MakeLinearSlopeSurface(
+        float x0,
+        float y0,
+        float x1,
+        float y1,
+        bool ceiling = false)
+    {
+        return new SmwPhysics.SlopeSurface(
+            x0,
+            y0,
+            x1,
+            y1,
+            ceiling,
+            NativeSlopeKind: 32,
+            SnapDistance: SmwPhysics.NativeSlopeSnapDistanceForKind(32));
     }
 
     private static bool TryGetStandardSlopeOffsets(int map16, out float leftYOffset, out float rightYOffset)
@@ -4119,9 +4183,10 @@ public partial class GameScene : Node2D
         line.AddPoint(new Vector2(left, top));
     }
 
-    private bool UpdateSpriteActors(Rect2 previousPlayerRect)
+    private bool UpdateSpriteActors(SmwPhysics.PlayerState previousPlayerState)
     {
         var playerAdjusted = false;
+        var previousPlayerRect = _physics.PlayerRect(previousPlayerState);
         if (_playerHurtCooldown > 0)
         {
             _playerHurtCooldown--;
@@ -4168,6 +4233,11 @@ public partial class GameScene : Node2D
                 actor.Node.Position = new Vector2(actor.X, actor.Y);
                 continue;
             }
+            if (!CanProcessSpriteActorMotion(actor))
+            {
+                actor.Node.Position = new Vector2(actor.X, actor.Y);
+                continue;
+            }
 
             if (actor.InteractionCooldownFrames > 0)
             {
@@ -4186,7 +4256,7 @@ public partial class GameScene : Node2D
                 continue;
             }
 
-            var handledPlayerCollision = ResolvePlayerSpriteActorCollision(actor, _physics.PlayerRect(_state), previousPlayerRect);
+            var handledPlayerCollision = ResolvePlayerSpriteActorCollision(actor, _physics.PlayerRect(_state), previousPlayerRect, previousPlayerState);
             actor.Node.Position = new Vector2(actor.X, actor.Y);
             if (handledPlayerCollision)
             {
@@ -4195,6 +4265,16 @@ public partial class GameScene : Node2D
         }
 
         return playerAdjusted;
+    }
+
+    private bool CanProcessSpriteActorMotion(RuntimeSpriteActor actor)
+    {
+        if (actor.SpriteId != 0xAB || actor.WakeScreen < 3)
+        {
+            return true;
+        }
+
+        return actor.X <= _cameraX + LogicalViewportWidth;
     }
 
     private void TrySpawnPlayerFireball(SmwPhysics.FrameInput frameInput)
@@ -4535,7 +4615,7 @@ public partial class GameScene : Node2D
                 bottom,
                 bottom,
                 actor.YSpeed,
-                _slopes,
+                _spriteSlopes,
                 aboveTolerance: 8.0f,
                 belowTolerance: 16.0f,
                 out var slopeY))
@@ -5047,27 +5127,41 @@ public partial class GameScene : Node2D
         _lastActorEvent = $"block:{actor.SpriteId:X2}:top";
     }
 
-    private bool ResolvePlayerSpriteActorCollision(RuntimeSpriteActor actor, Rect2 playerRect, Rect2 previousPlayerRect)
+    private bool ResolvePlayerSpriteActorCollision(
+        RuntimeSpriteActor actor,
+        Rect2 playerRect,
+        Rect2 previousPlayerRect,
+        SmwPhysics.PlayerState previousPlayerState)
     {
         var actorRect = actor.Rect;
         if (!actor.Alive ||
             !actor.Active ||
             !actor.Behavior.CanInteract ||
             (IsPowerupItemSprite(actor.SpriteId) && actor.InteractionCooldownFrames > 0) ||
-            (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0) ||
-            !playerRect.Intersects(actorRect))
+            (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
         {
             return false;
         }
 
+        var currentOverlap = playerRect.Intersects(actorRect);
         if (actor.SpriteId == 0xC7)
         {
+            if (!currentOverlap)
+            {
+                return false;
+            }
+
             RevealInvisibleMushroom(actor);
             return true;
         }
 
         if (IsPowerupItemSprite(actor.SpriteId))
         {
+            if (!currentOverlap)
+            {
+                return false;
+            }
+
             if (actor.State == PowerupItemEmergingState && actor.MotionFrame < PowerupItemEmergingCollectFrame)
             {
                 return false;
@@ -5082,7 +5176,7 @@ public partial class GameScene : Node2D
             return true;
         }
 
-        if (TryDefeatActorWithStar(actor))
+        if (currentOverlap && TryDefeatActorWithStar(actor))
         {
             return true;
         }
@@ -5097,17 +5191,46 @@ public partial class GameScene : Node2D
             ? actor.State == 1 ? SquishedRexStompMinimumTopPenetration : RexStompMinimumTopPenetration
             : 0.0f;
         var penetratedActorTop = playerBottom >= actorTop + minimumTopPenetration;
+        var projectedFallingBottom = ProjectedFallingPlayerBottom(previousPlayerRect, previousPlayerState);
+        var slopeHiddenStomp = actor.Behavior.Stompable &&
+            _state.OnGround &&
+            !previousPlayerState.OnGround &&
+            previousPlayerState.YSpeed > 0 &&
+            HasHorizontalOverlap(previousPlayerRect, actorRect) &&
+            previousBottom <= actorTop + 20.0f &&
+            projectedFallingBottom >= actorTop + minimumTopPenetration &&
+            playerBottom <= actorTop + 32.0f;
+        if (!currentOverlap && !slopeHiddenStomp)
+        {
+            return false;
+        }
+
         _lastActorContact =
-            $"{actor.SpriteId:X2}:{actor.State}:pb={playerBottom:0.00}:ppb={previousBottom:0.00}:at={actorTop:0.00}:ys={_state.YSpeed}:down={(downwardContact ? 1 : 0)}:top={(topContact ? 1 : 0)}:cross={(crossedActorTop ? 1 : 0)}";
-        if (actor.Behavior.Stompable && topContact && downwardContact && !penetratedActorTop)
+            $"{actor.SpriteId:X2}:{actor.State}:pb={playerBottom:0.00}:ppb={previousBottom:0.00}:proj={projectedFallingBottom:0.00}:at={actorTop:0.00}:ys={_state.YSpeed}:down={(downwardContact ? 1 : 0)}:top={(topContact ? 1 : 0)}:cross={(crossedActorTop ? 1 : 0)}:path={(slopeHiddenStomp ? 1 : 0)}";
+        if (actor.Behavior.Stompable && currentOverlap && topContact && downwardContact && !penetratedActorTop)
         {
             return false;
         }
 
         var topBandStomp = crossedActorTop && penetratedActorTop && !_state.OnGround;
-        var stomped = actor.Behavior.Stompable && topContact && penetratedActorTop && (downwardContact || topBandStomp);
+        var pathStomp = slopeHiddenStomp || topBandStomp;
+        var stomped = actor.Behavior.Stompable &&
+            (slopeHiddenStomp || (currentOverlap && topContact && penetratedActorTop && (downwardContact || topBandStomp)));
         if (stomped)
         {
+            if (actor.SpriteId == 0xAB && IsSpinStompingRex(previousPlayerState))
+            {
+                actor.Alive = false;
+                _lastActorEvent = "stomp:AB:spin";
+                AwardSpriteStompReward(actor, _lastActorEvent);
+                BoostPlayerAfterSpriteStomp(actor);
+                if (pathStomp)
+                {
+                    ApplySlopeHiddenStompBouncePosition(previousPlayerState);
+                }
+                return true;
+            }
+
             if (TryStompRex(actor))
             {
                 AwardSpriteStompReward(actor, "stomp:AB:1");
@@ -5124,6 +5247,32 @@ public partial class GameScene : Node2D
 
         HurtPlayerFromActor(actor);
         return true;
+    }
+
+    private bool IsSpinStompingRex(SmwPhysics.PlayerState previousPlayerState)
+    {
+        return _state.SpinJump || previousPlayerState.SpinJump || _lastFrameInput.Spin;
+    }
+
+    private static bool HasHorizontalOverlap(Rect2 a, Rect2 b)
+    {
+        return a.Position.X < b.Position.X + b.Size.X && a.Position.X + a.Size.X > b.Position.X;
+    }
+
+    private static float ProjectedFallingPlayerBottom(Rect2 previousPlayerRect, SmwPhysics.PlayerState previousPlayerState)
+    {
+        var previousBottom = previousPlayerRect.Position.Y + previousPlayerRect.Size.Y;
+        return previousBottom + Math.Max(0.0f, previousPlayerState.YSpeed / 16.0f);
+    }
+
+    private void ApplySlopeHiddenStompBouncePosition(SmwPhysics.PlayerState previousPlayerState)
+    {
+        var lowDelta = (_state.YSpeed * 16) & 0xFF;
+        var sum = previousPlayerState.SubY + lowDelta;
+        var carry = sum >> 8;
+        _state.SubY = sum & 0xFF;
+        _state.Y = previousPlayerState.Y + (_state.YSpeed >> 4) + carry;
+        _state.YSpeed += NativeHeldJumpGravity;
     }
 
     private static bool HasPowerupItemCollectionOverlap(Rect2 playerRect, Rect2 actorRect)
@@ -5164,7 +5313,10 @@ public partial class GameScene : Node2D
         {
             case 0x74:
                 AddScore(PowerupRewardScore);
-                StartPowerupAnimation(SmwPhysics.BigPowerup);
+                if (_state.Powerup == SmwPhysics.SmallPowerup)
+                {
+                    StartPowerupAnimation(SmwPhysics.BigPowerup);
+                }
                 _audio?.PlayBlockReward();
                 break;
             case 0x75:
@@ -5279,11 +5431,15 @@ public partial class GameScene : Node2D
 
     private void BoostPlayerAfterSpriteStomp(RuntimeSpriteActor actor)
     {
-        _state.YSpeed = actor.SpriteId == 0xAB && _lastFrameInput.Jump
+        _state.YSpeed = actor.SpriteId == 0xAB && (_lastFrameInput.Jump || _lastFrameInput.Spin)
             ? NativeSpriteStompYSpeed
             : DefaultSpriteStompYSpeed;
         _state.SubYSpeed = 0;
         _state.OnGround = false;
+        _state.SlopeKind = -1;
+        _state.SlopePlayer = 0;
+        _state.SlopeType = 0;
+        _state.InAirState = SmwPhysics.NativeFallingInAirState;
         _audio?.PlaySpinJump();
     }
 
@@ -7494,11 +7650,19 @@ public partial class GameScene : Node2D
         var frames = Math.Max(1, int.Parse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture));
         var input = new SmwPhysics.FrameInput();
         var tag = "trace";
+        var quitWhenDone = false;
         for (var i = 2; i < parts.Length; i++)
         {
             if (parts[i].StartsWith("tag=", StringComparison.OrdinalIgnoreCase))
             {
                 tag = parts[i][4..];
+                continue;
+            }
+            if (parts[i].Equals("quit_when_done", StringComparison.OrdinalIgnoreCase) ||
+                parts[i].Equals("quit_after=1", StringComparison.OrdinalIgnoreCase) ||
+                parts[i].Equals("quit=1", StringComparison.OrdinalIgnoreCase))
+            {
+                quitWhenDone = true;
                 continue;
             }
 
@@ -7516,6 +7680,7 @@ public partial class GameScene : Node2D
         _debugTraceTag = string.IsNullOrWhiteSpace(tag) ? "trace" : tag;
         _debugTraceOam = includeOam;
         _debugTraceSensors = includeSensors;
+        _debugTraceQuitWhenDone = quitWhenDone;
         if (overrideInput)
         {
             _debugCommandInput = input;
@@ -7576,6 +7741,11 @@ public partial class GameScene : Node2D
             _debugTraceOam = false;
             _debugTraceSensors = false;
             PrintDebugState($"{_debugTraceTag}_done");
+            if (_debugTraceQuitWhenDone)
+            {
+                _debugTraceQuitWhenDone = false;
+                GetTree().Quit();
+            }
         }
     }
 
