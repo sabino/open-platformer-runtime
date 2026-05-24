@@ -3045,9 +3045,15 @@ public partial class GameScene : Node2D
         float y1,
         bool ceiling = false)
     {
-        var nativeKind = SmwPhysics.TryNativeSlopeKindForMap16(map16, out var kind) ? kind : 32;
-        var nativeSnapDistance = SmwPhysics.NativeSlopeSnapDistanceForKind(nativeKind);
-        var snapDistance = nativeSnapDistance > 0.0f ? nativeSnapDistance : -1.0f;
+        var hasNativeKind = SmwPhysics.TryNativeSlopeKindForMap16(map16, out var kind);
+        var nativeKind = hasNativeKind ? kind : 32;
+        var snapDistance = hasNativeKind
+            ? SmwPhysics.NativeSlopeSnapDistanceForKind(nativeKind)
+            : SmwPhysics.NativeSlopeSnapDistanceForKind(32);
+        if (map16 is 0x01C5 or 0x01C7 && snapDistance <= 0.0f)
+        {
+            snapDistance = -1.0f;
+        }
         return new SmwPhysics.SlopeSurface(x0, y0, x1, y1, ceiling, nativeKind, snapDistance);
     }
 

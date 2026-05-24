@@ -1049,6 +1049,28 @@ public static class PhysicsSmoke
             return false;
         }
 
+        var zeroSnapSlopes = new List<SmwPhysics.SlopeSurface>
+        {
+            new(0, 128, 128, 96, NativeSlopeKind: 19, SnapDistance: SmwPhysics.NativeSlopeSnapDistanceForKind(19)),
+        };
+        if (!SmwPhysics.TrySurfaceYAt(zeroSnapSlopes[0], 64.0f, out var zeroSnapSurface))
+        {
+            Console.Error.WriteLine("expected zero-snap slope probe to have a sampled surface");
+            return false;
+        }
+        if (SmwPhysics.TryResolveFloorSlope(
+            probeX: 64.0f,
+            bottom: zeroSnapSurface + 1.0f,
+            ySpeed: 2.0f,
+            zeroSnapSlopes,
+            aboveTolerance: 8.0f,
+            belowTolerance: 16.0f,
+            out _))
+        {
+            Console.Error.WriteLine("expected native zero snap distance to reject one-pixel-below pipe slope contact");
+            return false;
+        }
+
         return true;
     }
 

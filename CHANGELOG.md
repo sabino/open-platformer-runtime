@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preserved native zero-distance slope snap values for Map16 pipe/slope tiles instead of widening them to the fallback tolerance, while keeping the current temporary `0x01C5`/`0x01C7` diagonal-pipe traversal support until the full Map16 act-as routine is ported; added a physics smoke regression for zero-snap contact.
 - Expanded the generated/internal BRR sample probe set to match the runtime SFX fallback sample IDs `07`, `08`, `09`, `0E`, and `10`; the menu now exposes five sample buttons, the importer writes all five preview WAVs, and the native C# audio verifier byte-checks all five decodes.
 - Added native C# extraction/verification for generated palette assets: `SmwAssetTool` now has `extract-palettes` and `verify-palettes`, checks global palette tables plus level `105`/`1CB` CGRAM assembly from the ROM/header palette indexes, and the local gates run the verifier.
 - Added native C# extraction/verification for the entrance and secondary-exit tables in `levels/secondary_tables.json`: `SmwAssetTool` now has `extract-entrance-tables` and `verify-entrance-tables`, the local gates run the verifier, and the asset contract checks the level `105`, level `1CB`, and secondary `1CB -> 105` entrance anchors used by the pipe transition path.
