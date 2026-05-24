@@ -1055,6 +1055,12 @@ public sealed class SmwPhysics
                 {
                     continue;
                 }
+                if (!state.OnGround && allowVerticalForWallSlack && !HasNativeHorizontalSideProbeYOverlap(state, rect, solid))
+                {
+                    continue;
+                }
+
+                var preserveSubXSpeed = !state.OnGround && allowVerticalForWallSlack;
                 if (state.XSpeed > 0)
                 {
                     var wallSlack = !state.OnGround && allowVerticalForWallSlack ? NativeHorizontalWallSlack : 0.0f;
@@ -1078,7 +1084,10 @@ public sealed class SmwPhysics
                     state.X = (int)MathF.Round(resolvedX);
                 }
                 state.SubX = 0;
-                state.SubXSpeed = 0;
+                if (!preserveSubXSpeed)
+                {
+                    state.SubXSpeed = 0;
+                }
                 state.XSpeed = 0;
             }
             else
@@ -1219,6 +1228,14 @@ public sealed class SmwPhysics
     {
         var centerX = state.XFloat + PlayerWidth * 0.5f;
         return centerX >= solid.Position.X && centerX < solid.Position.X + solid.Size.X;
+    }
+
+    private static bool HasNativeHorizontalSideProbeYOverlap(PlayerState state, Rect2 playerRect, Rect2 solid)
+    {
+        var probeY = state.Powerup == SmallPowerup || state.Ducking
+            ? playerRect.Position.Y + playerRect.Size.Y * 0.5f
+            : playerRect.Position.Y + 26.0f;
+        return probeY >= solid.Position.Y && probeY < solid.Position.Y + solid.Size.Y;
     }
 
     private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes, float previousBottom, bool wasOnGround)
