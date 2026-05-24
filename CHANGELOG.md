@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improved actors-on debug traversal around late one-tile blockers: the explorer now jumps when a small solid tile is immediately ahead at Mario's body height, preserving normal collision while moving the Yoshi Island 1 actors-on probe frontier from `max_x=4642.00` to `max_x=4732.56`. The remaining accepted death is now a later Clappin' Chuck (`0x95`) body contact near the goal section.
 - Improved actors-on debug traversal priority: the explorer now lets stompable-enemy jumps override ducking, ignores invisible `0xC7` mushroom markers as avoidance hazards, and only air-brakes for non-stompable actors. The actors-on Yoshi Island 1 probe now reaches `max_x=4642.00` before the remaining accepted death, moving the next blocker close to the goal section.
 - Corrected imported Banzai Bill actor origins to use the 64px OAM visual height instead of the default 16px sprite height, lifting the visual/hurtbox out of the terrain and making the first-level Banzai pass behave like a large sprite.
 - Added live-input debug tracing for RCON/headless probes: `trace_live`, `trace_live_oam`, `trace_live_sensors`, and `trace_live_full` now record the actual live/autoplay frame input without replacing it, making late-level actor failures debuggable frame-by-frame.

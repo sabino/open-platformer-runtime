@@ -89,6 +89,9 @@ public partial class GameScene : Node2D
     private const float AutoplayExploreActorAirBrakeBehindPixels = 24.0f;
     private const float AutoplayExploreActorDuckAheadPixels = 160.0f;
     private const float AutoplayExploreActorDuckBehindPixels = 24.0f;
+    private const float AutoplayExploreTerrainJumpAheadPixels = 24.0f;
+    private const float AutoplayExploreTerrainJumpBehindPixels = 4.0f;
+    private const float AutoplayExploreTerrainJumpMaxHeightPixels = 32.0f;
     private static readonly int[] StompScoreByNativeGivePointsIndex = [100, 200, 400, 800, 1000, 2000, 4000, 8000];
     private static readonly int[] FireballBounceYSpeedBySlopeType = [0, -72, -64, -56, -48, -40, -32, -24, -16];
     private const float FallDeathMarginPixels = 96.0f;
@@ -728,6 +731,7 @@ public partial class GameScene : Node2D
         }
 
         var actorJump = _state.OnGround && ShouldAutoplayJumpForActorAhead();
+        var terrainJump = _state.OnGround && ShouldAutoplayJumpForTerrainAhead();
         var duck = _state.OnGround && !actorJump && ShouldAutoplayDuckUnderActorAhead();
         var actorAhead = ShouldAutoplayDeferPeriodicJumpForActorAhead();
         var airBrake = ShouldAutoplayBrakeForAirborneActorAhead();
@@ -738,7 +742,7 @@ public partial class GameScene : Node2D
         var stuckJump = _autoplayStuckFrames > AutoplayExploreStuckJumpThreshold &&
             !duck &&
             _autoplayFrame % AutoplayExploreStuckJumpPeriod < AutoplayExploreStuckJumpHeldFrames;
-        var jump = periodicJump || stuckJump || actorJump;
+        var jump = periodicJump || stuckJump || actorJump || terrainJump;
         var jumpPressed = jump && !_autoplayJumpHeld;
         _autoplayJumpHeld = jump;
         return new SmwPhysics.FrameInput
@@ -880,6 +884,41 @@ public partial class GameScene : Node2D
             {
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    private bool ShouldAutoplayJumpForTerrainAhead()
+    {
+        var playerRect = _physics.PlayerRect(_state);
+        var playerRight = playerRect.Position.X + playerRect.Size.X;
+        var playerTop = playerRect.Position.Y;
+        var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+        for (var solidIndex = 0; solidIndex < _solids.Count; solidIndex++)
+        {
+            var solid = _solids[solidIndex];
+            if (solid.Size.Y > AutoplayExploreTerrainJumpMaxHeightPixels)
+            {
+                continue;
+            }
+
+            var ahead = solid.Position.X - playerRight;
+            if (ahead < -AutoplayExploreTerrainJumpBehindPixels ||
+                ahead > AutoplayExploreTerrainJumpAheadPixels)
+            {
+                continue;
+            }
+
+            var solidBottom = solid.Position.Y + solid.Size.Y;
+            if (solid.Position.Y >= playerBottom - 2.0f ||
+                solidBottom <= playerTop + 2.0f ||
+                solid.Position.Y < playerTop - 4.0f)
+            {
+                continue;
+            }
+
+            return true;
         }
 
         return false;
