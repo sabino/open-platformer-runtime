@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SMW_ROOT="${SMW_NATIVE_ROOT:-/path/to/native-reference}"
 NATIVE_RUNNER="$SMW_ROOT/tools/run-wayland.sh"
-INPUT_SCRIPT="${1:-${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-recording.input}}"
+INPUT_SCRIPT="${1:-${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-full.input}}"
 if [[ $# -gt 0 ]]; then
   shift
 fi

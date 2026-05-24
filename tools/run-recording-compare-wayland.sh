@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INPUT_SCRIPT="${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-recording.input}"
+INPUT_SCRIPT="${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-full.input}"
 GODOT_INPUT=""
 LEVEL_START_FRAME=""
 FRAMES=""
@@ -80,6 +80,10 @@ if [[ -z "$GODOT_INPUT" ]]; then
       slice_args+=("--frames" "$FRAMES")
     fi
     "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" "${slice_args[@]}"
+  elif [[ -s "$INPUT_SCRIPT.markers" ]]; then
+    LEVEL_START_FRAME="$("$ROOT/tools/select-input-marker.py" "$INPUT_SCRIPT.markers")"
+    GODOT_INPUT="$ROOT/generated/smw/recordings/latest-level-start-slice.input"
+    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME"
   else
     GODOT_INPUT="$INPUT_SCRIPT"
   fi

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SMW_ROOT="${SMW_NATIVE_ROOT:-/path/to/native-reference}"
 NATIVE_RUNNER="$SMW_ROOT/tools/run-wayland.sh"
-INPUT_SCRIPT="${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-recording.input}"
+INPUT_SCRIPT="${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-full.input}"
 GODOT_INPUT=""
 OUT_DIR="${SMW_TRACE_OUT_DIR:-$ROOT/generated/smw/traces}"
 FRAMES="${SMW_TRACE_FRAMES:-600}"
@@ -107,6 +107,10 @@ mkdir -p "$OUT_DIR" "$ROOT/generated/smw/native-xdg"
 
 if [[ -z "$GODOT_INPUT" ]]; then
   if [[ -n "$LEVEL_START_FRAME" ]]; then
+    GODOT_INPUT="$OUT_DIR/godot-level-start.input"
+    "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME" --frames "$FRAMES" >/dev/null
+  elif [[ -s "$INPUT_SCRIPT.markers" ]]; then
+    LEVEL_START_FRAME="$("$ROOT/tools/select-input-marker.py" "$INPUT_SCRIPT.markers")"
     GODOT_INPUT="$OUT_DIR/godot-level-start.input"
     "$ROOT/tools/slice-input-script.py" "$INPUT_SCRIPT" "$GODOT_INPUT" --start-frame "$LEVEL_START_FRAME" --frames "$FRAMES" >/dev/null
   else
