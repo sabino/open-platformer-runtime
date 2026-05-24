@@ -8638,22 +8638,12 @@ public partial class GameScene : Node2D
         {
             return;
         }
-        _pipeTransitionLatch = true;
 
         var playerRect = _physics.PlayerRect(_state);
         PipeEntrance? matchedEntrance = null;
         foreach (var pipeEntrance in _pipeEntrances)
         {
-            if (pipeEntrance.Horizontal && !sidePressed)
-            {
-                continue;
-            }
-            if (!pipeEntrance.Horizontal && !downPressed)
-            {
-                continue;
-            }
-
-            if (playerRect.Intersects(pipeEntrance.Rect))
+            if (PipeEntranceAcceptsPlayer(pipeEntrance, playerRect, downPressed, sidePressed))
             {
                 matchedEntrance = pipeEntrance;
                 break;
@@ -8664,6 +8654,7 @@ public partial class GameScene : Node2D
             return;
         }
 
+        _pipeTransitionLatch = true;
         var screen = matchedEntrance.Value.Screen;
         if (TryResolveScreenExit(screen, out var entrance))
         {
@@ -8679,6 +8670,16 @@ public partial class GameScene : Node2D
         {
             GD.PrintErr($"pipe-debug screen={screen:X2} unresolved level={_currentLevelId}");
         }
+    }
+
+    private bool PipeEntranceAcceptsPlayer(PipeEntrance pipeEntrance, Rect2 playerRect, bool downPressed, bool sidePressed)
+    {
+        if (pipeEntrance.Horizontal)
+        {
+            return sidePressed && playerRect.Intersects(pipeEntrance.Rect);
+        }
+
+        return downPressed && _state.OnGround && playerRect.Intersects(pipeEntrance.Rect);
     }
 
     private void UpdateCamera()
