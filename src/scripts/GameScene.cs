@@ -87,6 +87,9 @@ public partial class GameScene : Node2D
     private const float AutoplayExploreActorPeriodicSuppressBehindPixels = 16.0f;
     private const float AutoplayExploreActorAirBrakeAheadPixels = 96.0f;
     private const float AutoplayExploreActorAirBrakeBehindPixels = 24.0f;
+    private const float AutoplayExploreStompableAirBrakeAheadPixels = 48.0f;
+    private const float AutoplayExploreStompableAirBrakeBehindPixels = 16.0f;
+    private const float AutoplayExploreStompableAirBrakeBodyOverlapPixels = 8.0f;
     private const float AutoplayExploreActorDuckAheadPixels = 160.0f;
     private const float AutoplayExploreActorDuckBehindPixels = 24.0f;
     private const float AutoplayExploreTerrainJumpAheadPixels = 24.0f;
@@ -734,7 +737,8 @@ public partial class GameScene : Node2D
         var terrainJump = _state.OnGround && ShouldAutoplayJumpForTerrainAhead();
         var duck = _state.OnGround && !actorJump && ShouldAutoplayDuckUnderActorAhead();
         var actorAhead = ShouldAutoplayDeferPeriodicJumpForActorAhead();
-        var airBrake = ShouldAutoplayBrakeForAirborneActorAhead();
+        var airBrake = ShouldAutoplayBrakeForAirborneActorAhead() ||
+            ShouldAutoplayBrakeForRisingStompableActorAhead();
         var periodicJump = _state.OnGround &&
             !duck &&
             !actorAhead &&
@@ -854,6 +858,49 @@ public partial class GameScene : Node2D
             }
 
             return true;
+        }
+
+        return false;
+    }
+
+    private bool ShouldAutoplayBrakeForRisingStompableActorAhead()
+    {
+        if (_state.OnGround || _state.YSpeed >= 0)
+        {
+            return false;
+        }
+
+        var playerRect = _physics.PlayerRect(_state);
+        var playerRight = playerRect.Position.X + playerRect.Size.X;
+        var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
+        foreach (var actor in _spriteActors)
+        {
+            if (actor.SpriteId != 0x95 ||
+                !IsAutoplayAvoidanceActor(actor) ||
+                !actor.Behavior.Stompable)
+            {
+                continue;
+            }
+
+            var actorRect = actor.Rect;
+            var ahead = actorRect.Position.X - playerRight;
+            if (ahead < -AutoplayExploreStompableAirBrakeBehindPixels ||
+                ahead > AutoplayExploreStompableAirBrakeAheadPixels)
+            {
+                continue;
+            }
+
+            var actorBottom = actorRect.Position.Y + actorRect.Size.Y;
+            if (actorBottom < playerRect.Position.Y - AutoplayExploreActorVerticalRangePixels ||
+                actorRect.Position.Y > playerBottom + AutoplayExploreActorVerticalRangePixels)
+            {
+                continue;
+            }
+
+            if (playerBottom >= actorRect.Position.Y + AutoplayExploreStompableAirBrakeBodyOverlapPixels)
+            {
+                return true;
+            }
         }
 
         return false;
