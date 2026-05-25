@@ -71,6 +71,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckRightFootLedgeLanding(physics))
+        {
+            return 1;
+        }
         if (!CheckHorizontalOnlySolid(physics))
         {
             return 1;
@@ -1113,6 +1117,34 @@ public static class PhysicsSmoke
         if (state.X > 50 || state.Y <= 64)
         {
             Console.Error.WriteLine($"expected high wall side impact to block, got x={state.X} y={state.Y}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckRightFootLedgeLanding(SmwPhysics physics)
+    {
+        var state = physics.MakeState(2771, 197, SmwPhysics.BigPowerup);
+        state.SubX = 0xC0;
+        state.SubY = 0x40;
+        state.XSpeed = 47;
+        state.YSpeed = 7;
+        state.InAirState = 0x0C;
+
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Right = true, Jump = true, Run = true },
+            [new Rect2(2784, 224, 16, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportLeadingFoot],
+            []);
+
+        if (!state.OnGround || state.Y != 192 || state.YSpeed != 3)
+        {
+            Console.Error.WriteLine(
+                $"expected right-foot ledge landing at TAS index 2789, got x={state.X}:{state.SubX:X2} y={state.Y}:{state.SubY:X2} ys={state.YSpeed} ground={state.OnGround}");
             return false;
         }
 

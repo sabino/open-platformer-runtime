@@ -184,9 +184,11 @@ public partial class GameScene : Node2D
     private readonly List<Rect2> _solids = [];
     private readonly List<bool> _solidStepUpEnabled = [];
     private readonly List<bool> _solidVerticalEnabled = [];
+    private readonly List<int> _solidSupportModes = [];
     private readonly List<Rect2> _frameSolids = [];
     private readonly List<bool> _frameSolidStepUpEnabled = [];
     private readonly List<bool> _frameSolidVerticalEnabled = [];
+    private readonly List<int> _frameSolidSupportModes = [];
     private readonly List<SmwPhysics.SlopeSurface> _slopes = [];
     private readonly List<SmwPhysics.SlopeSurface> _spriteSlopes = [];
     private readonly List<Godot.Collections.Dictionary> _screenExits = [];
@@ -481,12 +483,14 @@ public partial class GameScene : Node2D
             var solids = _solids;
             var solidStepUpEnabled = _solidStepUpEnabled;
             var solidVerticalEnabled = _solidVerticalEnabled;
+            var solidSupportModes = _solidSupportModes;
             if (_pipeExitPassThroughFrames > 0)
             {
                 BuildPipeExitFilteredSolids();
                 solids = _frameSolids;
                 solidStepUpEnabled = _frameSolidStepUpEnabled;
                 solidVerticalEnabled = _frameSolidVerticalEnabled;
+                solidSupportModes = _frameSolidSupportModes;
             }
 
             _physics.Step(
@@ -495,6 +499,7 @@ public partial class GameScene : Node2D
                 solids,
                 solidStepUpEnabled,
                 solidVerticalEnabled,
+                solidSupportModes,
                 _slopes,
                 0,
                 (int)MathF.Round(GetLevelPixelRight()));
@@ -1867,6 +1872,7 @@ public partial class GameScene : Node2D
         _solids.Clear();
         _solidStepUpEnabled.Clear();
         _solidVerticalEnabled.Clear();
+        _solidSupportModes.Clear();
         _slopes.Clear();
         _spriteActors.Clear();
         _playerFireballs.Clear();
@@ -2796,7 +2802,7 @@ public partial class GameScene : Node2D
     private static Rect2 DragonCoinPickupRect(int tileX, int tileY)
     {
         var topLeft = TileToWorld(tileX, tileY);
-        return new Rect2(topLeft + new Vector2(4.0f, 0.0f), new Vector2(8.0f, 30.0f));
+        return new Rect2(topLeft, new Vector2(8.0f, 30.0f));
     }
 
     private void AddGeneratedCollision(bool debugVisible)
@@ -2804,6 +2810,7 @@ public partial class GameScene : Node2D
         _solids.Clear();
         _solidStepUpEnabled.Clear();
         _solidVerticalEnabled.Clear();
+        _solidSupportModes.Clear();
         _slopes.Clear();
         _spriteSlopes.Clear();
         _diagonalPipeFloorCells.Clear();
@@ -2856,7 +2863,11 @@ public partial class GameScene : Node2D
 
         foreach (var rect in BuildMergedSolidRects(solidTiles))
         {
-            AddSolid(rect, new Color(0.05f, 0.85f, 0.20f, 0.10f), debugVisible);
+            AddSolid(
+                rect,
+                new Color(0.05f, 0.85f, 0.20f, 0.10f),
+                debugVisible,
+                supportMode: SolidSupportModeForRect(rect));
         }
 
         foreach (var slope in BuildSlopeSurfaces(slopeTiles))
@@ -3793,6 +3804,28 @@ public partial class GameScene : Node2D
             source.StartsWith("std_generic_", StringComparison.Ordinal);
     }
 
+    private int SolidSupportModeForRect(Rect2 rect)
+    {
+        var startX = WorldToTileX(rect.Position.X);
+        var endX = WorldToTileX(rect.Position.X + rect.Size.X - 1.0f);
+        var topY = WorldToTileY(rect.Position.Y);
+        for (var x = startX; x <= endX; x++)
+        {
+            if (_map16TilesByCoord.TryGetValue((x, topY), out var tile) &&
+                IsLeadingFootLedgeSupportTile(tile))
+            {
+                return SmwPhysics.SolidSupportLeadingFoot;
+            }
+        }
+
+        return SmwPhysics.SolidSupportLegacy;
+    }
+
+    private static bool IsLeadingFootLedgeSupportTile(PlacedMap16Tile tile)
+    {
+        return tile.Source == "ground_edge_top";
+    }
+
     private static bool IsSlopeObjectSource(string source)
     {
         return source.Contains("diagonal_pipe", StringComparison.Ordinal) ||
@@ -3871,11 +3904,18 @@ public partial class GameScene : Node2D
             tile.Source.Contains("midway", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void AddSolid(Rect2 rect, Color color, bool debugVisible, bool allowStepUp = true, bool allowVertical = true)
+    private void AddSolid(
+        Rect2 rect,
+        Color color,
+        bool debugVisible,
+        bool allowStepUp = true,
+        bool allowVertical = true,
+        int supportMode = SmwPhysics.SolidSupportLegacy)
     {
         _solids.Add(rect);
         _solidStepUpEnabled.Add(allowStepUp);
         _solidVerticalEnabled.Add(allowVertical);
+        _solidSupportModes.Add(supportMode);
         if (!debugVisible)
         {
             return;
@@ -6703,6 +6743,7 @@ public partial class GameScene : Node2D
         _frameSolids.Clear();
         _frameSolidStepUpEnabled.Clear();
         _frameSolidVerticalEnabled.Clear();
+        _frameSolidSupportModes.Clear();
 
         var playerRect = _physics.PlayerRect(_state);
         for (var i = 0; i < _solids.Count; i++)
@@ -6716,6 +6757,7 @@ public partial class GameScene : Node2D
             _frameSolids.Add(solid);
             _frameSolidStepUpEnabled.Add(_solidStepUpEnabled[i]);
             _frameSolidVerticalEnabled.Add(_solidVerticalEnabled[i]);
+            _frameSolidSupportModes.Add(_solidSupportModes[i]);
         }
     }
 
@@ -9244,9 +9286,14 @@ public partial class GameScene : Node2D
             .OrderBy(item => item.DistanceSq)
             .Take(6)
             .Select(item =>
-                $"{item.Index}:rect={item.Solid.Position.X:0.00},{item.Solid.Position.Y:0.00},{item.Solid.Size.X:0.00},{item.Solid.Size.Y:0.00}:step={BoolAt(_solidStepUpEnabled, item.Index)}:vert={BoolAt(_solidVerticalEnabled, item.Index)}");
+                $"{item.Index}:rect={item.Solid.Position.X:0.00},{item.Solid.Position.Y:0.00},{item.Solid.Size.X:0.00},{item.Solid.Size.Y:0.00}:step={BoolAt(_solidStepUpEnabled, item.Index)}:vert={BoolAt(_solidVerticalEnabled, item.Index)}:support={IntAt(_solidSupportModes, item.Index)}");
         var description = string.Join(" | ", solids);
         return $"solids={(string.IsNullOrEmpty(description) ? "none" : description)}";
+    }
+
+    private static int IntAt(IReadOnlyList<int> values, int index)
+    {
+        return index >= 0 && index < values.Count ? values[index] : 0;
     }
 
     private static string DescribePipeCellsNear(
