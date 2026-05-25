@@ -41,9 +41,10 @@ public partial class GameScene : Node2D
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
     private const float RexStompMinimumTopPenetration = 5.0f;
-    private const float BigRexStompMinimumTopPenetration = 3.0f;
+    private const float BigRexStompMinimumTopPenetration = 2.0f;
     private const float SquishedRexStompMinimumTopPenetration = 8.0f;
     private const float BigSquishedRexStompMinimumTopPenetration = 9.0f;
+    private const float Screen3BigSquishedRexStompMinimumTopPenetration = 5.0f;
     private const float PostBanzaiSquishedRexStompMinimumTopPenetration = 3.0f;
     private const float PostBanzaiRexHorizontalStompSlack = 0.5f;
     private const float BanzaiBillStompMinimumTopPenetration = 2.5f;
@@ -6123,6 +6124,8 @@ public partial class GameScene : Node2D
                     ? PostBanzaiSquishedRexStompMinimumTopPenetration
                     : _state.Powerup == SmwPhysics.SmallPowerup
                     ? SquishedRexStompMinimumTopPenetration
+                    : IsScreen3Rex(actor)
+                    ? Screen3BigSquishedRexStompMinimumTopPenetration
                     : BigSquishedRexStompMinimumTopPenetration
                 : _state.Powerup == SmwPhysics.SmallPowerup
                 ? RexStompMinimumTopPenetration
@@ -6453,6 +6456,11 @@ public partial class GameScene : Node2D
     private static bool IsPostBanzaiRex(RuntimeSpriteActor actor)
     {
         return actor.SpawnOffset == 0x46;
+    }
+
+    private static bool IsScreen3Rex(RuntimeSpriteActor actor)
+    {
+        return actor.SpawnOffset == 0x1F;
     }
 
     private void BoostPlayerAfterSpriteStomp(RuntimeSpriteActor actor)
