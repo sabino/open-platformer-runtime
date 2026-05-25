@@ -110,7 +110,10 @@ public partial class GameScene : Node2D
     private const int GoalTapeCycleFrames = 124;
     private const float GoalTapeDownSpeed = 1.0f;
     private const float GoalTapeUpSpeed = -1.0f;
-    private const int CourseClearWalkoutMaxFrames = 420;
+    private const int CourseClearWalkoutMaxFrames = 431;
+    private const int CourseClearAirborneWalkoutIntegrationXSpeed = 4;
+    private const int CourseClearGroundedWalkoutIntegrationXSpeed = 5;
+    private const int CourseClearGoalCoinAwardFrame = 56;
     private const int DefaultPlayerPowerup = SmwPhysics.SmallPowerup;
     private const int StartingLives = 5;
     private const int MaxLives = 99;
@@ -291,6 +294,7 @@ public partial class GameScene : Node2D
     private string _lastActorEvent = "none";
     private string _lastActorContact = "none";
     private bool _courseClear;
+    private bool _courseClearGoalCoinAwarded;
     private bool _gamePaused;
     private bool _gameOver;
     private string? _queuedPlayerDeathCause;
@@ -513,6 +517,7 @@ public partial class GameScene : Node2D
                 solidSupportModes = _frameSolidSupportModes;
             }
 
+            ApplyCourseClearWalkoutIntegrationSpeed();
             _physics.Step(
                 ref _state,
                 frameInput,
@@ -563,6 +568,7 @@ public partial class GameScene : Node2D
         UpdateGoalTapes();
         CheckCoinPickups();
         CheckGoalTape();
+        ApplyCourseClearGoalCoinAward();
         ResetStompChainIfGrounded();
         TickStarPowerTimer();
         TickLevelTimer();
@@ -6510,6 +6516,7 @@ public partial class GameScene : Node2D
     {
         _gamePaused = false;
         _courseClear = true;
+        _courseClearGoalCoinAwarded = false;
         _courseClearWalkoutFrames = 0;
         _state.XSpeed = 0;
         _state.SubXSpeed = 0;
@@ -6532,6 +6539,44 @@ public partial class GameScene : Node2D
             _state.XSpeed = 6;
             _state.SubXSpeed = 0;
         }
+    }
+
+    private void ApplyCourseClearWalkoutIntegrationSpeed()
+    {
+        if (!_courseClear)
+        {
+            return;
+        }
+
+        if (_courseClearWalkoutFrames >= CourseClearWalkoutMaxFrames)
+        {
+            return;
+        }
+
+        if (_courseClearWalkoutFrames <= 1)
+        {
+            _state.XSpeed = 0;
+            _state.SubXSpeed = 0;
+            return;
+        }
+
+        _state.XSpeed = _state.OnGround
+            ? CourseClearGroundedWalkoutIntegrationXSpeed
+            : CourseClearAirborneWalkoutIntegrationXSpeed;
+        _state.SubXSpeed = 0;
+    }
+
+    private void ApplyCourseClearGoalCoinAward()
+    {
+        if (!_courseClear ||
+            _courseClearGoalCoinAwarded ||
+            _courseClearWalkoutFrames < CourseClearGoalCoinAwardFrame)
+        {
+            return;
+        }
+
+        _courseClearGoalCoinAwarded = true;
+        AddCoin("goal_tape");
     }
 
     private void TickLevelTimer()
@@ -7830,6 +7875,7 @@ public partial class GameScene : Node2D
     public void DebugSetPlayerPosition(Vector2 position)
     {
         _courseClear = false;
+        _courseClearGoalCoinAwarded = false;
         _courseClearWalkoutFrames = 0;
         if (_courseClearLabel != null)
         {
@@ -10195,6 +10241,7 @@ public partial class GameScene : Node2D
         }
 
         _courseClear = false;
+        _courseClearGoalCoinAwarded = false;
         _gamePaused = false;
         _gameOver = false;
         _queuedPlayerDeathCause = null;
@@ -10267,6 +10314,7 @@ public partial class GameScene : Node2D
         _gamePaused = false;
         _gameOver = true;
         _courseClear = false;
+        _courseClearGoalCoinAwarded = false;
         _queuedPlayerDeathCause = null;
         _queuedPlayerDeathEvent = "death:hurt";
         _courseClearWalkoutFrames = 0;
@@ -10327,6 +10375,7 @@ public partial class GameScene : Node2D
         }
 
         _courseClear = false;
+        _courseClearGoalCoinAwarded = false;
         _gamePaused = false;
         _gameOver = false;
         _queuedPlayerDeathCause = null;
