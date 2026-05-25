@@ -69,10 +69,11 @@ EOF
 printf '1 down\n' >"$PIPE_SCRIPT"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 2>&1 | tee "$LOG_FILE"
-grep -q "smw-input-map: keyboard=1 gamepad=1 buttons=10 axes=3" "$LOG_FILE"
-grep -q "smw-menu-audio: samples=5 buttons=5" "$LOG_FILE"
+grep -q "smw-input-map: keyboard=1 gamepad=1 buttons=11 axes=4" "$LOG_FILE"
+grep -q "smw-audio: disabled=1" "$LOG_FILE"
+grep -q "smw-menu-audio: samples=0 buttons=5" "$LOG_FILE"
 grep -q "sfx_buttons=6 music_buttons=4" "$LOG_FILE"
-grep -q "smw-menu: assets=1 audio=1 actors=1 actor_visuals=1 level_preview=1 player_preview=1" "$LOG_FILE"
+grep -q "smw-menu: assets=1 audio=0 actors=1 actor_visuals=1 level_preview=1 player_preview=1" "$LOG_FILE"
 ! grep -q "smw-runtime: level=" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 3 --smw-title-start --smw-no-audio 2>&1 | tee "$LOG_FILE"
@@ -330,7 +331,7 @@ pause
 spawn 4828 282 big
 trace 12 none tag=goal_walkout
 EOF
-"$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart 2>&1 | tee "$LOG_FILE"
+"$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-audio: internal_apu=1 samples=5" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480 collision_rects=28 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
 grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
@@ -369,13 +370,13 @@ grep -q "smw-runtime: entrance_motion action=6 frames=1 dx=4.00 dy=-4.00" "$LOG_
 grep -q "smw-runtime: entrance level=105 source=1CB secondary=1 settings=6 spawn=2072,242" "$LOG_FILE"
 grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480" "$LOG_FILE"
 
-"$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=272,176 2>&1 | tee "$LOG_FILE"
+"$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=272,176 --smw-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=0 dragon_coins=1" "$LOG_FILE"
 grep -q "score=1000" "$LOG_FILE"
 grep -q "smw-audio: sfx=dragon_coin port=3 command=01" "$LOG_FILE"
 grep -q "native=1" "$LOG_FILE"
 
-"$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-level=1CB --smw-test-spawn=112,240 2>&1 | tee "$LOG_FILE"
+"$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-level=1CB --smw-test-spawn=112,240 --smw-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: coin_pickup level=1CB dragon=0 coins=0 dragon_coins=0" "$LOG_FILE"
 grep -q "score=100" "$LOG_FILE"
 grep -q "smw-audio: sfx=coin port=3 command=01" "$LOG_FILE"
@@ -503,7 +504,7 @@ grep -q "x=16.00 y=288.00" "$LOG_FILE"
 grep -q "lives=4" "$LOG_FILE"
 grep -q "deaths=1" "$LOG_FILE"
 
-"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$REX_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$REX_COMMAND_FILE" --smw-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$REX_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "pow=1" "$LOG_FILE"
@@ -525,7 +526,7 @@ grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "hurt=0"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "actor_event=none"
 grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "deaths=0"
 
-"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$BREAK_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$BREAK_COMMAND_FILE" --smw-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$BREAK_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-runtime: block_break level=105 count=2 total=2" "$LOG_FILE"
 grep -q "smw-audio: sfx=block_break port=1 command=08" "$LOG_FILE"
@@ -542,7 +543,7 @@ grep -q "g=1" "$LOG_FILE"
 grep -q "near=83:0:591.25,239.50" "$LOG_FILE"
 grep -q "actor_event=block:83:top" "$LOG_FILE"
 
-"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$WING_BLOCK_REWARD_COMMAND_FILE" 2>&1 | tee "$LOG_FILE"
+"$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$WING_BLOCK_REWARD_COMMAND_FILE" --smw-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$WING_BLOCK_REWARD_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-runtime: item_spawn level=105 sprite=75 reward=flower" "$LOG_FILE"
 grep -q "smw-runtime: block_reward level=105 sprite=83 reward=flower" "$LOG_FILE"

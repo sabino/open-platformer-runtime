@@ -109,6 +109,7 @@ public partial class GameScene : Node2D
     private const int PowerupItemActiveState = 2;
     private const int PowerupItemEmergingFrames = 64;
     private const int PowerupItemEmergingCollectFrame = 56;
+    private const int VisualPopupFrames = 48;
     private const int NativePowerupAnimationFrames = 32;
     private const int NativeGrowthPowerupAnimationFrames = 47;
     private const int NativePowerupSettleFrames = 1;
@@ -262,6 +263,7 @@ public partial class GameScene : Node2D
     private readonly List<Sprite2D> _playerTileSprites = [];
     private readonly List<RuntimeSpriteActor> _spriteActors = [];
     private readonly List<PlayerFireball> _playerFireballs = [];
+    private readonly List<VisualPopup> _visualPopups = [];
     private readonly List<ScriptedInputSegment> _inputScript = [];
     private readonly List<Rect2> _goalTapeTriggers = [];
     private readonly List<GoalTapeRuntime> _goalTapes = [];
@@ -284,7 +286,13 @@ public partial class GameScene : Node2D
     private readonly List<ColorRect> _playerSensorGizmos = [];
     private Label? _playerDebugLabel;
     private Line2D? _cameraGizmo;
-    private Label? _statusHud;
+    private Label? _statusScoreLabel;
+    private Label? _statusLivesLabel;
+    private Label? _statusCoinLabel;
+    private Label? _statusTimeLabel;
+    private Label? _statusStateLabel;
+    private readonly List<ColorRect> _statusDragonIcons = [];
+    private readonly List<ColorRect> _statusHudBoxRects = [];
     private Label? _hud;
     private Label? _courseClearLabel;
     private CanvasLayer? _hudLayer;
@@ -612,6 +620,7 @@ public partial class GameScene : Node2D
         TryHandleQueuedPlayerDeath();
         UpdatePlayerFireballs();
         UpdateGoalTapes();
+        UpdateVisualPopups();
         CheckCoinPickups();
         CheckGoalTape();
         ApplyCourseClearGoalCoinAward();
@@ -1078,6 +1087,13 @@ public partial class GameScene : Node2D
         public int BounceCount { get; set; }
         public bool Alive { get; set; } = true;
         public Rect2 Rect => new(X, Y, 8.0f, 8.0f);
+    }
+
+    private sealed class VisualPopup
+    {
+        public required Label Label { get; init; }
+        public required Vector2 StartPosition { get; init; }
+        public int FramesLeft { get; set; } = VisualPopupFrames;
     }
 
     private sealed class GoalTapeRuntime
@@ -2141,6 +2157,7 @@ public partial class GameScene : Node2D
         _slopes.Clear();
         _spriteActors.Clear();
         _playerFireballs.Clear();
+        _visualPopups.Clear();
         _goalTapeTriggers.Clear();
         _goalTapes.Clear();
         _coinPickups.Clear();
@@ -6430,6 +6447,14 @@ public partial class GameScene : Node2D
                 break;
         }
 
+        if (actor.SpriteId is 0x74 or 0x75 or 0x76 or 0x77 or 0x78)
+        {
+            SpawnScorePopup(
+                actor.SpriteId == 0x78 ? "1UP" : PowerupRewardScore.ToString(CultureInfo.InvariantCulture),
+                actor.Rect.GetCenter() + new Vector2(-10.0f, -18.0f),
+                actor.SpriteId == 0x78 ? new Color(0.45f, 1.0f, 0.45f, 1.0f) : new Color(1.0f, 1.0f, 1.0f, 1.0f));
+        }
+
         GD.Print(
             $"smw-runtime: item_collect level={_currentLevelId} sprite={actor.SpriteId:X2} " +
             $"x={actor.X:0.00} y={actor.Y:0.00} pow={_state.Powerup} star={_starPowerTimer:X2} score={_score} lives={_lives} oneups={_oneUpCount}");
@@ -6506,6 +6531,10 @@ public partial class GameScene : Node2D
         {
             AddScore(StompScoreByNativeGivePointsIndex[rewardIndex]);
         }
+        SpawnScorePopup(
+            StompRewardPopupText(rewardIndex),
+            actor.Rect.GetCenter() + new Vector2(-10.0f, -18.0f),
+            rewardIndex >= StompScoreByNativeGivePointsIndex.Length ? new Color(0.45f, 1.0f, 0.45f, 1.0f) : new Color(1.0f, 1.0f, 1.0f, 1.0f));
 
         GD.Print(
             $"smw-runtime: sprite_star level={_currentLevelId} sprite={actor.SpriteId:X2} state={actor.State} " +
@@ -6611,6 +6640,10 @@ public partial class GameScene : Node2D
             AddScore(StompScoreByNativeGivePointsIndex[rewardIndex]);
             _audio?.PlayStomp(rewardIndex);
         }
+        SpawnScorePopup(
+            StompRewardPopupText(rewardIndex),
+            actor.Rect.GetCenter() + new Vector2(-10.0f, -18.0f),
+            rewardIndex >= StompScoreByNativeGivePointsIndex.Length ? new Color(0.45f, 1.0f, 0.45f, 1.0f) : new Color(1.0f, 1.0f, 1.0f, 1.0f));
 
         GD.Print(
             $"smw-runtime: sprite_stomp level={_currentLevelId} sprite={actor.SpriteId:X2} state={actor.State} " +
@@ -6765,6 +6798,10 @@ public partial class GameScene : Node2D
             _audio?.PlayCoin();
         }
         AddScore(pickup.DragonCoin ? DragonCoinScore : CoinScore);
+        SpawnScorePopup(
+            pickup.DragonCoin ? DragonCoinScore.ToString(CultureInfo.InvariantCulture) : CoinScore.ToString(CultureInfo.InvariantCulture),
+            pickup.Rect.GetCenter() + new Vector2(-10.0f, -18.0f),
+            pickup.DragonCoin ? new Color(1.0f, 0.88f, 0.18f, 1.0f) : new Color(1.0f, 1.0f, 1.0f, 1.0f));
         if (pickup.DragonCoin)
         {
             _pendingDragonCoinNormalCoins++;
@@ -6828,6 +6865,54 @@ public partial class GameScene : Node2D
     private void AddScore(int amount)
     {
         _score = Math.Max(0, _score + Math.Max(0, amount));
+    }
+
+    private void SpawnScorePopup(string text, Vector2 worldPosition, Color color)
+    {
+        var label = new Label
+        {
+            Text = text,
+            Position = new Vector2(MathF.Round(worldPosition.X), MathF.Round(worldPosition.Y)),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        label.AddThemeFontSizeOverride("font_size", 8);
+        label.AddThemeColorOverride("font_color", color);
+        label.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 0.92f));
+        label.AddThemeConstantOverride("shadow_offset_x", 1);
+        label.AddThemeConstantOverride("shadow_offset_y", 1);
+        AddWorldChild(label);
+        _visualPopups.Add(new VisualPopup
+        {
+            Label = label,
+            StartPosition = label.Position,
+        });
+    }
+
+    private void UpdateVisualPopups()
+    {
+        for (var i = _visualPopups.Count - 1; i >= 0; i--)
+        {
+            var popup = _visualPopups[i];
+            popup.FramesLeft--;
+            if (popup.FramesLeft <= 0)
+            {
+                popup.Label.QueueFree();
+                _visualPopups.RemoveAt(i);
+                continue;
+            }
+
+            var elapsed = VisualPopupFrames - popup.FramesLeft;
+            var alpha = Math.Clamp(popup.FramesLeft / (float)VisualPopupFrames, 0.0f, 1.0f);
+            popup.Label.Position = popup.StartPosition + new Vector2(0.0f, -elapsed * 0.35f);
+            popup.Label.Modulate = new Color(1.0f, 1.0f, 1.0f, alpha);
+        }
+    }
+
+    private static string StompRewardPopupText(int rewardIndex)
+    {
+        return rewardIndex >= StompScoreByNativeGivePointsIndex.Length
+            ? "1UP"
+            : StompScoreByNativeGivePointsIndex[rewardIndex].ToString(CultureInfo.InvariantCulture);
     }
 
     private void CheckGoalTape()
@@ -8022,7 +8107,13 @@ public partial class GameScene : Node2D
         _hudLayer = null;
         _courseClearLayer?.QueueFree();
         _courseClearLayer = null;
-        _statusHud = null;
+        _statusScoreLabel = null;
+        _statusLivesLabel = null;
+        _statusCoinLabel = null;
+        _statusTimeLabel = null;
+        _statusStateLabel = null;
+        _statusDragonIcons.Clear();
+        _statusHudBoxRects.Clear();
         _hud = null;
         _courseClearLabel = null;
         _pauseLabel = null;
@@ -8035,16 +8126,7 @@ public partial class GameScene : Node2D
         _hudLayer = layer;
         AddChild(layer);
 
-        _statusHud = new Label
-        {
-            Position = new Vector2(16, 8),
-        };
-        _statusHud.AddThemeFontSizeOverride("font_size", 16);
-        _statusHud.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
-        _statusHud.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 0.95f));
-        _statusHud.AddThemeConstantOverride("shadow_offset_x", 2);
-        _statusHud.AddThemeConstantOverride("shadow_offset_y", 2);
-        layer.AddChild(_statusHud);
+        BuildStatusHud(layer);
 
         if (DebugOverlays)
         {
@@ -8058,6 +8140,70 @@ public partial class GameScene : Node2D
         BuildCourseClearLabel(layer);
         BuildPauseLabel(layer);
         BuildGameOverLabel(layer);
+    }
+
+    private void BuildStatusHud(CanvasLayer layer)
+    {
+        var titleColor = new Color(1.0f, 0.92f, 0.22f, 1.0f);
+        var white = new Color(1.0f, 1.0f, 1.0f, 1.0f);
+        var dim = new Color(0.20f, 0.18f, 0.10f, 0.72f);
+
+        AddStatusLabel(layer, "MARIO", new Vector2(8, 0), titleColor);
+        _statusScoreLabel = AddStatusLabel(layer, "000000", new Vector2(8, 9), white);
+        _statusLivesLabel = AddStatusLabel(layer, "x05", new Vector2(70, 9), white);
+        _statusCoinLabel = AddStatusLabel(layer, "x00", new Vector2(148, 9), white);
+        AddStatusLabel(layer, "TIME", new Vector2(178, 0), titleColor);
+        _statusTimeLabel = AddStatusLabel(layer, "300", new Vector2(190, 9), white);
+        _statusStateLabel = AddStatusLabel(layer, string.Empty, new Vector2(82, 18), white);
+
+        AddHudBoxRect(layer, new Vector2(116, 3), new Vector2(22, 2), white);
+        AddHudBoxRect(layer, new Vector2(116, 20), new Vector2(22, 2), white);
+        AddHudBoxRect(layer, new Vector2(116, 3), new Vector2(2, 19), white);
+        AddHudBoxRect(layer, new Vector2(136, 3), new Vector2(2, 19), white);
+
+        AddHudBoxRect(layer, new Vector2(139, 12), new Vector2(5, 5), titleColor);
+        for (var i = 0; i < DragonCoinLifeThreshold; i++)
+        {
+            var icon = new ColorRect
+            {
+                Position = new Vector2(146 + i * 5, 3),
+                Size = new Vector2(3, 5),
+                Color = dim,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            _statusDragonIcons.Add(icon);
+            layer.AddChild(icon);
+        }
+    }
+
+    private Label AddStatusLabel(Node parent, string text, Vector2 position, Color color)
+    {
+        var label = new Label
+        {
+            Text = text,
+            Position = position,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        label.AddThemeFontSizeOverride("font_size", 8);
+        label.AddThemeColorOverride("font_color", color);
+        label.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 0.95f));
+        label.AddThemeConstantOverride("shadow_offset_x", 1);
+        label.AddThemeConstantOverride("shadow_offset_y", 1);
+        parent.AddChild(label);
+        return label;
+    }
+
+    private void AddHudBoxRect(Node parent, Vector2 position, Vector2 size, Color color)
+    {
+        var rect = new ColorRect
+        {
+            Position = position,
+            Size = size,
+            Color = color,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _statusHudBoxRects.Add(rect);
+        parent.AddChild(rect);
     }
 
     private void BuildCourseClearLabel(CanvasLayer layer)
@@ -8212,10 +8358,7 @@ public partial class GameScene : Node2D
 
     private void UpdateHud()
     {
-        if (_statusHud != null)
-        {
-            _statusHud.Text = BuildStatusHudText();
-        }
+        UpdateStatusHud();
 
         if (_hud == null)
         {
@@ -8229,6 +8372,38 @@ public partial class GameScene : Node2D
             $"cam={_cameraX:0000},{_cameraY:0000} tiles={_placedTiles.Count} solids={_solids.Count} slopes={_slopes.Count} " +
             $"score={_score} lives={_lives} time={LevelTimerSecondsRemaining()} pause={(_gamePaused ? 1 : 0)} coins={_coinCount}/{_dragonCoinCount} deaths={_deathCount} " +
             $"tile={footTile} exits={_screenExits.Count} sprites={_levelSprites.Count}/{_spriteActors.Count} player={_playerTileSprites.Count}";
+    }
+
+    private void UpdateStatusHud()
+    {
+        if (_statusScoreLabel != null)
+        {
+            _statusScoreLabel.Text = $"{_score:000000}";
+        }
+        if (_statusLivesLabel != null)
+        {
+            _statusLivesLabel.Text = $"x{_lives:00}";
+        }
+        if (_statusCoinLabel != null)
+        {
+            _statusCoinLabel.Text = $"x{_coinCount:00}";
+        }
+        if (_statusTimeLabel != null)
+        {
+            _statusTimeLabel.Text = $"{LevelTimerSecondsRemaining():000}";
+        }
+        if (_statusStateLabel != null)
+        {
+            _statusStateLabel.Text = _gameOver ? "GAME OVER" : _gamePaused ? "PAUSE" : _courseClear ? "COURSE CLEAR" : string.Empty;
+        }
+
+        var collectedDragonCoins = Math.Clamp(_dragonCoinCount, 0, _statusDragonIcons.Count);
+        for (var i = 0; i < _statusDragonIcons.Count; i++)
+        {
+            _statusDragonIcons[i].Color = i < collectedDragonCoins
+                ? new Color(1.0f, 0.92f, 0.22f, 1.0f)
+                : new Color(0.20f, 0.18f, 0.10f, 0.72f);
+        }
     }
 
     private string BuildStatusHudText()

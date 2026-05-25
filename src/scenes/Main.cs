@@ -18,7 +18,7 @@ public partial class Main : Node2D
     private CheckBox? _actorsToggle;
     private CheckBox? _actorVisualsToggle;
     private bool _debugOverlays;
-    private bool _audioEnabled = true;
+    private bool _audioEnabled;
     private bool _actorsEnabled = true;
     private bool _actorVisualsEnabled = true;
 
@@ -77,6 +77,12 @@ public partial class Main : Node2D
                 arg.Equals("--smw-audio=0", StringComparison.OrdinalIgnoreCase))
             {
                 _audioEnabled = false;
+            }
+            else if (arg == "--smw-audio" ||
+                arg.Equals("--smw-audio=on", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("--smw-audio=1", StringComparison.OrdinalIgnoreCase))
+            {
+                _audioEnabled = true;
             }
             else if (ApplyStartupToggleArg(arg))
             {
@@ -754,6 +760,12 @@ public partial class Main : Node2D
     private static bool ShouldEnableAudio()
     {
         var env = OS.GetEnvironment("SMW_AUDIO");
+        if (env == "1" ||
+            env.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            env.Equals("on", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
         if (env == "0" ||
             env.Equals("false", StringComparison.OrdinalIgnoreCase) ||
             env.Equals("off", StringComparison.OrdinalIgnoreCase))
@@ -761,17 +773,26 @@ public partial class Main : Node2D
             return false;
         }
 
+        var enabled = false;
         foreach (var arg in OS.GetCmdlineArgs())
         {
             if (arg == "--smw-no-audio" ||
                 arg.Equals("--smw-audio=off", StringComparison.OrdinalIgnoreCase) ||
                 arg.Equals("--smw-audio=0", StringComparison.OrdinalIgnoreCase))
             {
-                return false;
+                enabled = false;
+            }
+            else if (arg == "--smw-audio" ||
+                arg.Equals("--smw-audio=on", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("--smw-audio=1", StringComparison.OrdinalIgnoreCase) ||
+                arg.StartsWith("--smw-audio-preview=", StringComparison.Ordinal) ||
+                arg.StartsWith("--smw-audio-sample=", StringComparison.Ordinal))
+            {
+                enabled = true;
             }
         }
 
-        return true;
+        return enabled;
     }
 
     private void EnsureGameBackground()
