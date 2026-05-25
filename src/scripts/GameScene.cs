@@ -4042,59 +4042,109 @@ public partial class GameScene : Node2D
             }
 
             var screen = screenVariant.AsInt32();
-
-            PlacedMap16Tile? entranceTile = null;
-            foreach (var tile in _placedTiles)
+            var countBeforeObjectMapping = _pipeEntrances.Count;
+            AddObjectMappedPipeEntrances(screen);
+            if (_pipeEntrances.Count != countBeforeObjectMapping)
             {
-                if (tile.X / 16 != screen || !tile.Source.Contains("vertical_pipe_top_left", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (entranceTile == null || tile.X > entranceTile.Value.X)
-                {
-                    entranceTile = tile;
-                }
+                continue;
             }
 
-            if (entranceTile != null)
+            AddTileMappedPipeEntrances(screen);
+        }
+    }
+
+    private void AddTileMappedPipeEntrances(int screen)
+    {
+        PlacedMap16Tile? entranceTile = null;
+        foreach (var tile in _placedTiles)
+        {
+            if (tile.X / 16 != screen || !tile.Source.Contains("vertical_pipe_top_left", StringComparison.Ordinal))
             {
-                var topLeft = TileToWorld(entranceTile.Value.X, entranceTile.Value.Y);
-                _pipeEntrances.Add(new PipeEntrance(
-                    new Rect2(topLeft.X, topLeft.Y - 32, 32, 48),
-                    screen,
-                    Horizontal: false,
-                    Kind: "vertical",
-                    entranceTile.Value.X,
-                    entranceTile.Value.Y,
-                    entranceTile.Value.Source));
+                continue;
             }
 
-            PlacedMap16Tile? horizontalEntranceTile = null;
-            foreach (var tile in _placedTiles)
+            if (entranceTile == null || tile.X > entranceTile.Value.X)
             {
-                if (tile.X / 16 != screen || !tile.Source.Contains("horizontal_pipe_end", StringComparison.Ordinal))
-                {
-                    continue;
-                }
+                entranceTile = tile;
+            }
+        }
 
-                if (horizontalEntranceTile == null || tile.Y < horizontalEntranceTile.Value.Y)
-                {
-                    horizontalEntranceTile = tile;
-                }
+        if (entranceTile != null)
+        {
+            var topLeft = TileToWorld(entranceTile.Value.X, entranceTile.Value.Y);
+            _pipeEntrances.Add(new PipeEntrance(
+                new Rect2(topLeft.X, topLeft.Y - 32, 32, 48),
+                screen,
+                Horizontal: false,
+                Kind: "vertical",
+                entranceTile.Value.X,
+                entranceTile.Value.Y,
+                entranceTile.Value.Source));
+        }
+
+        PlacedMap16Tile? horizontalEntranceTile = null;
+        foreach (var tile in _placedTiles)
+        {
+            if (tile.X / 16 != screen || !tile.Source.Contains("horizontal_pipe_end", StringComparison.Ordinal))
+            {
+                continue;
             }
 
-            if (horizontalEntranceTile != null)
+            if (horizontalEntranceTile == null || tile.Y < horizontalEntranceTile.Value.Y)
             {
-                var topLeft = TileToWorld(horizontalEntranceTile.Value.X, horizontalEntranceTile.Value.Y);
-                _pipeEntrances.Add(new PipeEntrance(
-                    new Rect2(topLeft.X - 24, topLeft.Y, 48, 32),
-                    screen,
-                    Horizontal: true,
-                    Kind: "horizontal",
-                    horizontalEntranceTile.Value.X,
-                    horizontalEntranceTile.Value.Y,
-                    horizontalEntranceTile.Value.Source));
+                horizontalEntranceTile = tile;
+            }
+        }
+
+        if (horizontalEntranceTile != null)
+        {
+            var topLeft = TileToWorld(horizontalEntranceTile.Value.X, horizontalEntranceTile.Value.Y);
+            _pipeEntrances.Add(new PipeEntrance(
+                new Rect2(topLeft.X - 24, topLeft.Y, 48, 32),
+                screen,
+                Horizontal: true,
+                Kind: "horizontal",
+                horizontalEntranceTile.Value.X,
+                horizontalEntranceTile.Value.Y,
+                horizontalEntranceTile.Value.Source));
+        }
+    }
+
+    private void AddObjectMappedPipeEntrances(int screen)
+    {
+        foreach (var obj in _levelObjects)
+        {
+            if (!TryGetObjectPlacement(obj, out var placement))
+            {
+                continue;
+            }
+
+            var objectScreen = ReadInt(placement, "screen_cursor", -1);
+            if (objectScreen != screen)
+            {
+                continue;
+            }
+
+            var objectId = ReadInt(obj, "object_id", -1);
+            var sizeOrType = ReadInt(obj, "size_or_type", 0);
+            var tileX = ReadInt(placement, "x_tile", 0);
+            var tileY = ReadInt(placement, "y_tile", 0);
+
+            if (objectId == 0x0F && (sizeOrType & 0x0F) != 0)
+            {
+                AddVerticalPipeEntranceFromObject(screen, tileX, tileY);
+                continue;
+            }
+
+            if (objectId == 0x10 && ((sizeOrType >> 4) & 0x0F) != 0)
+            {
+                AddHorizontalPipeEntranceFromObject(screen, tileX, tileY);
+                continue;
+            }
+
+            if (objectId == 0x39)
+            {
+                AddDiagonalPipeEntrance(screen);
             }
         }
     }
@@ -4102,6 +4152,74 @@ public partial class GameScene : Node2D
     private bool IsBlockedExitPipeCap(PlacedMap16Tile pipeTopLeft)
     {
         return IsBlockedPipeCap(pipeTopLeft.X, pipeTopLeft.Y);
+    }
+
+    private void AddVerticalPipeEntranceFromObject(int screen, int tileX, int tileY)
+    {
+        var source = PipeSourceAt(tileX, tileY, "vertical_pipe_top_left");
+        var topLeft = TileToWorld(tileX, tileY);
+        _pipeEntrances.Add(new PipeEntrance(
+            new Rect2(topLeft.X, topLeft.Y - 32, 32, 48),
+            screen,
+            Horizontal: false,
+            Kind: "vertical",
+            tileX,
+            tileY,
+            source));
+    }
+
+    private void AddHorizontalPipeEntranceFromObject(int screen, int tileX, int tileY)
+    {
+        var source = PipeSourceAt(tileX, tileY, "horizontal_pipe_end");
+        var topLeft = TileToWorld(tileX, tileY);
+        _pipeEntrances.Add(new PipeEntrance(
+            new Rect2(topLeft.X - 24, topLeft.Y, 48, 32),
+            screen,
+            Horizontal: true,
+            Kind: "horizontal",
+            tileX,
+            tileY,
+            source));
+    }
+
+    private string PipeSourceAt(int tileX, int tileY, string preferredSource)
+    {
+        if (_map16TilesByCoord.TryGetValue((tileX, tileY), out var exact))
+        {
+            return exact.Source;
+        }
+
+        foreach (var tile in _placedTiles)
+        {
+            if (tile.X == tileX &&
+                tile.Y == tileY &&
+                tile.Source.Contains(preferredSource, StringComparison.Ordinal))
+            {
+                return tile.Source;
+            }
+        }
+
+        return preferredSource;
+    }
+
+    private static bool TryGetObjectPlacement(
+        Godot.Collections.Dictionary obj,
+        out Godot.Collections.Dictionary placement)
+    {
+        if (obj.TryGetValue("placement", out var placementVariant) &&
+            placementVariant.VariantType == Variant.Type.Dictionary)
+        {
+            placement = placementVariant.AsGodotDictionary();
+            return true;
+        }
+
+        placement = [];
+        return false;
+    }
+
+    private static int ReadInt(Godot.Collections.Dictionary dictionary, string key, int fallback)
+    {
+        return dictionary.TryGetValue(key, out var variant) ? variant.AsInt32() : fallback;
     }
 
     private bool IsBlockedPipeCap(int pipeTopLeftX, int pipeTopLeftY)
