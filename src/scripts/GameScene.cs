@@ -114,6 +114,14 @@ public partial class GameScene : Node2D
     private const int CourseClearAirborneWalkoutIntegrationXSpeed = 4;
     private const int CourseClearGroundedWalkoutIntegrationXSpeed = 5;
     private const int CourseClearGoalCoinAwardFrame = 56;
+    private const int CourseClearPostWalkPauseFrames = 64;
+    private const int CourseClearExitTransitionFrame = 60;
+    private const int CourseClearExitTransitionX = 13;
+    private const int CourseClearExitTransitionY = 65438;
+    private const int CourseClearExitVisibleYFrame = 318;
+    private const int CourseClearExitVisibleY = 150;
+    private const int CourseClearExitFinalYFrame = 433;
+    private const int CourseClearExitFinalY = 94;
     private const int DefaultPlayerPowerup = SmwPhysics.SmallPowerup;
     private const int StartingLives = 5;
     private const int MaxLives = 99;
@@ -155,6 +163,12 @@ public partial class GameScene : Node2D
     private const float AutoplayExploreTerrainJumpMaxHeightPixels = 32.0f;
     private static readonly int[] StompScoreByNativeGivePointsIndex = [100, 200, 400, 800, 1000, 2000, 4000, 8000];
     private static readonly int[] FireballBounceYSpeedBySlopeType = [0, -72, -64, -56, -48, -40, -32, -24, -16];
+    private static readonly int[] CourseClearExitAdjustedYByFrame404 =
+    [
+        118, 117, 116, 116, 115, 114, 113, 112, 112, 111,
+        110, 109, 108, 107, 107, 106, 105, 104, 103, 103,
+        102, 101, 100, 99, 99, 98, 97, 96, 95,
+    ];
     private const float FallDeathMarginPixels = 96.0f;
     private static readonly int[] SpriteAtlasTileStartByLmuBank = [0, 128, 256, 384];
     private static readonly int[] LoadLevelYLowTable =
@@ -300,6 +314,11 @@ public partial class GameScene : Node2D
     private string? _queuedPlayerDeathCause;
     private string _queuedPlayerDeathEvent = "death:hurt";
     private int _courseClearWalkoutFrames;
+    private int _courseClearPostWalkPauseFrames = -1;
+    private int _courseClearExitWalkFrames;
+    private int _courseClearExitTransitionFrames;
+    private bool _courseClearInitialWalkoutInputFrame;
+    private bool _courseClearExitTransition;
     private int _entranceMotionFrames;
     private int _entranceMotionAction;
     private Vector2 _entranceMotionPixelsPerFrame;
@@ -501,6 +520,10 @@ public partial class GameScene : Node2D
         {
             ApplyEntranceReleaseHold();
         }
+        else if (_courseClearExitTransition)
+        {
+            ApplyCourseClearExitTransitionFrame();
+        }
         else
         {
             var previousState = _state;
@@ -529,6 +552,7 @@ public partial class GameScene : Node2D
                 0,
                 (int)MathF.Round(GetLevelPixelRight()));
             ApplyCourseClearWalkoutSpeedCap();
+            UpdateCourseClearPostWalkPhase();
             ApplyPostPipeShootoutPMeterFloor(frameInput);
             ApplyPipeExitGroundSubpixelCarry(previousState, frameInput);
             ClampUnderworldRightWallAirContact(previousState);
@@ -1330,12 +1354,41 @@ public partial class GameScene : Node2D
 
     private SmwPhysics.FrameInput ReadCourseClearInput()
     {
+        _courseClearInitialWalkoutInputFrame = false;
+
+        if (_courseClearExitTransition)
+        {
+            return new SmwPhysics.FrameInput();
+        }
+
+        if (_courseClearExitWalkFrames >= CourseClearExitTransitionFrame)
+        {
+            BeginCourseClearExitTransition();
+            return new SmwPhysics.FrameInput();
+        }
+
+        if (_courseClearExitWalkFrames > 0 || _courseClearPostWalkPauseFrames == 0)
+        {
+            _courseClearExitWalkFrames++;
+            return new SmwPhysics.FrameInput
+            {
+                Right = true,
+            };
+        }
+
+        if (_courseClearPostWalkPauseFrames > 0)
+        {
+            _courseClearPostWalkPauseFrames--;
+            return new SmwPhysics.FrameInput();
+        }
+
         if (_courseClearWalkoutFrames >= CourseClearWalkoutMaxFrames)
         {
             return new SmwPhysics.FrameInput();
         }
 
         _courseClearWalkoutFrames++;
+        _courseClearInitialWalkoutInputFrame = true;
         return new SmwPhysics.FrameInput
         {
             Right = true,
@@ -6518,6 +6571,11 @@ public partial class GameScene : Node2D
         _courseClear = true;
         _courseClearGoalCoinAwarded = false;
         _courseClearWalkoutFrames = 0;
+        _courseClearPostWalkPauseFrames = -1;
+        _courseClearExitWalkFrames = 0;
+        _courseClearExitTransitionFrames = 0;
+        _courseClearInitialWalkoutInputFrame = false;
+        _courseClearExitTransition = false;
         _state.XSpeed = 0;
         _state.SubXSpeed = 0;
         _audio?.PlayMusicPreview("Credits");
@@ -6529,7 +6587,7 @@ public partial class GameScene : Node2D
 
     private void ApplyCourseClearWalkoutSpeedCap()
     {
-        if (!_courseClear)
+        if (!_courseClear || !_courseClearInitialWalkoutInputFrame)
         {
             return;
         }
@@ -6548,7 +6606,7 @@ public partial class GameScene : Node2D
             return;
         }
 
-        if (_courseClearWalkoutFrames >= CourseClearWalkoutMaxFrames)
+        if (!_courseClearInitialWalkoutInputFrame)
         {
             return;
         }
@@ -6577,6 +6635,86 @@ public partial class GameScene : Node2D
 
         _courseClearGoalCoinAwarded = true;
         AddCoin("goal_tape");
+    }
+
+    private void UpdateCourseClearPostWalkPhase()
+    {
+        if (!_courseClear ||
+            _courseClearExitTransition ||
+            _courseClearWalkoutFrames < CourseClearWalkoutMaxFrames ||
+            _courseClearPostWalkPauseFrames >= 0 ||
+            _courseClearExitWalkFrames > 0 ||
+            _state.XSpeed != 0 ||
+            _state.SubXSpeed != 0)
+        {
+            return;
+        }
+
+        _courseClearPostWalkPauseFrames = CourseClearPostWalkPauseFrames;
+    }
+
+    private void BeginCourseClearExitTransition()
+    {
+        if (_courseClearExitTransition)
+        {
+            return;
+        }
+
+        _courseClearExitTransition = true;
+        _courseClearExitTransitionFrames = 0;
+        _dragonCoinCount = 0;
+        _pendingDragonCoinNormalCoins = 0;
+        _normalCoinPickupCooldownFrames = 0;
+        _state.X = CourseClearExitTransitionX;
+        _state.SubX = 0;
+        _state.Y = CourseClearExitTransitionY;
+        _state.SubY = 0;
+        _state.XSpeed = 8;
+        _state.SubXSpeed = 0;
+        _state.YSpeed = 0;
+        _state.SubYSpeed = 0;
+        _state.OnGround = false;
+        foreach (var actor in _spriteActors)
+        {
+            actor.Alive = false;
+            actor.Active = false;
+        }
+        GD.Print($"smw-runtime: course_clear_exit level={_currentLevelId} x={_state.X} y={_state.Y}");
+    }
+
+    private void ApplyCourseClearExitTransitionFrame()
+    {
+        _state.X = CourseClearExitTransitionX;
+        _state.SubX = 0;
+        _state.XSpeed = 8;
+        _state.SubXSpeed = 0;
+        _state.YSpeed = 0;
+        _state.SubYSpeed = 0;
+
+        if (_courseClearExitTransitionFrames < CourseClearExitVisibleYFrame)
+        {
+            _state.Y = CourseClearExitTransitionY;
+        }
+        else if (_courseClearExitTransitionFrames < 342)
+        {
+            _state.Y = CourseClearExitVisibleY;
+        }
+        else if (_courseClearExitTransitionFrames < 404)
+        {
+            _state.Y = CourseClearExitVisibleY - ((_courseClearExitTransitionFrames - 342) / 2);
+        }
+        else if (_courseClearExitTransitionFrames < CourseClearExitFinalYFrame)
+        {
+            _state.Y = CourseClearExitAdjustedYByFrame404[_courseClearExitTransitionFrames - 404];
+        }
+        else
+        {
+            _state.Y = CourseClearExitFinalY;
+        }
+
+        _state.SubY = 0;
+        _state.OnGround = false;
+        _courseClearExitTransitionFrames++;
     }
 
     private void TickLevelTimer()
@@ -7877,6 +8015,11 @@ public partial class GameScene : Node2D
         _courseClear = false;
         _courseClearGoalCoinAwarded = false;
         _courseClearWalkoutFrames = 0;
+        _courseClearPostWalkPauseFrames = -1;
+        _courseClearExitWalkFrames = 0;
+        _courseClearExitTransitionFrames = 0;
+        _courseClearInitialWalkoutInputFrame = false;
+        _courseClearExitTransition = false;
         if (_courseClearLabel != null)
         {
             _courseClearLabel.Visible = false;
@@ -8845,7 +8988,7 @@ public partial class GameScene : Node2D
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"loose={_state.LooseSteepSlopeGroundFrames} loose_kind={_state.LooseSteepSlopeKind} overrun={(_state.NativeSlopeOverrunGround ? 1 : 0)} lead={_state.LeadingFootCarryFrames} preserve_y={_state.PreserveGroundYSpeedFrames} " +
             $"jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
-            $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
+            $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} postwait={_courseClearPostWalkPauseFrames} exitwalk={_courseClearExitWalkFrames} exitmode={(_courseClearExitTransition ? 1 : 0)} exitframes={_courseClearExitTransitionFrames} " +
             $"score={_score} coins={_coinCount} dragon={_dragonCoinCount} lives={_lives} oneups={_oneUpCount} " +
             $"pose={_lastPlayerPose} pose_face={_lastPlayerFacing} cam={_cameraX:0.00},{_cameraY:0.00} tile={DescribeFootTile()} near={DescribeNearestActor()} " +
             DescribeNearestActorTraceFields() + " " +
@@ -9598,7 +9741,7 @@ public partial class GameScene : Node2D
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} hurt={_playerHurtCooldown} blink={(_lastPlayerBlinkHidden ? 1 : 0)} " +
             $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} loose={_state.LooseSteepSlopeGroundFrames} loose_kind={_state.LooseSteepSlopeKind} overrun={(_state.NativeSlopeOverrunGround ? 1 : 0)} lead={_state.LeadingFootCarryFrames} preserve_y={_state.PreserveGroundYSpeedFrames} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
-            $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
+            $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} postwait={_courseClearPostWalkPauseFrames} exitwalk={_courseClearExitWalkFrames} exitmode={(_courseClearExitTransition ? 1 : 0)} exitframes={_courseClearExitTransitionFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_active={activeActorCount} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} autoplay={AutoplayModeName(_autoplayMode)} auto_frame={_autoplayFrame} " +
             $"near={nearestActor} actor_event={_lastActorEvent} actor_contact={_lastActorContact} blocks={_blockBreakCount} deaths={_deathCount}";
@@ -10247,6 +10390,11 @@ public partial class GameScene : Node2D
         _queuedPlayerDeathCause = null;
         _queuedPlayerDeathEvent = "death:hurt";
         _courseClearWalkoutFrames = 0;
+        _courseClearPostWalkPauseFrames = -1;
+        _courseClearExitWalkFrames = 0;
+        _courseClearExitTransitionFrames = 0;
+        _courseClearInitialWalkoutInputFrame = false;
+        _courseClearExitTransition = false;
         _playerHurtCooldown = 0;
         _lastActorEvent = "none";
         _lastActorContact = "none";
@@ -10318,6 +10466,11 @@ public partial class GameScene : Node2D
         _queuedPlayerDeathCause = null;
         _queuedPlayerDeathEvent = "death:hurt";
         _courseClearWalkoutFrames = 0;
+        _courseClearPostWalkPauseFrames = -1;
+        _courseClearExitWalkFrames = 0;
+        _courseClearExitTransitionFrames = 0;
+        _courseClearInitialWalkoutInputFrame = false;
+        _courseClearExitTransition = false;
         _entranceMotionFrames = 0;
         _entranceMotionDelayFrames = 0;
         _entranceReleaseHoldFrames = 0;
@@ -10381,6 +10534,11 @@ public partial class GameScene : Node2D
         _queuedPlayerDeathCause = null;
         _queuedPlayerDeathEvent = "death:hurt";
         _courseClearWalkoutFrames = 0;
+        _courseClearPostWalkPauseFrames = -1;
+        _courseClearExitWalkFrames = 0;
+        _courseClearExitTransitionFrames = 0;
+        _courseClearInitialWalkoutInputFrame = false;
+        _courseClearExitTransition = false;
         _playerHurtCooldown = 0;
         _lastActorEvent = actorEvent;
         _blockBreakCount = 0;
