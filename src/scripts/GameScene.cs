@@ -48,10 +48,14 @@ public partial class GameScene : Node2D
     private const int NativeRexInteractionCooldownFrames = 7;
     private const int NativeRexPostStompMotionFreezeFrames = 12;
     private const float NativeKickedShellXSpeed = 0.79f;
+    private const int NativeTossedShellUpState = 0x09;
+    private const int NativeKickedShellState = 0x0A;
     private const int NativeCarriedShellState = 0x0B;
     private const float NativeCarriedShellXOffset = 9.0f;
     private const float NativeCarriedShellYOffset = 13.0f;
     private const float NativeShellCarryMinimumOverlapX = 3.0f;
+    private const float NativeTossedShellUpYSpeed = -7.0f;
+    private const float NativeTossedShellGravity = 3.0f / 16.0f;
     private const int DefaultSpriteStompYSpeed = -48;
     private const int NativeSpriteStompYSpeed = -88;
     private const int NativeHeldJumpGravity = 3;
@@ -445,6 +449,7 @@ public partial class GameScene : Node2D
             _suppressNextPipeCornerLeft = false;
         }
         _lastFrameInput = frameInput;
+        ReleaseCarriedShellsIfNeeded(frameInput);
         if (_powerupAnimationFrames > 0)
         {
             HandlePowerupAnimationFrame(frameInput, isDebugStep);
@@ -518,6 +523,7 @@ public partial class GameScene : Node2D
                 _slopes,
                 0,
                 (int)MathF.Round(GetLevelPixelRight()));
+            ApplyCourseClearWalkoutSpeedCap();
             ApplyPostPipeShootoutPMeterFloor(frameInput);
             ApplyPipeExitGroundSubpixelCarry(previousState, frameInput);
             ClampUnderworldRightWallAirContact(previousState);
@@ -1014,6 +1020,7 @@ public partial class GameScene : Node2D
         {
             Left = Input.IsActionPressed("smw_left"),
             Right = Input.IsActionPressed("smw_right"),
+            Up = Input.IsActionPressed("smw_up"),
             Down = Input.IsActionPressed("smw_down"),
             Jump = Input.IsActionPressed("smw_jump"),
             JumpPressed = Input.IsActionJustPressed("smw_jump"),
@@ -1305,6 +1312,7 @@ public partial class GameScene : Node2D
     {
         return input.Left ||
             input.Right ||
+            input.Up ||
             input.Down ||
             input.Jump ||
             input.JumpPressed ||
@@ -5046,14 +5054,16 @@ public partial class GameScene : Node2D
             return;
         }
 
-        actor.State = 1;
+        actor.State = NativeKickedShellState;
         actor.XSpeed = _state.XFloat <= actor.X ? NativeKickedShellXSpeed : -NativeKickedShellXSpeed;
         actor.InteractionCooldownFrames = NativeRexInteractionCooldownFrames;
     }
 
     private bool TryCarryShellFromGroundedSide(RuntimeSpriteActor actor, Rect2 playerRect, Rect2 actorRect)
     {
-        if (actor.State != 0 || !_lastFrameInput.Run || HasCarriedShell())
+        if ((actor.State != 0 && actor.State != NativeTossedShellUpState) ||
+            !_lastFrameInput.Run ||
+            HasCarriedShell())
         {
             return false;
         }
@@ -5090,14 +5100,37 @@ public partial class GameScene : Node2D
         actor.Node.Position = new Vector2(actor.X, actor.Y);
     }
 
-    private void ReleaseCarriedShell(RuntimeSpriteActor actor)
+    private void ReleaseCarriedShellsIfNeeded(SmwPhysics.FrameInput input)
     {
-        actor.State = 1;
+        if (input.Run)
+        {
+            return;
+        }
+
+        foreach (var actor in _spriteActors)
+        {
+            if (!actor.Alive ||
+                !IsCarryableShellSprite(actor.SpriteId) ||
+                actor.State != NativeCarriedShellState)
+            {
+                continue;
+            }
+
+            ReleaseCarriedShell(actor, input.Up);
+        }
+    }
+
+    private void ReleaseCarriedShell(RuntimeSpriteActor actor, bool throwUp)
+    {
         actor.Behavior = SpriteActorBehaviorFor(actor.SpriteId);
-        actor.XSpeed = _state.Facing == 0 ? -NativeKickedShellXSpeed : NativeKickedShellXSpeed;
-        actor.YSpeed = 0.0f;
+        actor.State = throwUp ? NativeTossedShellUpState : NativeKickedShellState;
+        actor.XSpeed = throwUp
+            ? 0.0f
+            : _state.Facing == 0 ? -NativeKickedShellXSpeed : NativeKickedShellXSpeed;
+        actor.YSpeed = throwUp ? NativeTossedShellUpYSpeed : 0.0f;
         actor.InteractionCooldownFrames = NativeRexInteractionCooldownFrames;
-        _lastActorEvent = $"throw:{actor.SpriteId:X2}";
+        actor.MotionFreezeFrames = throwUp ? 2 : actor.MotionFreezeFrames;
+        _lastActorEvent = throwUp ? $"throw_up:{actor.SpriteId:X2}" : $"throw:{actor.SpriteId:X2}";
     }
 
     private static SpriteActorBehavior CarriedShellBehavior(RuntimeSpriteActor actor)
@@ -5190,7 +5223,10 @@ public partial class GameScene : Node2D
 
         if (actor.Behavior.Gravity)
         {
-            actor.YSpeed = MathF.Min(SpriteActorMaxFall, actor.YSpeed + SpriteActorGravity);
+            var gravity = IsCarryableShellSprite(actor.SpriteId) && actor.State == NativeTossedShellUpState
+                ? NativeTossedShellGravity
+                : SpriteActorGravity;
+            actor.YSpeed = MathF.Min(SpriteActorMaxFall, actor.YSpeed + gravity);
         }
         actor.Y += actor.YSpeed;
         actor.OnGround = false;
@@ -5215,6 +5251,10 @@ public partial class GameScene : Node2D
                     actor.Y = solid.Position.Y - terrainHitbox.Position.Y - terrainHitbox.Size.Y;
                     actor.YSpeed = 0.0f;
                     actor.OnGround = true;
+                    if (IsCarryableShellSprite(actor.SpriteId) && actor.State == NativeTossedShellUpState)
+                    {
+                        actor.State = 0;
+                    }
                 }
                 else
                 {
@@ -5282,7 +5322,10 @@ public partial class GameScene : Node2D
         }
 
         if (IsCarryableShellSprite(actor.SpriteId) &&
-            (actor.State == 1 || actor.State == NativeCarriedShellState))
+            (actor.State == 1 ||
+                actor.State == NativeTossedShellUpState ||
+                actor.State == NativeKickedShellState ||
+                actor.State == NativeCarriedShellState))
         {
             return true;
         }
@@ -6447,9 +6490,13 @@ public partial class GameScene : Node2D
         }
 
         var playerRect = _physics.PlayerRect(_state);
+        var playerCenterX = playerRect.GetCenter().X;
         foreach (var trigger in _goalTapeTriggers)
         {
-            if (!playerRect.Intersects(trigger))
+            if (playerCenterX < trigger.Position.X + 8.0f ||
+                playerCenterX > trigger.Position.X + trigger.Size.X ||
+                playerRect.Position.Y >= trigger.Position.Y + trigger.Size.Y ||
+                playerRect.Position.Y + playerRect.Size.Y <= trigger.Position.Y)
             {
                 continue;
             }
@@ -6471,6 +6518,20 @@ public partial class GameScene : Node2D
         HidePauseLabel();
         ShowCourseClearLabel();
         GD.Print($"smw-runtime: course_clear level={_currentLevelId} walkout=right");
+    }
+
+    private void ApplyCourseClearWalkoutSpeedCap()
+    {
+        if (!_courseClear)
+        {
+            return;
+        }
+
+        if (_state.XSpeed > 6)
+        {
+            _state.XSpeed = 6;
+            _state.SubXSpeed = 0;
+        }
     }
 
     private void TickLevelTimer()
@@ -8283,7 +8344,7 @@ public partial class GameScene : Node2D
             case "clear_input":
             case "neutral":
                 ClearDebugHeldInput();
-                return "ok hold input=-------";
+                return "ok hold input=--------";
             case "trace":
                 QueueDebugTrace(parts, includeOam: false, includeSensors: false, overrideInput: true);
                 return $"ok trace_queued={_debugTraceFrames}";
@@ -8628,7 +8689,7 @@ public partial class GameScene : Node2D
         {
             _debugStepFrames += frames;
         }
-        GD.Print($"smw-debug: input frames={frames} left={(input.Left ? 1 : 0)} right={(input.Right ? 1 : 0)} down={(input.Down ? 1 : 0)} jump={(input.Jump ? 1 : 0)} spin={(input.Spin ? 1 : 0)} run={(input.Run ? 1 : 0)}");
+        GD.Print($"smw-debug: input frames={frames} left={(input.Left ? 1 : 0)} right={(input.Right ? 1 : 0)} up={(input.Up ? 1 : 0)} down={(input.Down ? 1 : 0)} jump={(input.Jump ? 1 : 0)} spin={(input.Spin ? 1 : 0)} run={(input.Run ? 1 : 0)}");
     }
 
     private void QueueDebugTap(string[] parts)
@@ -8665,7 +8726,7 @@ public partial class GameScene : Node2D
         _debugHeldJumpPressed = false;
         _debugHeldSpinPressed = false;
         _debugHeldRunPressed = false;
-        GD.Print("smw-debug: hold input=-------");
+        GD.Print("smw-debug: hold input=--------");
     }
 
     private void QueueDebugTrace(string[] parts, bool includeOam, bool includeSensors, bool overrideInput)
@@ -8776,14 +8837,15 @@ public partial class GameScene : Node2D
 
     private static string DescribeFrameInput(SmwPhysics.FrameInput input)
     {
-        Span<char> mask = stackalloc char[7];
+        Span<char> mask = stackalloc char[8];
         mask[0] = input.Left ? 'L' : '-';
         mask[1] = input.Right ? 'R' : '-';
-        mask[2] = input.Down ? 'D' : '-';
-        mask[3] = input.Jump ? 'J' : '-';
-        mask[4] = input.JumpPressed ? 'j' : '-';
-        mask[5] = input.Spin ? 'A' : '-';
-        mask[6] = input.Run ? 'Y' : '-';
+        mask[2] = input.Up ? 'U' : '-';
+        mask[3] = input.Down ? 'D' : '-';
+        mask[4] = input.Jump ? 'J' : '-';
+        mask[5] = input.JumpPressed ? 'j' : '-';
+        mask[6] = input.Spin ? 'A' : '-';
+        mask[7] = input.Run ? 'Y' : '-';
         return new string(mask);
     }
 
@@ -9960,6 +10022,8 @@ public partial class GameScene : Node2D
                 break;
             case "up":
             case "u":
+                input.Up = true;
+                break;
             case "select":
             case "start":
             case "l":

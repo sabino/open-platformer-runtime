@@ -311,6 +311,7 @@ public partial class Main : Node2D
     {
         AddKeyAction("smw_left", Key.Left, Key.A);
         AddKeyAction("smw_right", Key.Right, Key.D);
+        AddKeyAction("smw_up", Key.Up, Key.W);
         AddKeyAction("smw_down", Key.Down, Key.S);
         AddKeyAction("smw_jump", Key.Z, Key.Space);
         AddKeyAction("smw_spin", Key.X);
@@ -320,16 +321,18 @@ public partial class Main : Node2D
 
         AddJoyButtonAction("smw_left", JoyButton.DpadLeft);
         AddJoyButtonAction("smw_right", JoyButton.DpadRight);
+        AddJoyButtonAction("smw_up", JoyButton.DpadUp);
         AddJoyButtonAction("smw_down", JoyButton.DpadDown);
         AddJoyAxisAction("smw_left", JoyAxis.LeftX, -1.0f);
         AddJoyAxisAction("smw_right", JoyAxis.LeftX, 1.0f);
+        AddJoyAxisAction("smw_up", JoyAxis.LeftY, -1.0f);
         AddJoyAxisAction("smw_down", JoyAxis.LeftY, 1.0f);
         AddJoyButtonAction("smw_jump", JoyButton.A);
         AddJoyButtonAction("smw_spin", JoyButton.B);
         AddJoyButtonAction("smw_run", JoyButton.X, JoyButton.RightShoulder);
         AddJoyButtonAction("smw_start", JoyButton.Start);
         AddJoyButtonAction("ui_accept", JoyButton.A, JoyButton.Start);
-        GD.Print("smw-input-map: keyboard=1 gamepad=1 buttons=10 axes=3");
+        GD.Print("smw-input-map: keyboard=1 gamepad=1 buttons=11 axes=4");
     }
 
     private static void AddKeyAction(StringName action, params Key[] keys)

@@ -60,6 +60,11 @@ public sealed class SmwPhysics
     private const float NativeLateVerticalPipeRiseSkimMinY = 228.0f;
     private const float NativeLateVerticalPipeRiseSkimMaxY = 229.0f;
     private const int NativeLateVerticalPipeRiseSkimMaxXSpeed = 6;
+    private const float NativeLateVerticalPipeLandingMinX = 4687.0f;
+    private const float NativeLateVerticalPipeLandingMaxX = 4688.0f;
+    private const float NativeLateVerticalPipeLandingY = 288.0f;
+    private const float NativeLateVerticalPipeLandingYTolerance = 0.5f;
+    private const int NativeLateVerticalPipeLandingMaxXSpeed = 7;
     private const int NativeFastAirborneWallSnapSpeed = 0x10;
     private const int NativeRightWallPostCorrectionNibble = 0x02;
     private const int NativeLeftWallPostCorrectionNibble = 0x0D;
@@ -339,6 +344,7 @@ public sealed class SmwPhysics
     {
         public bool Left;
         public bool Right;
+        public bool Up;
         public bool Down;
         public bool Jump;
         public bool JumpPressed;
@@ -512,6 +518,16 @@ public sealed class SmwPhysics
             ? slopePlayerBeforeJump
             : (int?)null;
         ApplyHorizontal(ref state, input, usePostLandingAirDrag, horizontalSlopePlayerOverride);
+        if (landedThisFrame &&
+            state.Powerup != SmallPowerup &&
+            state.XFloat >= NativeLateVerticalPipeLandingMinX &&
+            state.XFloat <= NativeLateVerticalPipeLandingMaxX &&
+            MathF.Abs(state.YFloat - NativeLateVerticalPipeLandingY) <= NativeLateVerticalPipeLandingYTolerance &&
+            state.XSpeed > NativeLateVerticalPipeLandingMaxXSpeed)
+        {
+            state.XSpeed = NativeLateVerticalPipeLandingMaxXSpeed;
+            state.SubXSpeed = 0;
+        }
         if (jumpedThisFrame &&
             groundedBeforeJump &&
             state.Powerup != SmallPowerup &&
