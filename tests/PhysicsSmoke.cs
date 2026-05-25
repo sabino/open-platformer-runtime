@@ -83,6 +83,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckFullOverlapBlockTopLanding(physics))
+        {
+            return 1;
+        }
         if (!CheckHorizontalOnlySolid(physics))
         {
             return 1;
@@ -1258,6 +1262,97 @@ public static class PhysicsSmoke
         {
             Console.Error.WriteLine(
                 $"expected grounded leading-foot edge drop at post-Banzai ledge, got x={edgeState.X}:{edgeState.SubX:X2} y={edgeState.Y}:{edgeState.SubY:X2} ys={edgeState.YSpeed} ground={edgeState.OnGround}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckFullOverlapBlockTopLanding(SmwPhysics physics)
+    {
+        var state = physics.MakeState(3833, 221, SmwPhysics.BigPowerup);
+        state.SubX = 0xA0;
+        state.SubY = 0xA0;
+        state.XSpeed = 16;
+        state.YSpeed = 54;
+        state.InAirState = SmwPhysics.NativeFallingInAirState;
+
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Left = true, Jump = true, Run = true },
+            [new Rect2(3824, 256, 16, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportFullOverlap],
+            []);
+
+        if (!state.OnGround || state.Y != 224 || state.YSpeed > 6)
+        {
+            Console.Error.WriteLine(
+                $"expected standalone block top to accept side-overlap landing, got x={state.X}:{state.SubX:X2} y={state.Y}:{state.SubY:X2} ys={state.YSpeed} ground={state.OnGround}");
+            return false;
+        }
+
+        state = physics.MakeState(3835, 224, SmwPhysics.BigPowerup);
+        state.SubX = 0x50;
+        state.XSpeed = 6;
+        state.YSpeed = 6;
+        state.OnGround = true;
+        state.InAirState = 0;
+
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Left = true, Run = true },
+            [new Rect2(3824, 256, 16, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportFullOverlap],
+            []);
+
+        if (state.OnGround || state.YFloat <= 224.0f)
+        {
+            Console.Error.WriteLine(
+                $"expected grounded standalone block edge to fall back to native support probe, got x={state.X}:{state.SubX:X2} y={state.Y}:{state.SubY:X2} ground={state.OnGround}");
+            return false;
+        }
+
+        state = physics.MakeState(3835, 229, SmwPhysics.BigPowerup);
+        state.SubX = 0x20;
+        state.SubY = 0x10;
+        state.XSpeed = -6;
+        state.SubXSpeed = 0x80;
+        state.YSpeed = 27;
+        state.InAirState = SmwPhysics.NativeFallingInAirState;
+
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Left = true, Right = true, Jump = true, Run = true },
+            [new Rect2(3824, 256, 16, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportFullOverlap],
+            []);
+
+        if (!state.OnGround || state.X != 3835 || state.SubX != 0xE0 || state.Y != 224 || state.SubY != 0xC0 || state.YSpeed != 3)
+        {
+            Console.Error.WriteLine(
+                $"expected native block-edge ground bridge, got x={state.X}:{state.SubX:X2} y={state.Y}:{state.SubY:X2} xs={state.XSpeed}:{state.SubXSpeed:X2} ys={state.YSpeed} ground={state.OnGround}");
+            return false;
+        }
+
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Right = true, Jump = true, JumpPressed = true, Run = true },
+            [new Rect2(3824, 256, 16, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportFullOverlap],
+            []);
+
+        if (state.OnGround || state.X != 3835 || state.SubX != 0xE0 || state.XSpeed != 1 || state.Y != 224 || state.SubY != 0xF0 || state.YSpeed != 6)
+        {
+            Console.Error.WriteLine(
+                $"expected native block-edge bridge to release instead of buffering a ground jump or side wall, got x={state.X}:{state.SubX:X2} xs={state.XSpeed} y={state.Y}:{state.SubY:X2} ys={state.YSpeed} ground={state.OnGround}");
             return false;
         }
 

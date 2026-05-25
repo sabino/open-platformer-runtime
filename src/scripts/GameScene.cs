@@ -88,11 +88,14 @@ public partial class GameScene : Node2D
     private const float SolidBlockActorSideProbeDepth = 4.0f;
     private const float SolidBlockActorSideSnapInset = 1.5625f;
     private const int SolidBlockActorSideCooldownFrames = 12;
+    private const float ExtendedQuestionBlockHitPenetrationPixels = 8.75f;
     private const int PowerupItemEmergingState = 1;
     private const int PowerupItemActiveState = 2;
     private const int PowerupItemEmergingFrames = 64;
     private const int PowerupItemEmergingCollectFrame = 56;
-    private const int NativePowerupAnimationFrames = 47;
+    private const int NativePowerupAnimationFrames = 32;
+    private const int NativeGrowthPowerupAnimationFrames = 47;
+    private const int NativePowerupSettleFrames = 1;
     private const float PowerupItemEmergingPixels = 16.0f;
     private const float PowerupItemCollectionMinOverlapX = 3.25f;
     private const float PowerupItemWalkSpeed = 1.0f;
@@ -704,7 +707,7 @@ public partial class GameScene : Node2D
         if (_powerupAnimationFrames <= 0 && _pendingPowerup >= 0)
         {
             ApplyPendingPowerup();
-            _powerupSettleFrames = 1;
+            _powerupSettleFrames = NativePowerupSettleFrames;
         }
 
         if (isDebugStep)
@@ -745,6 +748,14 @@ public partial class GameScene : Node2D
     {
         var powerup = Math.Clamp(_pendingPowerup, SmwPhysics.SmallPowerup, SmwPhysics.FirePowerup);
         _pendingPowerup = -1;
+        ApplyPowerupState(powerup);
+        _state.X += 2;
+        _state.XSpeed = 0;
+        _state.SubXSpeed = 0;
+    }
+
+    private void ApplyPowerupState(int powerup)
+    {
         _state.Powerup = powerup;
         if (_state.Powerup == SmwPhysics.SmallPowerup)
         {
@@ -755,9 +766,6 @@ public partial class GameScene : Node2D
             _state.CapeFloatFrames = 0;
         }
 
-        _state.X += 2;
-        _state.XSpeed = 0;
-        _state.SubXSpeed = 0;
         _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
         UpdatePlayerGraphic(force: true);
     }
@@ -3064,12 +3072,14 @@ public partial class GameScene : Node2D
 
     private bool TryHitStaticBlockFromBelow(SmwPhysics.PlayerState previousState)
     {
-        if (previousState.YSpeed >= 0 || _state.YSpeed != 0)
+        if (previousState.YSpeed >= 0)
         {
             return false;
         }
 
         var headY = SmwPhysics.PlayerCollisionTop(_state) - 1.0f;
+        var currentHeadY = SmwPhysics.PlayerCollisionTop(_state);
+        var previousHeadY = SmwPhysics.PlayerCollisionTop(previousState);
         var tileY = WorldToTileY(headY);
         var headCenterX = _state.XFloat + SmwPhysics.PlayerWidth * 0.5f;
         Span<int> candidateTileXs = stackalloc int[3]
@@ -3084,6 +3094,34 @@ public partial class GameScene : Node2D
             if (!checkedTiles.Add(tileX) ||
                 !_map16TilesByCoord.TryGetValue((tileX, tileY), out var tile) ||
                 !IsStaticQuestionBlockTile(tile))
+            {
+                continue;
+            }
+
+            if (IsExtendedStaticQuestionBlockTile(tile))
+            {
+                if (_state.YSpeed >= 0)
+                {
+                    continue;
+                }
+
+                var tileBottom = tile.Y * Map16TileSize + LevelVisualYOffset + Map16TileSize;
+                var hitY = tileBottom - ExtendedQuestionBlockHitPenetrationPixels;
+                if (previousHeadY > hitY && currentHeadY <= hitY)
+                {
+                    TriggerStaticQuestionBlockReward(tile);
+                    SetPlayerYFloat(hitY);
+                    _state.YSpeed = 3;
+                    _state.SubYSpeed = 0;
+                    _state.OnGround = false;
+                    _state.InAirState = SmwPhysics.NativeFallingInAirState;
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (_state.YSpeed != 0)
             {
                 continue;
             }
@@ -3136,14 +3174,23 @@ public partial class GameScene : Node2D
 
     private static bool IsStaticQuestionBlockTile(PlacedMap16Tile tile)
     {
+        return IsSolidStaticQuestionBlockTile(tile) || IsExtendedStaticQuestionBlockTile(tile);
+    }
+
+    private static bool IsSolidStaticQuestionBlockTile(PlacedMap16Tile tile)
+    {
+        return tile.Map16 == 0x0124 && tile.Source == "std_generic_09";
+    }
+
+    private static bool IsExtendedStaticQuestionBlockTile(PlacedMap16Tile tile)
+    {
         return tile.Map16 == 0x0124 &&
-            (tile.Source == "std_generic_09" ||
-                tile.Source.StartsWith("extended_question_block", StringComparison.Ordinal));
+            tile.Source.StartsWith("extended_question_block", StringComparison.Ordinal);
     }
 
     private static bool IsSolidRuntimeBlockTile(PlacedMap16Tile tile)
     {
-        return IsStaticQuestionBlockTile(tile) ||
+        return IsSolidStaticQuestionBlockTile(tile) ||
             tile.Map16 == 0x0125 ||
             tile.Source == "runtime_used_question_block";
     }
@@ -3835,14 +3882,27 @@ public partial class GameScene : Node2D
         var topY = WorldToTileY(rect.Position.Y);
         for (var x = startX; x <= endX; x++)
         {
-            if (_map16TilesByCoord.TryGetValue((x, topY), out var tile) &&
-                IsLeadingFootLedgeSupportTile(tile))
+            if (rect.Size.X <= Map16TileSize &&
+                rect.Size.Y <= Map16TileSize &&
+                _map16TilesByCoord.TryGetValue((x, topY), out var tile) &&
+                IsFullOverlapBlockSupportTile(tile))
+            {
+                return SmwPhysics.SolidSupportFullOverlap;
+            }
+            if (_map16TilesByCoord.TryGetValue((x, topY), out var ledgeTile) &&
+                IsLeadingFootLedgeSupportTile(ledgeTile))
             {
                 return SmwPhysics.SolidSupportLeadingFoot;
             }
         }
 
         return SmwPhysics.SolidSupportLegacy;
+    }
+
+    private static bool IsFullOverlapBlockSupportTile(PlacedMap16Tile tile)
+    {
+        return tile.Source.StartsWith("std_generic_", StringComparison.Ordinal) ||
+            IsSolidRuntimeBlockTile(tile);
     }
 
     private bool SolidAllowsVerticalForRect(Rect2 rect)
@@ -5484,6 +5544,20 @@ public partial class GameScene : Node2D
         _state.SubX = Math.Clamp(sub, 0, 255);
     }
 
+    private void SetPlayerYFloat(float y)
+    {
+        var whole = (int)MathF.Floor(y);
+        var sub = (int)MathF.Round((y - whole) * 256.0f);
+        if (sub >= 256)
+        {
+            whole++;
+            sub -= 256;
+        }
+
+        _state.Y = whole;
+        _state.SubY = Math.Clamp(sub, 0, 255);
+    }
+
     private bool TriggerSolidBlockActorReward(RuntimeSpriteActor actor)
     {
         if (actor.SpriteId != 0x83 || actor.Used)
@@ -5942,8 +6016,19 @@ public partial class GameScene : Node2D
 
     private void StartPowerupAnimation(int powerup)
     {
-        _pendingPowerup = powerup;
+        powerup = Math.Clamp(powerup, SmwPhysics.SmallPowerup, SmwPhysics.FirePowerup);
+        if (_state.Powerup == SmwPhysics.SmallPowerup && powerup == SmwPhysics.BigPowerup)
+        {
+            _pendingPowerup = powerup;
+            _powerupAnimationFrames = NativeGrowthPowerupAnimationFrames;
+            _powerupSettleFrames = 0;
+            return;
+        }
+
+        ApplyPowerupState(powerup);
+        _pendingPowerup = -1;
         _powerupAnimationFrames = NativePowerupAnimationFrames;
+        _powerupSettleFrames = 0;
     }
 
     private void ActivateStarPower()

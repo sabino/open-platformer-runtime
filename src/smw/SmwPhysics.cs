@@ -18,6 +18,7 @@ public sealed class SmwPhysics
     public const int PlayerWidth = 14;
     public const int SolidSupportLegacy = 0;
     public const int SolidSupportLeadingFoot = 1;
+    public const int SolidSupportFullOverlap = 2;
     public const int SmallPowerup = 0;
     public const int BigPowerup = 1;
     public const int CapePowerup = 2;
@@ -40,6 +41,13 @@ public sealed class SmwPhysics
     private const int PostLandingAirDragFrameCount = 48;
     private const int MaxGroundedLeadingFootCarryFrames = 8;
     private const float GroundedLeadingFootEdgeDropSlack = 0.25f;
+    private const float NativeFullOverlapBlockEdgePreviousMinDepth = 5.0f;
+    private const float NativeFullOverlapBlockEdgeMinDepth = 6.0f;
+    private const float NativeFullOverlapBlockEdgeMaxDepth = 8.0f;
+    private const float NativeFullOverlapBlockRightEdgeAnchor = 4.125f;
+    private const int NativeFullOverlapBlockEdgeJumpSuppressFrames = 2;
+    private const int NativeFullOverlapBlockEdgePassThroughFrames = 16;
+    private const int NativeFullOverlapBlockGroundCarryFrames = 12;
     private const float StepUpTolerance = 12.0f;
     private const float MaxHorizontalCollisionCorrection = 64.0f;
     private const float NativeHorizontalWallSlack = 1.0f;
@@ -260,6 +268,9 @@ public sealed class SmwPhysics
         public bool NativeSlopeOverrunGround;
         public int PreserveGroundYSpeedFrames;
         public int DuckingSteepRightSlopeLaunchCooldownFrames;
+        public int SuppressGroundJumpFrames;
+        public int FullOverlapBlockPassThroughFrames;
+        public int FullOverlapBlockGroundCarryFrames;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -407,12 +418,23 @@ public sealed class SmwPhysics
         IReadOnlyList<int>? solidSupportModes,
         IReadOnlyList<SlopeSurface> slopes)
     {
-        var preserveTerrainlessGround = state.OnGround && solids.Count == 0 && slopes.Count == 0;
+        var preserveTerrainlessGround = state.OnGround &&
+            state.SuppressGroundJumpFrames == 0 &&
+            solids.Count == 0 &&
+            slopes.Count == 0;
         var wasOnGround = state.OnGround;
         var usePostLandingAirDrag = state.PostLandingAirDragFrames > 0;
         if (state.DuckingSteepRightSlopeLaunchCooldownFrames > 0)
         {
             state.DuckingSteepRightSlopeLaunchCooldownFrames--;
+        }
+        if (state.FullOverlapBlockPassThroughFrames > 0)
+        {
+            state.FullOverlapBlockPassThroughFrames--;
+        }
+        if (state.FullOverlapBlockGroundCarryFrames > 0)
+        {
+            state.FullOverlapBlockGroundCarryFrames--;
         }
 
         var preservedSlopeKind = state.SlopeKind;
@@ -1078,8 +1100,14 @@ public sealed class SmwPhysics
     private static bool ApplyJumpAndGravity(ref PlayerState state, FrameInput input)
     {
         var jumpStarted = input.JumpPressed || input.SpinPressed;
+        var suppressGroundJump = state.SuppressGroundJumpFrames > 0;
+        if (state.SuppressGroundJumpFrames > 0)
+        {
+            state.SuppressGroundJumpFrames--;
+        }
+
         var jumpedThisFrame = false;
-        if (state.OnGround && !state.NativeSlopeOverrunGround && state.InAirState == 0 && jumpStarted)
+        if (state.OnGround && !state.NativeSlopeOverrunGround && state.InAirState == 0 && jumpStarted && !suppressGroundJump)
         {
             state.YSpeed = JumpYSpeedFor(state.XSpeed, input.SpinPressed);
             state.OnGround = false;
@@ -1087,6 +1115,7 @@ public sealed class SmwPhysics
             state.SpinJump = input.SpinPressed;
             state.JumpHeldFrames = 0;
             state.CapeFloatFrames = 0;
+            state.SuppressGroundJumpFrames = 0;
             state.InAirState = state.RunningTakeoff
                 ? NativeRunningJumpInAirState
                 : NativeNormalJumpInAirState;
@@ -1218,6 +1247,10 @@ public sealed class SmwPhysics
                     solidIndex >= solidStepUpEnabled.Count ||
                     solidStepUpEnabled[solidIndex];
                 var supportMode = SupportModeAt(solidSupportModes, solidIndex);
+                if (supportMode == SolidSupportFullOverlap && state.FullOverlapBlockPassThroughFrames > 0)
+                {
+                    continue;
+                }
                 if (!allowVerticalForWallSlack &&
                     !state.OnGround &&
                     solid.Size.Y <= 16.0f &&
@@ -1343,6 +1376,17 @@ public sealed class SmwPhysics
                 if (state.YSpeed > 0)
                 {
                     var supportMode = SupportModeAt(solidSupportModes, solidIndex);
+                    if (supportMode == SolidSupportFullOverlap &&
+                        TryApplyNativeFullOverlapBlockEdgeGround(ref state, solid, previousBottom))
+                    {
+                        rect = PlayerRect(state);
+                        continue;
+                    }
+                    if (supportMode == SolidSupportFullOverlap &&
+                        previousBottom > solid.Position.Y)
+                    {
+                        continue;
+                    }
                     if (supportMode == SolidSupportLeadingFoot &&
                         previousBottom > solid.Position.Y + StepUpTolerance)
                     {
@@ -1361,6 +1405,10 @@ public sealed class SmwPhysics
                     state.LeadingFootCarryFrames = groundedLeadingFootCarry
                         ? state.LeadingFootCarryFrames + 1
                         : 0;
+                    if (supportMode == SolidSupportFullOverlap && state.XSpeed < 0)
+                    {
+                        state.FullOverlapBlockGroundCarryFrames = NativeFullOverlapBlockGroundCarryFrames;
+                    }
                     preserveVerticalSubpixel = state.SpinJump;
                 }
                 else if (state.YSpeed < 0)
@@ -1401,6 +1449,11 @@ public sealed class SmwPhysics
     private static bool TryStepUp(ref PlayerState state, Rect2 solid, Rect2 playerRect, int supportMode)
     {
         if (!state.OnGround || state.YSpeed < 0)
+        {
+            return false;
+        }
+        if (supportMode == SolidSupportFullOverlap &&
+            (state.SuppressGroundJumpFrames > 0 || state.FullOverlapBlockPassThroughFrames > 0))
         {
             return false;
         }
@@ -1474,6 +1527,23 @@ public sealed class SmwPhysics
 
     private static bool HasNativeSolidSupport(PlayerState state, Rect2 solid, int supportMode = SolidSupportLegacy)
     {
+        if (supportMode == SolidSupportFullOverlap)
+        {
+            if (state.FullOverlapBlockPassThroughFrames > 0)
+            {
+                return false;
+            }
+
+            if (state.InAirState != 0 || state.FullOverlapBlockGroundCarryFrames > 0)
+            {
+                var playerLeft = state.XFloat;
+                var playerRight = state.XFloat + PlayerWidth;
+                return playerRight > solid.Position.X && playerLeft < solid.Position.X + solid.Size.X;
+            }
+
+            supportMode = SolidSupportLegacy;
+        }
+
         var useLeadingFootSupport = supportMode == SolidSupportLeadingFoot &&
             state.InAirState != 0 &&
             state.XSpeed > 0;
@@ -1521,6 +1591,57 @@ public sealed class SmwPhysics
         }
 
         return false;
+    }
+
+    private static bool TryApplyNativeFullOverlapBlockEdgeGround(ref PlayerState state, Rect2 solid, float previousBottom)
+    {
+        if (state.XSpeed >= 0 || previousBottom <= solid.Position.Y + NativeFullOverlapBlockEdgePreviousMinDepth)
+        {
+            return false;
+        }
+
+        var bottom = PlayerCollisionBottom(state);
+        var depth = bottom - solid.Position.Y;
+        if (depth < NativeFullOverlapBlockEdgeMinDepth || depth > NativeFullOverlapBlockEdgeMaxDepth)
+        {
+            return false;
+        }
+
+        var solidRight = solid.Position.X + solid.Size.X;
+        if (state.XFloat < solidRight - PlayerWidth * 0.5f || state.XFloat > solidRight)
+        {
+            return false;
+        }
+
+        SetXFloat(ref state, solidRight - NativeFullOverlapBlockRightEdgeAnchor);
+        state.Y = AnchorYForCollisionBottom(solid.Position.Y, state);
+        state.SubY = 0xC0;
+        state.XSpeed = 0;
+        state.SubXSpeed = 0;
+        state.YSpeed = 3;
+        state.SubYSpeed = 0;
+        state.OnGround = true;
+        state.InAirState = 0;
+        state.RunningTakeoff = false;
+        state.LeadingFootCarryFrames = 0;
+        state.SuppressGroundJumpFrames = NativeFullOverlapBlockEdgeJumpSuppressFrames;
+        state.FullOverlapBlockPassThroughFrames = NativeFullOverlapBlockEdgePassThroughFrames;
+        state.FullOverlapBlockGroundCarryFrames = 0;
+        return true;
+    }
+
+    private static void SetXFloat(ref PlayerState state, float x)
+    {
+        var whole = (int)MathF.Floor(x);
+        var sub = (int)MathF.Round((x - whole) * 256.0f);
+        if (sub >= 256)
+        {
+            whole++;
+            sub -= 256;
+        }
+
+        state.X = whole;
+        state.SubX = sub;
     }
 
     private static int SupportModeAt(IReadOnlyList<int>? supportModes, int index)
