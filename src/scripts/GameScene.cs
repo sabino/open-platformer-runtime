@@ -5390,8 +5390,7 @@ public partial class GameScene : Node2D
         if (_state.XSpeed > 0 && crossedActorLeftProbe)
         {
             SetPlayerXFloat(actorLeft - SmwPhysics.PlayerWidth + SolidBlockActorSideSnapInset);
-            _state.XSpeed = 0;
-            _state.SubXSpeed = 0;
+            StopPlayerAgainstSolidBlockActorSide();
             actor.SolidSideCooldownFrames = SolidBlockActorSideCooldownFrames;
             _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
             return true;
@@ -5400,8 +5399,7 @@ public partial class GameScene : Node2D
         if (_state.XSpeed < 0 && crossedActorRightProbe)
         {
             SetPlayerXFloat(actorRight - SolidBlockActorSideSnapInset);
-            _state.XSpeed = 0;
-            _state.SubXSpeed = 0;
+            StopPlayerAgainstSolidBlockActorSide();
             actor.SolidSideCooldownFrames = SolidBlockActorSideCooldownFrames;
             _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
             return true;
@@ -5439,8 +5437,7 @@ public partial class GameScene : Node2D
             }
 
             SetPlayerXFloat(actorLeft - SmwPhysics.PlayerWidth + SolidBlockActorSideSnapInset);
-            _state.XSpeed = 0;
-            _state.SubXSpeed = 0;
+            StopPlayerAgainstSolidBlockActorSide();
             actor.SolidSideCooldownFrames = SolidBlockActorSideCooldownFrames;
             _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
         }
@@ -5452,13 +5449,18 @@ public partial class GameScene : Node2D
             }
 
             SetPlayerXFloat(actorRight - SolidBlockActorSideSnapInset);
-            _state.XSpeed = 0;
-            _state.SubXSpeed = 0;
+            StopPlayerAgainstSolidBlockActorSide();
             actor.SolidSideCooldownFrames = SolidBlockActorSideCooldownFrames;
             _lastActorEvent = $"block:{actor.SpriteId:X2}:side";
         }
 
         return true;
+    }
+
+    private void StopPlayerAgainstSolidBlockActorSide()
+    {
+        _state.XSpeed = 0;
+        _state.SubXSpeed = 0x80;
     }
 
     private void SetPlayerXFloat(float x)

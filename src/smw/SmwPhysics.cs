@@ -1209,6 +1209,12 @@ public sealed class SmwPhysics
                 if (state.XSpeed > 0)
                 {
                     if (preserveSubXSpeed &&
+                        rect.Position.X + rect.Size.X - solid.Position.X <= NativeHorizontalWallSlack)
+                    {
+                        continue;
+                    }
+
+                    if (preserveSubXSpeed &&
                         Math.Abs(state.XSpeed) < NativeFastAirborneWallSnapSpeed &&
                         (state.X & 0x0F) == NativeRightWallPostCorrectionNibble)
                     {
@@ -1237,6 +1243,12 @@ public sealed class SmwPhysics
                 }
                 else if (state.XSpeed < 0)
                 {
+                    if (preserveSubXSpeed &&
+                        solid.Position.X + solid.Size.X - rect.Position.X <= NativeHorizontalWallSlack)
+                    {
+                        continue;
+                    }
+
                     if (preserveSubXSpeed &&
                         Math.Abs(state.XSpeed) < NativeFastAirborneWallSnapSpeed &&
                         (state.X & 0x0F) == NativeLeftWallPostCorrectionNibble)

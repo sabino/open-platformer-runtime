@@ -1263,6 +1263,26 @@ public static class PhysicsSmoke
             return false;
         }
 
+        state = physics.MakeState(1887, 282, SmwPhysics.BigPowerup);
+        state.SubX = 0xD0;
+        state.XSpeed = 37;
+        state.YSpeed = -84;
+        state.InAirState = SmwPhysics.NativeNormalJumpInAirState;
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Right = true, Run = true, Jump = true },
+            [new Rect2(1904, 288, 16, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportLegacy],
+            []);
+        if (state.X >= 1891 || state.XSpeed < 20)
+        {
+            Console.Error.WriteLine(
+                $"expected shallow airborne wall slack to ignore sub-pixel side overlap, got x={state.X}:{state.SubX:X2} xs={state.XSpeed}:{state.SubXSpeed:X2}");
+            return false;
+        }
+
         return true;
     }
 
