@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SMW_ROOT="${SMW_NATIVE_ROOT:-/path/to/native-reference}"
 NATIVE_RUNNER="$SMW_ROOT/tools/run-wayland.sh"
+NATIVE_BINARY="${SMW_NATIVE_BINARY:-$SMW_ROOT/build/smw_native}"
+NATIVE_ASSET_BUNDLE="${SMW_NATIVE_ASSET_BUNDLE:-$SMW_ROOT/smw_assets.dat}"
+GODOT_BIN="${GODOT_BIN:-godot4-mono}"
 INPUT_SCRIPT="${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-full.input}"
 GODOT_INPUT=""
 OUT_DIR="${SMW_TRACE_OUT_DIR:-$ROOT/generated/smw/traces}"
@@ -16,6 +19,8 @@ GODOT_TRACE_TIMEOUT_SECONDS="${SMW_TRACE_GODOT_TIMEOUT_SECONDS:-120}"
 LEVEL_START_FRAME=""
 NATIVE_START_LEVEL="${SMW_TRACE_NATIVE_START_LEVEL:-41}"
 NATIVE_START_GAME_MODE="${SMW_TRACE_NATIVE_START_GAME_MODE:-20}"
+HEADLESS="${SMW_TRACE_HEADLESS:-0}"
+NATIVE_XDG_HOME="${SMW_NATIVE_XDG_HOME:-$ROOT/generated/smw/native-xdg}"
 
 usage() {
   cat <<'EOF'
@@ -38,6 +43,7 @@ Options:
   --godot-input-delay N       Neutral frames prepended to sliced Godot input. Default 2.
   --native-start-level ID     First native level id to compare. Default 41.
   --native-start-game-mode ID First native game_mode to compare. Default 20.
+  --headless                  Run native through SDL dummy and Godot --headless.
   --help                      Print this text.
 EOF
 }
@@ -88,6 +94,9 @@ while [[ $# -gt 0 ]]; do
       shift
       NATIVE_START_GAME_MODE="${1:?--native-start-game-mode expects a value}"
       ;;
+    --headless)
+      HEADLESS=1
+      ;;
     --help)
       usage
       exit 0
@@ -101,9 +110,24 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ ! -x "$NATIVE_RUNNER" ]]; then
-  echo "run-recording-trace-compare: missing native runner: $NATIVE_RUNNER" >&2
-  exit 2
+if [[ "$HEADLESS" == "1" ]]; then
+  if [[ ! -x "$NATIVE_BINARY" ]]; then
+    echo "run-recording-trace-compare: missing native binary: $NATIVE_BINARY" >&2
+    exit 2
+  fi
+  if [[ ! -s "$NATIVE_ASSET_BUNDLE" ]]; then
+    echo "run-recording-trace-compare: missing native asset bundle: $NATIVE_ASSET_BUNDLE" >&2
+    exit 2
+  fi
+  if [[ ! -x "$GODOT_BIN" ]]; then
+    echo "run-recording-trace-compare: missing Godot binary: $GODOT_BIN" >&2
+    exit 2
+  fi
+else
+  if [[ ! -x "$NATIVE_RUNNER" ]]; then
+    echo "run-recording-trace-compare: missing native runner: $NATIVE_RUNNER" >&2
+    exit 2
+  fi
 fi
 if [[ ! -s "$INPUT_SCRIPT" ]]; then
   echo "run-recording-trace-compare: missing input script: $INPUT_SCRIPT" >&2
@@ -113,10 +137,20 @@ if ! [[ "$GODOT_INPUT_DELAY" =~ ^[0-9]+$ ]]; then
   echo "run-recording-trace-compare: --godot-input-delay must be a non-negative integer" >&2
   exit 2
 fi
+if [[ "$OUT_DIR" != /* ]]; then
+  OUT_DIR="$ROOT/$OUT_DIR"
+fi
+if [[ -n "$GODOT_INPUT" && "$GODOT_INPUT" != /* ]]; then
+  GODOT_INPUT="$ROOT/$GODOT_INPUT"
+fi
 
-mkdir -p "$OUT_DIR" "$ROOT/generated/smw/native-xdg"
-config_file="$ROOT/generated/smw/native-xdg/smw-clean-trace.ini"
-cat >"$config_file" <<'EOF'
+mkdir -p "$OUT_DIR" "$NATIVE_XDG_HOME"
+config_file="$NATIVE_XDG_HOME/smw-clean-trace.ini"
+video_driver="Wayland"
+if [[ "$HEADLESS" == "1" ]]; then
+  video_driver="dummy"
+fi
+cat >"$config_file" <<EOF
 [General]
 Autosave = 0
 SavePlaythrough = 0
@@ -128,7 +162,7 @@ RunMode = Native
 Fullscreen = 0
 WindowScale = 3
 OutputMethod = SDL-Software
-VideoDriver = Wayland
+VideoDriver = $video_driver
 NoSpriteLimits = 1
 
 [Sound]
@@ -138,7 +172,7 @@ EnableAudio = 0
 EnableGamepad1 = false
 EnableGamepad2 = false
 EOF
-rm -f "$ROOT/generated/smw/native-xdg/snesrev/smw_native/save0.sav"
+rm -f "$NATIVE_XDG_HOME/snesrev/smw_native/save0.sav"
 
 if [[ -z "$GODOT_INPUT" ]]; then
   if [[ -n "$LEVEL_START_FRAME" ]]; then
@@ -172,27 +206,63 @@ godot_log="$OUT_DIR/godot.log"
 native_jsonl="$OUT_DIR/native.jsonl"
 godot_jsonl="$OUT_DIR/godot.jsonl"
 
-XDG_DATA_HOME="$ROOT/generated/smw/native-xdg" \
-SMW_NATIVE_CONFIG="$config_file" \
-"$NATIVE_RUNNER" \
-  --native-only \
-  --output-method SDL-Software \
-  --no-audio \
-  --disable-frame-delay \
-  --input-script "$INPUT_SCRIPT" \
-  --state-trace-every "$TRACE_EVERY" \
-  --frames "$NATIVE_FRAMES" \
-  >"$native_log" 2>&1
+if [[ "$HEADLESS" == "1" ]]; then
+  XDG_DATA_HOME="$NATIVE_XDG_HOME" \
+  SDL_VIDEODRIVER=dummy \
+  SDL_AUDIODRIVER=dummy \
+  "$NATIVE_BINARY" \
+    --config "$config_file" \
+    --asset-bundle "$NATIVE_ASSET_BUNDLE" \
+    --native-only \
+    --output-method SDL-Software \
+    --video-driver dummy \
+    --no-audio \
+    --disable-frame-delay \
+    --input-script "$INPUT_SCRIPT" \
+    --state-trace-every "$TRACE_EVERY" \
+    --frames "$NATIVE_FRAMES" \
+    >"$native_log" 2>&1
 
-SMW_SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}" \
-"$ROOT/tools/run-wayland.sh" \
-  --quit-after "$FRAMES" \
-  --smw-test-autostart \
-  --smw-test-powerup=small \
-  --smw-no-audio \
-  --smw-input-script="$GODOT_INPUT" \
-  --smw-debug-command-file="$godot_commands" \
-  >"$godot_log" 2>&1 &
+  if [[ "${SMW_SKIP_DOTNET_BUILD:-0}" != "1" ]]; then
+    (cd "$ROOT" && dotnet build SmwGodotNative.csproj --no-restore >/dev/null)
+  fi
+  (
+    cd "$ROOT"
+    "$GODOT_BIN" \
+    --headless \
+    --audio-driver Dummy \
+    --path . \
+    --quit-after "$FRAMES" \
+    --smw-test-autostart \
+    --smw-test-powerup=small \
+    --smw-no-audio \
+    --smw-input-script="$GODOT_INPUT" \
+    --smw-debug-command-file="$godot_commands" \
+      >"$godot_log" 2>&1
+  ) &
+else
+  XDG_DATA_HOME="$NATIVE_XDG_HOME" \
+  SMW_NATIVE_CONFIG="$config_file" \
+  "$NATIVE_RUNNER" \
+    --native-only \
+    --output-method SDL-Software \
+    --no-audio \
+    --disable-frame-delay \
+    --input-script "$INPUT_SCRIPT" \
+    --state-trace-every "$TRACE_EVERY" \
+    --frames "$NATIVE_FRAMES" \
+    >"$native_log" 2>&1
+
+  SMW_SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}" \
+  "$ROOT/tools/run-wayland.sh" \
+    --quit-after "$FRAMES" \
+    --smw-test-autostart \
+    --smw-test-powerup=small \
+    --smw-no-audio \
+    --smw-input-script="$GODOT_INPUT" \
+    --smw-debug-command-file="$godot_commands" \
+    >"$godot_log" 2>&1 &
+fi
 godot_runner_pid=$!
 godot_completed=0
 for _ in $(seq 1 $((GODOT_TRACE_TIMEOUT_SECONDS * 5))); do
@@ -245,4 +315,5 @@ printf 'godot_log=%s\n' "$godot_log"
 printf 'native_jsonl=%s\n' "$native_jsonl"
 printf 'godot_jsonl=%s\n' "$godot_jsonl"
 printf 'godot_input_delay=%s\n' "$GODOT_INPUT_DELAY"
+printf 'headless=%s\n' "$HEADLESS"
 exit "$status"

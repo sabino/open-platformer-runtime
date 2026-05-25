@@ -37,6 +37,7 @@ public partial class GameScene : Node2D
     private const float SpriteActorVerticalWakeMargin = 80.0f;
     private const float SpriteActorVerticalSleepMargin = 128.0f;
     private const int SpriteActorNativeWakeDelayFrames = 2;
+    private const float LateScreenRexProcessDelayPixels = 5.0f;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
     private const float RexStompMinimumTopPenetration = 5.0f;
@@ -5023,7 +5024,7 @@ public partial class GameScene : Node2D
             return true;
         }
 
-        return actor.X <= _cameraX + LogicalViewportWidth;
+        return actor.X <= _cameraX + LogicalViewportWidth - LateScreenRexProcessDelayPixels;
     }
 
     private void TrySpawnPlayerFireball(SmwPhysics.FrameInput frameInput)
