@@ -888,7 +888,7 @@ public sealed class SmwPhysics
                     state.SubXSpeed = 0;
                 }
             }
-            else if (state.OnGround && HorizontalSlopePlayerForState(state) != 0)
+            else if (state.SubXSpeed != 0 || (state.OnGround && HorizontalSlopePlayerForState(state) != 0))
             {
                 ApplyNativeHorizontalDrag(ref state, slopePlayerOverride ?? HorizontalSlopePlayerForState(state), useIceFriction: false);
             }
@@ -1488,12 +1488,22 @@ public sealed class SmwPhysics
                 < 0 => state.XFloat + PlayerWidth - 5.0f,
                 _ => state.XFloat + PlayerWidth * 0.5f,
             };
-        if (!useLeadingFootSupport && supportMode == SolidSupportLeadingFoot && supportX >= solid.Position.X + solid.Size.X + 1.0f)
+        var supported = supportX >= solid.Position.X && supportX < solid.Position.X + solid.Size.X;
+        if (supported)
         {
-            return false;
+            return true;
         }
 
-        return supportX >= solid.Position.X && supportX < solid.Position.X + solid.Size.X;
+        if (!useLeadingFootSupport &&
+            supportMode == SolidSupportLeadingFoot &&
+            state.InAirState != 0 &&
+            state.YSpeed > 0)
+        {
+            var centerX = state.XFloat + PlayerWidth * 0.5f;
+            return centerX >= solid.Position.X && centerX < solid.Position.X + solid.Size.X;
+        }
+
+        return false;
     }
 
     private static int SupportModeAt(IReadOnlyList<int>? supportModes, int index)

@@ -44,6 +44,7 @@ public partial class GameScene : Node2D
     private const float PostBanzaiSquishedRexStompMinimumTopPenetration = 3.0f;
     private const float PostBanzaiRexHorizontalStompSlack = 0.5f;
     private const float BanzaiBillStompMinimumTopPenetration = 2.5f;
+    private const float CarriedShellBanzaiTopBandSlack = 0.5f;
     private const int NativeRexInteractionCooldownFrames = 7;
     private const int NativeRexPostStompMotionFreezeFrames = 12;
     private const float NativeKickedShellXSpeed = 0.79f;
@@ -5764,6 +5765,14 @@ public partial class GameScene : Node2D
             downwardContact &&
             penetratedActorTop &&
             HasHorizontalOverlap(playerRect, actorRect, PostBanzaiRexHorizontalStompSlack);
+        var carriedShellBanzaiTopBandStomp = actor.SpriteId == 0x9F &&
+            HasCarriedShell() &&
+            topContact &&
+            downwardContact &&
+            crossedActorTop &&
+            !_state.OnGround &&
+            playerBottom >= actorTop - CarriedShellBanzaiTopBandSlack &&
+            HasHorizontalOverlap(playerRect, actorRect);
         var slopeHiddenStomp = actor.Behavior.Stompable &&
             _state.OnGround &&
             !previousPlayerState.OnGround &&
@@ -5772,7 +5781,7 @@ public partial class GameScene : Node2D
             previousBottom <= actorTop + 20.0f &&
             projectedFallingBottom >= actorTop + minimumTopPenetration &&
             playerBottom <= actorTop + 32.0f;
-        if (!currentOverlap && !slopeHiddenStomp && !postBanzaiNearTopStomp)
+        if (!currentOverlap && !slopeHiddenStomp && !postBanzaiNearTopStomp && !carriedShellBanzaiTopBandStomp)
         {
             return false;
         }
@@ -5785,9 +5794,12 @@ public partial class GameScene : Node2D
         }
 
         var topBandStomp = crossedActorTop && penetratedActorTop && !_state.OnGround;
-        var pathStomp = slopeHiddenStomp || topBandStomp;
+        var pathStomp = slopeHiddenStomp || topBandStomp || carriedShellBanzaiTopBandStomp;
         var stomped = actor.Behavior.Stompable &&
-            (slopeHiddenStomp || postBanzaiNearTopStomp || (currentOverlap && topContact && penetratedActorTop && (downwardContact || topBandStomp)));
+            (slopeHiddenStomp ||
+                postBanzaiNearTopStomp ||
+                carriedShellBanzaiTopBandStomp ||
+                (currentOverlap && topContact && penetratedActorTop && (downwardContact || topBandStomp)));
         if (stomped)
         {
             if (actor.SpriteId == 0xAB && IsSpinStompingRex(previousPlayerState))
@@ -6062,7 +6074,7 @@ public partial class GameScene : Node2D
     private void BoostPlayerAfterSpriteStomp(RuntimeSpriteActor actor)
     {
         var highBounce = actor.SpriteId == 0xAB && (_lastFrameInput.Jump || _lastFrameInput.Spin) ||
-            actor.SpriteId == 0x9F && (_lastFrameInput.Jump || _lastFrameInput.Spin || _state.JumpHeldFrames > 0);
+            actor.SpriteId == 0x9F && !HasCarriedShell() && (_lastFrameInput.Jump || _lastFrameInput.Spin || _state.JumpHeldFrames > 0);
         _state.YSpeed = highBounce
             ? NativeSpriteStompYSpeed
             : DefaultSpriteStompYSpeed;

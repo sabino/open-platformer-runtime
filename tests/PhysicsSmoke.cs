@@ -409,6 +409,16 @@ public static class PhysicsSmoke
 
         state = physics.MakeState(0, 0);
         state.OnGround = true;
+        state.SubXSpeed = 0x80;
+        physics.Step(ref state, new SmwPhysics.FrameInput(), []);
+        if (state.XSpeed != 0x00 || state.SubXSpeed != 0x00)
+        {
+            Console.Error.WriteLine($"expected native normal-ground drag to clear fractional rest speed, got xs=0x{state.XSpeed:X2} sub=0x{state.SubXSpeed:X2}");
+            return false;
+        }
+
+        state = physics.MakeState(0, 0);
+        state.OnGround = true;
         state.XSpeed = 0x14;
         physics.Step(ref state, new SmwPhysics.FrameInput { Right = true }, []);
         if (state.XSpeed != 0x13 || state.SubXSpeed != 0x00)
