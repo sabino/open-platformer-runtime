@@ -12,6 +12,7 @@ public sealed class SmwPhysics
     private const int SteepPipeLooseGroundFrameCount = 3;
     private const int SteepPipeLooseGroundFirstCarryYSpeed = 0x3D;
     private const int SteepPipeLooseGroundPreJumpYSpeed = -0x1A;
+    private const int NativeSlopeOverrunLandingSubpixelCorrection = -0x110;
 
     public const int PlayerWidth = 14;
     public const int SolidSupportLegacy = 0;
@@ -237,6 +238,9 @@ public sealed class SmwPhysics
         public int PostLandingAirDragFrames;
         public int LooseSteepSlopeGroundFrames;
         public int LooseSteepSlopeKind;
+        public int LeadingFootCarryFrames;
+        public bool NativeSlopeOverrunGround;
+        public int PreserveGroundYSpeedFrames;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -390,6 +394,8 @@ public sealed class SmwPhysics
         var preservedSlopeKind = state.SlopeKind;
         var preservedSlopePlayer = state.SlopePlayer;
         var preservedSlopeType = state.SlopeType;
+        var wasNativeSlopeOverrunGround = state.NativeSlopeOverrunGround;
+        state.NativeSlopeOverrunGround = false;
         var previousBottom = PlayerCollisionBottom(state);
         var previousYSpeed = state.YSpeed;
         IntegrateX(ref state);
@@ -401,7 +407,7 @@ public sealed class SmwPhysics
         state.SlopePlayer = 0;
         state.SlopeType = 0;
         ResolveAxis(ref state, solids, solidStepUpEnabled, solidVerticalEnabled, solidSupportModes, previousBottom, horizontal: false);
-        ResolveSlopes(ref state, slopes, previousBottom, wasOnGround);
+        ResolveSlopes(ref state, slopes, previousBottom, wasOnGround, wasNativeSlopeOverrunGround);
         if (!state.OnGround &&
             state.YSpeed >= 0 &&
             IsStandingOnSolid(state, solids, solidVerticalEnabled, solidSupportModes))
@@ -420,12 +426,16 @@ public sealed class SmwPhysics
             state.SlopePlayer = preservedSlopePlayer;
             state.SlopeType = preservedSlopeType;
         }
+        if (!state.OnGround || state.SlopeKind >= 0)
+        {
+            state.LeadingFootCarryFrames = 0;
+        }
         var landedThisFrame = !wasOnGround && state.OnGround;
         if (landedThisFrame)
         {
             state.PostLandingAirDragFrames = Math.Max(state.PostLandingAirDragFrames, PostLandingAirDragFrameCount);
         }
-        if (state.OnGround)
+        if (state.OnGround && !state.NativeSlopeOverrunGround)
         {
             state.InAirState = 0;
         }
@@ -765,7 +775,7 @@ public sealed class SmwPhysics
         int? slopePlayerOverride = null)
     {
         var dir = 0;
-        var horizontalSuppressed = state.OnGround && input.Down;
+        var horizontalSuppressed = state.OnGround && input.Down && state.LeadingFootCarryFrames <= 1;
         if (!horizontalSuppressed && input.Left)
         {
             dir--;
@@ -792,7 +802,7 @@ public sealed class SmwPhysics
         else
         {
             UpdatePMeterEx(ref state, 0);
-            if (!state.OnGround)
+            if (!state.OnGround || state.NativeSlopeOverrunGround)
             {
                 return;
             }
@@ -952,7 +962,7 @@ public sealed class SmwPhysics
     {
         var jumpStarted = input.JumpPressed || input.SpinPressed;
         var jumpedThisFrame = false;
-        if (state.OnGround && jumpStarted)
+        if (state.OnGround && !state.NativeSlopeOverrunGround && jumpStarted)
         {
             state.YSpeed = JumpYSpeedFor(state.XSpeed, input.SpinPressed);
             state.OnGround = false;
@@ -965,7 +975,7 @@ public sealed class SmwPhysics
                 : NativeNormalJumpInAirState;
             jumpedThisFrame = true;
         }
-        else if (state.OnGround)
+        else if (state.OnGround && !state.NativeSlopeOverrunGround)
         {
             state.RunningTakeoff = false;
             state.SpinJump = false;
@@ -976,8 +986,16 @@ public sealed class SmwPhysics
             {
                 return false;
             }
-            state.YSpeed = 0;
+            if (state.LeadingFootCarryFrames <= 1)
+            {
+                state.YSpeed = 0;
+            }
             state.SubYSpeed = 0;
+            if (state.PreserveGroundYSpeedFrames > 0)
+            {
+                state.PreserveGroundYSpeedFrames--;
+                return false;
+            }
         }
 
         if (TryApplyCapeFloatFallCap(ref state, input))
@@ -1192,10 +1210,14 @@ public sealed class SmwPhysics
                         continue;
                     }
 
+                    var groundedLeadingFootCarry = supportMode == SolidSupportLeadingFoot && state.InAirState == 0;
                     state.Y = AnchorYForCollisionBottom(solid.Position.Y, state);
                     state.OnGround = true;
                     state.InAirState = 0;
                     state.RunningTakeoff = false;
+                    state.LeadingFootCarryFrames = groundedLeadingFootCarry
+                        ? state.LeadingFootCarryFrames + 1
+                        : 0;
                     preserveVerticalSubpixel = state.SpinJump;
                 }
                 else if (state.YSpeed < 0)
@@ -1309,7 +1331,8 @@ public sealed class SmwPhysics
 
     private static bool HasNativeSolidSupport(PlayerState state, Rect2 solid, int supportMode = SolidSupportLegacy)
     {
-        var supportX = supportMode == SolidSupportLeadingFoot
+        var useLeadingFootSupport = supportMode == SolidSupportLeadingFoot && state.InAirState != 0;
+        var supportX = useLeadingFootSupport
             ? state.XSpeed switch
             {
                 > 0 => state.XFloat + PlayerWidth - 3.0f,
@@ -1322,6 +1345,11 @@ public sealed class SmwPhysics
                 < 0 => state.XFloat + PlayerWidth - 5.0f,
                 _ => state.XFloat + PlayerWidth * 0.5f,
             };
+        if (!useLeadingFootSupport && supportMode == SolidSupportLeadingFoot && supportX >= solid.Position.X + solid.Size.X - 1.0f)
+        {
+            return false;
+        }
+
         return supportX >= solid.Position.X && supportX < solid.Position.X + solid.Size.X;
     }
 
@@ -1348,7 +1376,12 @@ public sealed class SmwPhysics
         return probeY >= solid.Position.Y && probeY < solid.Position.Y + solid.Size.Y;
     }
 
-    private void ResolveSlopes(ref PlayerState state, IReadOnlyList<SlopeSurface> slopes, float previousBottom, bool wasOnGround)
+    private void ResolveSlopes(
+        ref PlayerState state,
+        IReadOnlyList<SlopeSurface> slopes,
+        float previousBottom,
+        bool wasOnGround,
+        bool wasNativeSlopeOverrunGround)
     {
         if (slopes.Count == 0)
         {
@@ -1404,8 +1437,19 @@ public sealed class SmwPhysics
             }
         }
 
+        if (wasNativeSlopeOverrunGround &&
+            TryApplyPersistentNativeSlopeOverrunGround(ref state, bottom, slopes))
+        {
+            return;
+        }
+
         if (!TryResolvePlayerFloorSlopeFromAbove(state, top, bottom, previousBottom, wasOnGround, slopes, out var floorY, out var floorSlope))
         {
+            if (TryApplyNativeSlopeOverrunGround(ref state, bottom, wasOnGround, slopes))
+            {
+                return;
+            }
+
             if (state.LooseSteepSlopeGroundFrames > 0)
             {
                 ApplyLooseSteepSlopeGround(ref state, state.LooseSteepSlopeKind);
@@ -1448,6 +1492,192 @@ public sealed class SmwPhysics
         state.LooseSteepSlopeKind = 32;
     }
 
+    private static bool TryApplyNativeSlopeOverrunGround(
+        ref PlayerState state,
+        float bottom,
+        bool wasOnGround,
+        IReadOnlyList<SlopeSurface> slopes)
+    {
+        if (!wasOnGround || state.YSpeed < 0)
+        {
+            return false;
+        }
+
+        var centerProbe = state.X + 8.0f;
+        var leftProbe = state.X + 2.0f;
+        var rightProbe = state.X + PlayerWidth - 2.0f;
+        Span<float> probes = stackalloc float[3];
+        var probeCount = 3;
+        if (state.XSpeed > 0)
+        {
+            probes[0] = centerProbe;
+            probes[1] = rightProbe;
+            probes[2] = leftProbe;
+        }
+        else if (state.XSpeed < 0)
+        {
+            probes[0] = centerProbe;
+            probes[1] = leftProbe;
+            probes[2] = rightProbe;
+        }
+        else
+        {
+            probes[0] = centerProbe;
+            probeCount = 1;
+        }
+
+        for (var i = 0; i < probeCount; i++)
+        {
+            if (TryFindNativeSlopeOverrun(probes[i], bottom, slopes))
+            {
+                state.OnGround = true;
+                state.NativeSlopeOverrunGround = true;
+                state.InAirState = NativeFallingInAirState;
+                state.SlopeKind = -1;
+                state.SlopePlayer = 0;
+                state.SlopeType = 0;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryApplyPersistentNativeSlopeOverrunGround(
+        ref PlayerState state,
+        float bottom,
+        IReadOnlyList<SlopeSurface> slopes)
+    {
+        var centerProbe = state.X + 8.0f;
+        var leftProbe = state.X + 2.0f;
+        var rightProbe = state.X + PlayerWidth - 2.0f;
+        Span<float> probes = stackalloc float[3];
+        probes[0] = centerProbe;
+        if (state.XSpeed < 0)
+        {
+            probes[1] = leftProbe;
+            probes[2] = rightProbe;
+        }
+        else
+        {
+            probes[1] = rightProbe;
+            probes[2] = leftProbe;
+        }
+
+        for (var i = 0; i < probes.Length; i++)
+        {
+            if (TryFindPersistentNativeSlopeOverrun(probes[i], bottom, slopes, out var shouldLand))
+            {
+                if (shouldLand)
+                {
+                    ApplyNativeSlopeOverrunLanding(ref state);
+                }
+                else
+                {
+                    state.OnGround = true;
+                    state.NativeSlopeOverrunGround = true;
+                    state.InAirState = NativeFallingInAirState;
+                    state.SlopeKind = -1;
+                    state.SlopePlayer = 0;
+                    state.SlopeType = 0;
+                }
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryFindNativeSlopeOverrun(
+        float probeX,
+        float bottom,
+        IReadOnlyList<SlopeSurface> slopes)
+    {
+        foreach (var slope in slopes)
+        {
+            if (slope.Ceiling)
+            {
+                continue;
+            }
+
+            var minX = MathF.Min(slope.X0, slope.X1);
+            var maxX = MathF.Max(slope.X0, slope.X1);
+            if (probeX < minX || probeX > maxX)
+            {
+                continue;
+            }
+
+            var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+            if (t < 0.0f || t > 1.0f)
+            {
+                continue;
+            }
+
+            var surfaceY = SurfaceYAt(slope, probeX);
+            if (bottom < surfaceY && bottom >= surfaceY - 16.0f)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryFindPersistentNativeSlopeOverrun(
+        float probeX,
+        float bottom,
+        IReadOnlyList<SlopeSurface> slopes,
+        out bool shouldLand)
+    {
+        shouldLand = false;
+        foreach (var slope in slopes)
+        {
+            if (slope.Ceiling || slope.NativeSlopeKind != 13)
+            {
+                continue;
+            }
+
+            var minX = MathF.Min(slope.X0, slope.X1);
+            var maxX = MathF.Max(slope.X0, slope.X1);
+            if (probeX < minX || probeX > maxX)
+            {
+                continue;
+            }
+
+            var t = maxX == minX ? 0.0f : (probeX - slope.X0) / (slope.X1 - slope.X0);
+            if (t < 0.0f || t > 1.0f)
+            {
+                continue;
+            }
+
+            var surfaceY = SurfaceYAt(slope, probeX);
+            if (bottom > surfaceY + 1.0f)
+            {
+                shouldLand = true;
+                return true;
+            }
+            if (bottom <= surfaceY + NativeSlopeSnapDistanceForKind(slope.NativeSlopeKind) + 16.0f)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void ApplyNativeSlopeOverrunLanding(ref PlayerState state)
+    {
+        AddYSubpixelDelta(ref state, NativeSlopeOverrunLandingSubpixelCorrection);
+        state.OnGround = true;
+        state.NativeSlopeOverrunGround = false;
+        state.InAirState = 0;
+        state.SlopeKind = -1;
+        state.SlopePlayer = 0;
+        state.SlopeType = 0;
+        state.LeadingFootCarryFrames = Math.Max(state.LeadingFootCarryFrames, 2);
+        state.PreserveGroundYSpeedFrames = Math.Max(state.PreserveGroundYSpeedFrames, 1);
+    }
+
     private static float AdjustPlayerFloorYForNativeSlope(float floorY, SlopeSurface slope, PlayerState state)
     {
         return slope.NativeSlopeKind == 12 && state.XSpeed > 8
@@ -1468,7 +1698,8 @@ public sealed class SmwPhysics
         var leftProbe = state.X + 2.0f;
         var nativeCenterProbe = state.X + 8.0f;
         var rightProbe = state.X + PlayerWidth - 2.0f;
-        Span<float> probes = stackalloc float[3];
+        var legacyRightSupportProbe = state.X + 5.0f;
+        Span<float> probes = stackalloc float[4];
         var probeCount = 3;
         if (!wasOnGround)
         {
@@ -1480,12 +1711,15 @@ public sealed class SmwPhysics
             probes[0] = nativeCenterProbe;
             probes[1] = rightProbe;
             probes[2] = leftProbe;
+            probes[3] = legacyRightSupportProbe;
+            probeCount = 4;
         }
         else if (state.XSpeed < 0)
         {
             probes[0] = nativeCenterProbe;
             probes[1] = leftProbe;
             probes[2] = rightProbe;
+            probeCount = 3;
         }
         else
         {
@@ -1510,6 +1744,14 @@ public sealed class SmwPhysics
                 out floorY))
             {
                 FindMatchingFloorSlope(probeX, floorY, slopes, out floorSlope);
+                if (ShouldSkipNonNativeSlopeSupportProbe(
+                    state,
+                    probeX,
+                    legacyRightSupportProbe,
+                    floorSlope))
+                {
+                    continue;
+                }
                 return true;
             }
         }
@@ -1517,6 +1759,17 @@ public sealed class SmwPhysics
         floorY = 0.0f;
         floorSlope = default;
         return false;
+    }
+
+    private static bool ShouldSkipNonNativeSlopeSupportProbe(
+        PlayerState state,
+        float probeX,
+        float legacyRightSupportProbe,
+        SlopeSurface floorSlope)
+    {
+        return (state.XSpeed > 0 &&
+                floorSlope.NativeSlopeKind == 13 &&
+                MathF.Abs(probeX - legacyRightSupportProbe) > 0.01f);
     }
 
     private static bool TryResolveNativeKindRangeFloorSlopeFromAbove(
@@ -1748,6 +2001,18 @@ public sealed class SmwPhysics
         var carry = sum >> 8;
         state.SubY = sum & 0xFF;
         state.Y += ArithmeticShiftRight8(state.YSpeed, 4) + carry;
+    }
+
+    private static void AddYSubpixelDelta(ref PlayerState state, int delta)
+    {
+        var combined = state.Y * 0x100 + state.SubY + delta;
+        state.Y = Math.DivRem(combined, 0x100, out var subY);
+        if (subY < 0)
+        {
+            state.Y--;
+            subY += 0x100;
+        }
+        state.SubY = subY;
     }
 
     private static int ArithmeticShiftRight8(int value, int shift)
