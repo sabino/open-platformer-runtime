@@ -56,6 +56,10 @@ public sealed class SmwPhysics
     private const float NativeVerticalPipePoweredAirRightWallSlack = 2.1875f;
     private const float NativeLateVerticalPipeLeftX = 4544.0f;
     private const float NativeLateVerticalPipePositionTolerance = 0.5f;
+    private const float NativeLateVerticalPipeRiseSkimMinX = 4531.0f;
+    private const float NativeLateVerticalPipeRiseSkimMinY = 228.0f;
+    private const float NativeLateVerticalPipeRiseSkimMaxY = 229.0f;
+    private const int NativeLateVerticalPipeRiseSkimMaxXSpeed = 6;
     private const int NativeFastAirborneWallSnapSpeed = 0x10;
     private const int NativeRightWallPostCorrectionNibble = 0x02;
     private const int NativeLeftWallPostCorrectionNibble = 0x0D;
@@ -1276,6 +1280,14 @@ public sealed class SmwPhysics
                     state.YSpeed < 0 &&
                     MathF.Abs(solid.Position.X - NativeLateVerticalPipeLeftX) <= NativeLateVerticalPipePositionTolerance)
                 {
+                    if (state.XFloat >= NativeLateVerticalPipeRiseSkimMinX &&
+                        state.YFloat >= NativeLateVerticalPipeRiseSkimMinY &&
+                        state.YFloat <= NativeLateVerticalPipeRiseSkimMaxY &&
+                        state.XSpeed > NativeLateVerticalPipeRiseSkimMaxXSpeed)
+                    {
+                        state.XSpeed = NativeLateVerticalPipeRiseSkimMaxXSpeed;
+                        state.SubXSpeed = 0;
+                    }
                     continue;
                 }
                 if (supportMode == SolidSupportVerticalPipeShaft && state.OnGround)
