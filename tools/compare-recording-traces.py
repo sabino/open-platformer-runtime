@@ -119,6 +119,14 @@ def native_position(record: dict[str, int | float | str], coarse_key: str, sub_k
     return coarse + sub / 256.0
 
 
+def godot_position(record: dict[str, int | float | str], float_key: str, coarse_key: str, sub_key: str) -> float | None:
+    coarse = number(record, coarse_key)
+    sub = number(record, sub_key)
+    if coarse is not None and sub is not None:
+        return coarse + sub / 256.0
+    return number(record, float_key)
+
+
 def format_id(value: int | float | str | None) -> str:
     if isinstance(value, int):
         return f"{value:02X}"
@@ -188,8 +196,8 @@ def compare(
         g = godot[index]
         nx = native_position(n, "player_x", "player_subx")
         ny = native_position(n, "player_y", "player_suby")
-        gx = number(g, "x")
-        gy = number(g, "y")
+        gx = godot_position(g, "x", "xi", "subx")
+        gy = godot_position(g, "y", "yi", "suby")
         npow = number(n, "powerup")
         gpow = number(g, "pow")
         ncoins = number(n, "coins")

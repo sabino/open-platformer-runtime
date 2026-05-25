@@ -1158,17 +1158,20 @@ public sealed class SmwPhysics
             }
             if (state.SlopeKind >= 0)
             {
-                return false;
+                state.SubYSpeed = 0;
             }
-            if (state.LeadingFootCarryFrames <= 1)
+            else
             {
-                state.YSpeed = 0;
-            }
-            state.SubYSpeed = 0;
-            if (state.PreserveGroundYSpeedFrames > 0)
-            {
-                state.PreserveGroundYSpeedFrames--;
-                return false;
+                if (state.LeadingFootCarryFrames <= 1)
+                {
+                    state.YSpeed = 0;
+                }
+                state.SubYSpeed = 0;
+                if (state.PreserveGroundYSpeedFrames > 0)
+                {
+                    state.PreserveGroundYSpeedFrames--;
+                    return false;
+                }
             }
         }
 
@@ -1470,7 +1473,7 @@ public sealed class SmwPhysics
                     {
                         state.FullOverlapBlockGroundCarryFrames = NativeFullOverlapBlockGroundCarryFrames;
                     }
-                    preserveVerticalSubpixel = state.SpinJump;
+                    preserveVerticalSubpixel = true;
                 }
                 else if (state.YSpeed < 0)
                 {
@@ -1484,6 +1487,10 @@ public sealed class SmwPhysics
                     }
 
                     state.Y = AnchorYForCollisionTop(solid.Position.Y + solid.Size.Y, state);
+                }
+                else
+                {
+                    preserveVerticalSubpixel = true;
                 }
                 if (!preserveVerticalSubpixel)
                 {
@@ -1531,7 +1538,6 @@ public sealed class SmwPhysics
         }
 
         state.Y = AnchorYForCollisionBottom(solidTop, state);
-        state.SubY = 0;
         state.SubYSpeed = 0;
         state.RunningTakeoff = false;
         return true;
@@ -1833,7 +1839,8 @@ public sealed class SmwPhysics
         }
 
         floorY = AdjustPlayerFloorYForNativeSlope(floorY, floorSlope, state);
-        var preserveSlopeSubY = ShouldPreserveDuckingSteepRightSlopeSubY(state, floorSlope);
+        var preserveSlopeSubY = HasNativeSlopeShape(floorSlope) ||
+            ShouldPreserveDuckingSteepRightSlopeSubY(state, floorSlope);
         state.Y = AnchorYForCollisionBottom(floorY, state);
         if (!preserveSlopeSubY)
         {
@@ -2041,9 +2048,7 @@ public sealed class SmwPhysics
             return adjustedFloorY;
         }
 
-        return slope.NativeSlopeKind == 12 && state.XSpeed > 8
-            ? floorY + 1.0f
-            : floorY;
+        return floorY;
     }
 
     private static bool TryAdjustDuckingSteepRightSlopeFloorY(
@@ -2072,6 +2077,12 @@ public sealed class SmwPhysics
         var nativeAnchorY = state.Y - pushOut;
         adjustedFloorY = nativeAnchorY + PlayerCollisionYOffsetFor(state) + PlayerCollisionHeightFor(state);
         return true;
+    }
+
+    private static bool HasNativeSlopeShape(SlopeSurface slope)
+    {
+        return slope.NativeSlopeKind >= 0 &&
+            slope.NativeSlopeKind * 16 + 15 < NativeSlopeShapeTable.Length;
     }
 
     private static int NativeDuckingSteepRightSlopeLocalX(PlayerState state)

@@ -38,7 +38,8 @@ public partial class GameScene : Node2D
     private const int SpriteActorNativeWakeDelayFrames = 2;
     private const float SpriteActorGravity = 0.42f;
     private const float SpriteActorMaxFall = 4.0f;
-    private const float RexStompMinimumTopPenetration = 1.75f;
+    private const float RexStompMinimumTopPenetration = 5.0f;
+    private const float BigRexStompMinimumTopPenetration = 3.0f;
     private const float SquishedRexStompMinimumTopPenetration = 8.0f;
     private const float BigSquishedRexStompMinimumTopPenetration = 5.0f;
     private const float PostBanzaiSquishedRexStompMinimumTopPenetration = 3.0f;
@@ -5579,7 +5580,6 @@ public partial class GameScene : Node2D
         if (_state.YSpeed < 0 && previousTop >= previousActorBottom - 6.0f)
         {
             _state.Y = SmwPhysics.AnchorYForCollisionTop(actorBottom, _state);
-            _state.SubY = 0;
             _state.YSpeed = 16;
             _state.SubYSpeed = 0;
             _state.OnGround = false;
@@ -5624,7 +5624,6 @@ public partial class GameScene : Node2D
         else if (minOverlap == overlapFromBottom)
         {
             _state.Y = SmwPhysics.AnchorYForCollisionTop(actorBottom, _state);
-            _state.SubY = 0;
             _state.YSpeed = Math.Max(16, _state.YSpeed);
             _state.SubYSpeed = 0;
             _state.OnGround = false;
@@ -5964,7 +5963,9 @@ public partial class GameScene : Node2D
                     : _state.Powerup == SmwPhysics.SmallPowerup
                     ? SquishedRexStompMinimumTopPenetration
                     : BigSquishedRexStompMinimumTopPenetration
-                : RexStompMinimumTopPenetration,
+                : _state.Powerup == SmwPhysics.SmallPowerup
+                ? RexStompMinimumTopPenetration
+                : BigRexStompMinimumTopPenetration,
             0x9F => BanzaiBillStompMinimumTopPenetration,
             _ => 0.0f,
         };
@@ -7281,6 +7282,7 @@ public partial class GameScene : Node2D
             default:
                 state.OnGround = true;
                 state.InAirState = 0;
+                state.SubY = 0x80;
                 state.YSpeed = 0;
                 state.SubYSpeed = 0;
                 break;
@@ -8060,6 +8062,10 @@ public partial class GameScene : Node2D
     {
         ResetPowerupAnimationState();
         _physics.SetPowerup(ref _state, powerup);
+        if (_state.YSpeed == 0 && _state.SubY == 0)
+        {
+            _state.SubY = 0x80;
+        }
         _playerWalkingFrame = Math.Min(_playerWalkingFrame, WalkingPoseCountForPowerup(_state.Powerup));
         if (_player != null)
         {
@@ -8071,7 +8077,8 @@ public partial class GameScene : Node2D
         UpdateDebugGizmos();
         GD.Print(
             $"smw-test-powerup: powerup={_state.Powerup} height={SmwPhysics.PlayerHeightFor(_state)} " +
-            $"render_y={PlayerRenderYOffsetForState(_state.Powerup, _state.Ducking)} player_palette={PlayerPaletteVariantForPowerup(_state.Powerup)}");
+            $"suby={_state.SubY} render_y={PlayerRenderYOffsetForState(_state.Powerup, _state.Ducking)} " +
+            $"player_palette={PlayerPaletteVariantForPowerup(_state.Powerup)}");
     }
 
     public void DebugSetPlayerVelocity(int xSpeed, int ySpeed)
@@ -8981,7 +8988,7 @@ public partial class GameScene : Node2D
         GD.Print(
             $"smw-debug-trace: tag={_debugTraceTag} i={_debugTraceFrame}/{_debugTraceTotalFrames} " +
             $"frame={_debugFrameCounter} input={DescribeFrameInput(frameInput)} " +
-            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} sub={_state.SubX:X2},{_state.SubY:X2} subx={_state.SubX} suby={_state.SubY} " +
+            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xi={_state.X} yi={_state.Y} sub={_state.SubX:X2},{_state.SubY:X2} subx={_state.SubX} suby={_state.SubY} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} subxs={_state.SubXSpeed} subys={_state.SubYSpeed} " +
             $"p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +

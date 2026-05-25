@@ -511,7 +511,7 @@ public static class PhysicsSmoke
             x: 81,
             subX: 80,
             y: 68,
-            subY: 0,
+            subY: 32,
             xSpeed: 20,
             subXSpeed: 0,
             ySpeed: 6,
@@ -533,7 +533,7 @@ public static class PhysicsSmoke
             x: 155,
             subX: 144,
             y: 68,
-            subY: 0,
+            subY: 160,
             xSpeed: 20,
             subXSpeed: 0,
             ySpeed: 6,
@@ -557,7 +557,7 @@ public static class PhysicsSmoke
             x: 122,
             subX: 16,
             y: 68,
-            subY: 0,
+            subY: 32,
             xSpeed: 35,
             subXSpeed: 0,
             ySpeed: 6,
@@ -579,7 +579,7 @@ public static class PhysicsSmoke
             x: 283,
             subX: 160,
             y: 68,
-            subY: 0,
+            subY: 160,
             xSpeed: 47,
             subXSpeed: 128,
             ySpeed: 6,
@@ -626,7 +626,7 @@ public static class PhysicsSmoke
             x: 16,
             subX: 0,
             y: 68,
-            subY: 0,
+            subY: 48,
             xSpeed: 0,
             subXSpeed: 0,
             ySpeed: 6,
@@ -751,7 +751,7 @@ public static class PhysicsSmoke
         physics.Step(ref fastState, new SmwPhysics.FrameInput(), [], [slope]);
         if (!fastState.OnGround ||
             fastState.SlopeKind != 12 ||
-            fastState.YSpeed != SmwPhysics.NativeSlopePlayerTowardsPeakYSpeedTable[12])
+            fastState.YSpeed != SmwPhysics.NativeSlopePlayerTowardsPeakYSpeedTable[12] + SmwPhysics.VerticalGravityTable[0])
         {
             Console.Error.WriteLine(
                 $"expected fast slope-peak contact to use native towards-peak y speed, got ground={fastState.OnGround} kind={fastState.SlopeKind} ys={fastState.YSpeed}");
@@ -763,7 +763,7 @@ public static class PhysicsSmoke
         physics.Step(ref slowState, new SmwPhysics.FrameInput(), [], [slope]);
         if (!slowState.OnGround ||
             slowState.SlopeKind != 12 ||
-            slowState.YSpeed != SmwPhysics.NativeSlopePlayerStationaryYSpeedTable[32])
+            slowState.YSpeed != SmwPhysics.NativeSlopePlayerStationaryYSpeedTable[32] + SmwPhysics.VerticalGravityTable[0])
         {
             Console.Error.WriteLine(
                 $"expected slow slope-peak contact to use native fallback stationary row, got ground={slowState.OnGround} kind={slowState.SlopeKind} ys={slowState.YSpeed}");
