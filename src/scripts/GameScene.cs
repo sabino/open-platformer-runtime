@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using IoFile = System.IO.File;
 using IoPath = System.IO.Path;
 
@@ -132,6 +133,8 @@ public partial class GameScene : Node2D
     private const int DragonCoinScore = 1000;
     private const int PowerupRewardScore = 1000;
     private const int NativeStarPowerTimerInitial = 0xFF;
+    private const int DebugCheckpointSchemaVersion = 1;
+    private const string DebugCheckpointDirectory = "generated/smw/checkpoints";
     private const int CoinLifeThreshold = 100;
     private const int DragonCoinLifeThreshold = 5;
     private const int MaxPlayerFireballs = 2;
@@ -257,7 +260,12 @@ public partial class GameScene : Node2D
     private readonly HashSet<(int X, int Y)> _diagonalPipeFloorCells = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeBodyCells = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeCeilingCells = [];
-    private readonly Dictionary<string, DebugCheckpoint> _debugCheckpoints = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DebugCheckpointData> _debugCheckpoints = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly JsonSerializerOptions DebugCheckpointJsonOptions = new()
+    {
+        IncludeFields = true,
+        WriteIndented = true,
+    };
 
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
@@ -392,6 +400,9 @@ public partial class GameScene : Node2D
     private bool _debugTraceOam;
     private bool _debugTraceSensors;
     private bool _debugTraceQuitWhenDone;
+    private int _debugTraceCheckpointFrame = -1;
+    private string _debugTraceCheckpointSlot = "";
+    private bool _debugTraceCheckpointFile;
     private bool _debugActorsEnabled = true;
     private bool _debugActorVisualsEnabled = true;
     private bool _debugInvincible;
@@ -840,20 +851,169 @@ public partial class GameScene : Node2D
         int TileX,
         int TileY);
     private readonly record struct ScriptedInputSegment(int Frames, SmwPhysics.FrameInput Input);
-    private readonly record struct DebugCheckpoint(
-        SmwPhysics.PlayerState State,
-        string LevelId,
-        float CameraX,
-        float CameraY,
-        float CameraHorizontalFocus,
-        int StarPowerTimer,
-        int Frame);
     private readonly record struct LevelEntrance(
         string LevelId,
         Vector2 Position,
         int EntranceSettings,
         bool Secondary,
         int SourceId);
+
+    private sealed class DebugCheckpointData
+    {
+        public int Version = DebugCheckpointSchemaVersion;
+        public string LevelId = "105";
+        public SmwPhysics.PlayerState State;
+        public int Frame;
+        public float CameraX;
+        public float CameraY;
+        public float CameraHorizontalFocus;
+        public bool CameraInitialized;
+        public bool DebugCameraLocked;
+        public float DebugCameraLockX;
+        public float DebugCameraLockY;
+        public int LastPlayerPose;
+        public int LastPlayerFacing;
+        public int LastPlayerPowerup;
+        public bool LastPlayerDucking;
+        public bool LastPlayerBlinkHidden;
+        public bool CourseClear;
+        public bool CourseClearGoalCoinAwarded;
+        public bool GamePaused;
+        public bool GameOver;
+        public string? QueuedPlayerDeathCause;
+        public string QueuedPlayerDeathEvent = "death:hurt";
+        public int CourseClearWalkoutFrames;
+        public int CourseClearPostWalkPauseFrames;
+        public int CourseClearExitWalkFrames;
+        public int CourseClearExitTransitionFrames;
+        public bool CourseClearInitialWalkoutInputFrame;
+        public bool CourseClearExitTransition;
+        public int EntranceMotionFrames;
+        public int EntranceMotionAction;
+        public float EntranceMotionX;
+        public float EntranceMotionY;
+        public int EntranceMotionDelayFrames;
+        public int EntranceReleaseHoldFrames;
+        public int DeferredEntranceMotionFrames;
+        public float DeferredEntranceMotionX;
+        public float DeferredEntranceMotionY;
+        public int PipeExitPassThroughFrames;
+        public int PipeExitJumpSubYFrames;
+        public int PipeExitSyntheticGroundSubY;
+        public bool PipeEntryHorizontal;
+        public int PipeEntryInitialFrames;
+        public float PipeEntryMotionX;
+        public float PipeEntryMotionY;
+        public int PipeTransitionDelayAfterEntryFrames;
+        public int PostPipeShootoutPMeterFloorFrames;
+        public int CoinCount;
+        public int DragonCoinCount;
+        public int PendingNormalCoinIncrements;
+        public int PendingDragonCoinNormalCoins;
+        public int NormalCoinPickupCooldownFrames;
+        public int OneUpCount;
+        public int Score;
+        public int StompChainCounter;
+        public int StarPowerTimer;
+        public int FireballShootPoseTimer;
+        public int SpinJumpFireballTimer;
+        public int Lives;
+        public int LevelTimerFrames;
+        public int BlockBreakCount;
+        public int DeathCount;
+        public int PowerupAnimationFrames;
+        public int PowerupSettleFrames;
+        public int PendingPowerup;
+        public bool SuppressNextPipeCornerLeft;
+        public int PipeEntryMotionFrames;
+        public int PipeTransitionDelayFrames;
+        public LevelEntranceCheckpoint? PendingPipeTransitionEntrance;
+        public int PendingEntrancePowerup;
+        public int InputScriptIndex;
+        public int InputScriptFrame;
+        public int InputScriptElapsedFrames;
+        public string InputScriptName = "";
+        public bool InputScriptDoneLogged;
+        public SmwPhysics.FrameInput LastFrameInput;
+        public int PlayerWalkingFrame;
+        public int PlayerAnimTimer;
+        public int PlayerHurtCooldown;
+        public float DebugMaxPlayerX;
+        public int AutoplayFrame;
+        public int AutoplayLastPlayerX;
+        public int AutoplayStuckFrames;
+        public bool AutoplayJumpHeld;
+        public string LastActorEvent = "none";
+        public string LastActorContact = "none";
+        public List<TileCheckpoint> PlacedTiles = [];
+        public List<ActorCheckpoint> Actors = [];
+        public List<FireballCheckpoint> Fireballs = [];
+        public List<GoalTapeCheckpoint> GoalTapes = [];
+        public List<bool> CoinPickupCollected = [];
+    }
+
+    private sealed class LevelEntranceCheckpoint
+    {
+        public string LevelId = "";
+        public float X;
+        public float Y;
+        public int EntranceSettings;
+        public bool Secondary;
+        public int SourceId;
+    }
+
+    private sealed class TileCheckpoint
+    {
+        public int X;
+        public int Y;
+        public int Map16;
+        public string Source = "";
+    }
+
+    private sealed class ActorCheckpoint
+    {
+        public int SpriteId;
+        public float X;
+        public float Y;
+        public float PreviousX;
+        public float PreviousY;
+        public float HomeY;
+        public float XSpeed;
+        public float YSpeed;
+        public int MotionFrame;
+        public int InteractionCooldownFrames;
+        public int MotionFreezeFrames;
+        public int SolidSideCooldownFrames;
+        public bool Used;
+        public bool Alive;
+        public bool Active;
+        public bool AlwaysActive;
+        public bool OnGround;
+        public int WakeDelayFrames;
+        public int WakeScreen;
+        public int ContentIndex;
+        public int SpawnOffset;
+        public int State;
+    }
+
+    private sealed class FireballCheckpoint
+    {
+        public float X;
+        public float Y;
+        public float XSpeed;
+        public int YSpeed;
+        public int SubY;
+        public int MotionFrame;
+        public int BounceCount;
+        public bool Alive;
+    }
+
+    private sealed class GoalTapeCheckpoint
+    {
+        public float Y;
+        public int Timer;
+        public int Direction;
+    }
 
     private enum DebugAutoplayMode
     {
@@ -8761,9 +8921,20 @@ public partial class GameScene : Node2D
             case "load_state":
             case "checkpoint_load":
                 return DebugLoadCheckpoint(parts.Length >= 2 ? parts[1] : "default");
+            case "save_file":
+            case "save_state_file":
+            case "checkpoint_save_file":
+                return DebugSaveCheckpointFile(parts.Length >= 2 ? parts[1] : "default");
+            case "load_file":
+            case "load_state_file":
+            case "checkpoint_load_file":
+                return DebugLoadCheckpointFile(parts.Length >= 2 ? parts[1] : "default");
             case "checkpoints":
             case "saves":
                 return PrintDebugCheckpoints();
+            case "checkpoint_files":
+            case "save_files":
+                return PrintDebugCheckpointFiles();
             case "tile":
             case "probe":
                 return PrintDebugTile(parts);
@@ -8932,6 +9103,9 @@ public partial class GameScene : Node2D
         var input = new SmwPhysics.FrameInput();
         var tag = "trace";
         var quitWhenDone = false;
+        var checkpointFrame = -1;
+        var checkpointSlot = "";
+        var checkpointFile = false;
         for (var i = 2; i < parts.Length; i++)
         {
             if (parts[i].StartsWith("tag=", StringComparison.OrdinalIgnoreCase))
@@ -8944,6 +9118,31 @@ public partial class GameScene : Node2D
                 parts[i].Equals("quit=1", StringComparison.OrdinalIgnoreCase))
             {
                 quitWhenDone = true;
+                continue;
+            }
+            if (parts[i].StartsWith("checkpoint_at=", StringComparison.OrdinalIgnoreCase))
+            {
+                checkpointFrame = Math.Max(1, int.Parse(parts[i]["checkpoint_at=".Length..], NumberStyles.Integer, CultureInfo.InvariantCulture));
+                continue;
+            }
+            if (parts[i].StartsWith("checkpoint_name=", StringComparison.OrdinalIgnoreCase))
+            {
+                checkpointSlot = NormalizeCheckpointSlot(parts[i]["checkpoint_name=".Length..]);
+                continue;
+            }
+            if (parts[i].StartsWith("checkpoint_slot=", StringComparison.OrdinalIgnoreCase))
+            {
+                checkpointSlot = NormalizeCheckpointSlot(parts[i]["checkpoint_slot=".Length..]);
+                continue;
+            }
+            if (parts[i].StartsWith("checkpoint_file=", StringComparison.OrdinalIgnoreCase))
+            {
+                checkpointFile = ParseDebugBool(parts[i]["checkpoint_file=".Length..]);
+                continue;
+            }
+            if (parts[i].Equals("checkpoint_file", StringComparison.OrdinalIgnoreCase))
+            {
+                checkpointFile = true;
                 continue;
             }
 
@@ -8962,6 +9161,9 @@ public partial class GameScene : Node2D
         _debugTraceOam = includeOam;
         _debugTraceSensors = includeSensors;
         _debugTraceQuitWhenDone = quitWhenDone;
+        _debugTraceCheckpointFrame = checkpointFrame;
+        _debugTraceCheckpointSlot = string.IsNullOrWhiteSpace(checkpointSlot) ? $"{_debugTraceTag}_{checkpointFrame}" : checkpointSlot;
+        _debugTraceCheckpointFile = checkpointFile;
         if (overrideInput)
         {
             _debugCommandInput = input;
@@ -8985,6 +9187,12 @@ public partial class GameScene : Node2D
         }
 
         _debugTraceFrame++;
+        if (_debugTraceFrame == _debugTraceCheckpointFrame)
+        {
+            _ = _debugTraceCheckpointFile
+                ? DebugSaveCheckpointFile(_debugTraceCheckpointSlot)
+                : DebugSaveCheckpoint(_debugTraceCheckpointSlot);
+        }
         GD.Print(
             $"smw-debug-trace: tag={_debugTraceTag} i={_debugTraceFrame}/{_debugTraceTotalFrames} " +
             $"frame={_debugFrameCounter} input={DescribeFrameInput(frameInput)} " +
@@ -9022,6 +9230,9 @@ public partial class GameScene : Node2D
         {
             _debugTraceOam = false;
             _debugTraceSensors = false;
+            _debugTraceCheckpointFrame = -1;
+            _debugTraceCheckpointSlot = "";
+            _debugTraceCheckpointFile = false;
             PrintDebugState($"{_debugTraceTag}_done");
             if (_debugTraceQuitWhenDone)
             {
@@ -9055,18 +9266,9 @@ public partial class GameScene : Node2D
     private string DebugSaveCheckpoint(string slot)
     {
         slot = NormalizeCheckpointSlot(slot);
-        _debugCheckpoints[slot] = new DebugCheckpoint(
-            _state,
-            _currentLevelId,
-            _cameraX,
-            _cameraY,
-            _cameraHorizontalFocus,
-            _starPowerTimer,
-            _debugFrameCounter);
-        var line =
-            $"smw-debug-checkpoint: action=save slot={slot} level={_currentLevelId} frame={_debugFrameCounter} " +
-            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"star={_starPowerTimer:X2} cam={_cameraX:0.00},{_cameraY:0.00} count={_debugCheckpoints.Count}";
+        var checkpoint = CaptureDebugCheckpoint();
+        _debugCheckpoints[slot] = checkpoint;
+        var line = FormatCheckpointLine("save", slot, checkpoint, $"count={_debugCheckpoints.Count}");
         GD.Print(line);
         return line;
     }
@@ -9079,32 +9281,48 @@ public partial class GameScene : Node2D
             return $"smw-debug-checkpoint: action=load slot={slot} missing=1 count={_debugCheckpoints.Count}";
         }
 
-        if (!_currentLevelId.Equals(checkpoint.LevelId, StringComparison.OrdinalIgnoreCase))
+        ApplyDebugCheckpoint(checkpoint);
+        var line = FormatCheckpointLine("load", slot, checkpoint, $"count={_debugCheckpoints.Count}");
+        GD.Print(line);
+        return line;
+    }
+
+    private string DebugSaveCheckpointFile(string slot)
+    {
+        slot = NormalizeCheckpointSlot(slot);
+        var checkpoint = CaptureDebugCheckpoint();
+        _debugCheckpoints[slot] = checkpoint;
+        var path = CheckpointFilePath(slot);
+        var directory = IoPath.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
         {
-            DebugEnterLevel(checkpoint.LevelId);
+            System.IO.Directory.CreateDirectory(directory);
         }
 
-        _entranceMotionFrames = 0;
-        _entranceMotionAction = 0;
-        _entranceMotionPixelsPerFrame = Vector2.Zero;
-        _entranceMotionDelayFrames = 0;
-        _entranceReleaseHoldFrames = 0;
-        _deferredEntranceMotionFrames = 0;
-        _deferredEntranceMotionPixelsPerFrame = Vector2.Zero;
-        ClearPipeEntryMotion();
-        _pipeTransitionLatch = false;
-        ResetPowerupAnimationState();
-        _state = checkpoint.State;
-        _starPowerTimer = checkpoint.StarPowerTimer;
-        _cameraX = checkpoint.CameraX;
-        _cameraY = checkpoint.CameraY;
-        _cameraHorizontalFocus = checkpoint.CameraHorizontalFocus;
-        _cameraInitialized = true;
-        RefreshPlayerDebugPresentation(forceGraphic: true);
-        var line =
-            $"smw-debug-checkpoint: action=load slot={slot} level={_currentLevelId} saved_frame={checkpoint.Frame} frame={_debugFrameCounter} " +
-            $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xs={_state.XSpeed} ys={_state.YSpeed} " +
-            $"star={_starPowerTimer:X2} cam={_cameraX:0.00},{_cameraY:0.00}";
+        IoFile.WriteAllText(path, JsonSerializer.Serialize(checkpoint, DebugCheckpointJsonOptions));
+        var line = FormatCheckpointLine("save_file", slot, checkpoint, $"path={path}");
+        GD.Print(line);
+        return line;
+    }
+
+    private string DebugLoadCheckpointFile(string slot)
+    {
+        slot = NormalizeCheckpointSlot(slot);
+        var path = CheckpointFilePath(slot);
+        if (!IoFile.Exists(path))
+        {
+            return $"smw-debug-checkpoint: action=load_file slot={slot} missing=1 path={path}";
+        }
+
+        var checkpoint = JsonSerializer.Deserialize<DebugCheckpointData>(IoFile.ReadAllText(path), DebugCheckpointJsonOptions);
+        if (checkpoint == null)
+        {
+            return $"smw-debug-checkpoint: action=load_file slot={slot} invalid=1 path={path}";
+        }
+
+        _debugCheckpoints[slot] = checkpoint;
+        ApplyDebugCheckpoint(checkpoint);
+        var line = FormatCheckpointLine("load_file", slot, checkpoint, $"path={path}");
         GD.Print(line);
         return line;
     }
@@ -9120,10 +9338,513 @@ public partial class GameScene : Node2D
         return line;
     }
 
+    private string PrintDebugCheckpointFiles()
+    {
+        var directory = CheckpointDirectoryPath();
+        var files = System.IO.Directory.Exists(directory)
+            ? System.IO.Directory.EnumerateFiles(directory, "*.json")
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .Select(path => IoPath.GetFileNameWithoutExtension(path))
+            : [];
+        var description = string.Join("|", files);
+        var line = $"smw-debug-checkpoint-files: dir={directory} slots={(string.IsNullOrEmpty(description) ? "none" : description)}";
+        GD.Print(line);
+        return line;
+    }
+
     private static string NormalizeCheckpointSlot(string slot)
     {
         slot = slot.Trim();
         return string.IsNullOrWhiteSpace(slot) ? "default" : slot;
+    }
+
+    private static string CheckpointDirectoryPath()
+    {
+        return ProjectSettings.GlobalizePath($"res://{DebugCheckpointDirectory}");
+    }
+
+    private static string CheckpointFilePath(string slot)
+    {
+        return IoPath.Combine(CheckpointDirectoryPath(), SanitizeCheckpointSlotForFile(slot) + ".json");
+    }
+
+    private static string SanitizeCheckpointSlotForFile(string slot)
+    {
+        var normalized = NormalizeCheckpointSlot(slot);
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            builder.Append(char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.' ? ch : '_');
+        }
+
+        return builder.Length == 0 ? "default" : builder.ToString();
+    }
+
+    private DebugCheckpointData CaptureDebugCheckpoint()
+    {
+        return new DebugCheckpointData
+        {
+            Version = DebugCheckpointSchemaVersion,
+            LevelId = _currentLevelId,
+            State = _state,
+            Frame = _debugFrameCounter,
+            CameraX = _cameraX,
+            CameraY = _cameraY,
+            CameraHorizontalFocus = _cameraHorizontalFocus,
+            CameraInitialized = _cameraInitialized,
+            DebugCameraLocked = _debugCameraLocked,
+            DebugCameraLockX = _debugCameraLockPosition.X,
+            DebugCameraLockY = _debugCameraLockPosition.Y,
+            LastPlayerPose = _lastPlayerPose,
+            LastPlayerFacing = _lastPlayerFacing,
+            LastPlayerPowerup = _lastPlayerPowerup,
+            LastPlayerDucking = _lastPlayerDucking,
+            LastPlayerBlinkHidden = _lastPlayerBlinkHidden,
+            CourseClear = _courseClear,
+            CourseClearGoalCoinAwarded = _courseClearGoalCoinAwarded,
+            GamePaused = _gamePaused,
+            GameOver = _gameOver,
+            QueuedPlayerDeathCause = _queuedPlayerDeathCause,
+            QueuedPlayerDeathEvent = _queuedPlayerDeathEvent,
+            CourseClearWalkoutFrames = _courseClearWalkoutFrames,
+            CourseClearPostWalkPauseFrames = _courseClearPostWalkPauseFrames,
+            CourseClearExitWalkFrames = _courseClearExitWalkFrames,
+            CourseClearExitTransitionFrames = _courseClearExitTransitionFrames,
+            CourseClearInitialWalkoutInputFrame = _courseClearInitialWalkoutInputFrame,
+            CourseClearExitTransition = _courseClearExitTransition,
+            EntranceMotionFrames = _entranceMotionFrames,
+            EntranceMotionAction = _entranceMotionAction,
+            EntranceMotionX = _entranceMotionPixelsPerFrame.X,
+            EntranceMotionY = _entranceMotionPixelsPerFrame.Y,
+            EntranceMotionDelayFrames = _entranceMotionDelayFrames,
+            EntranceReleaseHoldFrames = _entranceReleaseHoldFrames,
+            DeferredEntranceMotionFrames = _deferredEntranceMotionFrames,
+            DeferredEntranceMotionX = _deferredEntranceMotionPixelsPerFrame.X,
+            DeferredEntranceMotionY = _deferredEntranceMotionPixelsPerFrame.Y,
+            PipeExitPassThroughFrames = _pipeExitPassThroughFrames,
+            PipeExitJumpSubYFrames = _pipeExitJumpSubYFrames,
+            PipeExitSyntheticGroundSubY = _pipeExitSyntheticGroundSubY,
+            PipeEntryHorizontal = _pipeEntryHorizontal,
+            PipeEntryInitialFrames = _pipeEntryInitialFrames,
+            PipeEntryMotionX = _pipeEntryPixelsPerFrame.X,
+            PipeEntryMotionY = _pipeEntryPixelsPerFrame.Y,
+            PipeTransitionDelayAfterEntryFrames = _pipeTransitionDelayAfterEntryFrames,
+            PostPipeShootoutPMeterFloorFrames = _postPipeShootoutPMeterFloorFrames,
+            CoinCount = _coinCount,
+            DragonCoinCount = _dragonCoinCount,
+            PendingNormalCoinIncrements = _pendingNormalCoinIncrements,
+            PendingDragonCoinNormalCoins = _pendingDragonCoinNormalCoins,
+            NormalCoinPickupCooldownFrames = _normalCoinPickupCooldownFrames,
+            OneUpCount = _oneUpCount,
+            Score = _score,
+            StompChainCounter = _stompChainCounter,
+            StarPowerTimer = _starPowerTimer,
+            FireballShootPoseTimer = _fireballShootPoseTimer,
+            SpinJumpFireballTimer = _spinJumpFireballTimer,
+            Lives = _lives,
+            LevelTimerFrames = _levelTimerFrames,
+            BlockBreakCount = _blockBreakCount,
+            DeathCount = _deathCount,
+            PowerupAnimationFrames = _powerupAnimationFrames,
+            PowerupSettleFrames = _powerupSettleFrames,
+            PendingPowerup = _pendingPowerup,
+            SuppressNextPipeCornerLeft = _suppressNextPipeCornerLeft,
+            PipeEntryMotionFrames = _pipeEntryMotionFrames,
+            PipeTransitionDelayFrames = _pipeTransitionDelayFrames,
+            PendingPipeTransitionEntrance = CheckpointForEntrance(_pendingPipeTransitionEntrance),
+            PendingEntrancePowerup = _pendingEntrancePowerup,
+            InputScriptIndex = _inputScriptIndex,
+            InputScriptFrame = _inputScriptFrame,
+            InputScriptElapsedFrames = _inputScriptElapsedFrames,
+            InputScriptName = _inputScriptName,
+            InputScriptDoneLogged = _inputScriptDoneLogged,
+            LastFrameInput = _lastFrameInput,
+            PlayerWalkingFrame = _playerWalkingFrame,
+            PlayerAnimTimer = _playerAnimTimer,
+            PlayerHurtCooldown = _playerHurtCooldown,
+            DebugMaxPlayerX = _debugMaxPlayerX,
+            AutoplayFrame = _autoplayFrame,
+            AutoplayLastPlayerX = _autoplayLastPlayerX,
+            AutoplayStuckFrames = _autoplayStuckFrames,
+            AutoplayJumpHeld = _autoplayJumpHeld,
+            LastActorEvent = _lastActorEvent,
+            LastActorContact = _lastActorContact,
+            PlacedTiles = _placedTiles
+                .Select(tile => new TileCheckpoint { X = tile.X, Y = tile.Y, Map16 = tile.Map16, Source = tile.Source })
+                .ToList(),
+            Actors = _spriteActors.Select(CheckpointForActor).ToList(),
+            Fireballs = _playerFireballs.Select(CheckpointForFireball).ToList(),
+            GoalTapes = _goalTapes.Select(tape => new GoalTapeCheckpoint { Y = tape.Y, Timer = tape.Timer, Direction = tape.Direction }).ToList(),
+            CoinPickupCollected = _coinPickups.Select(pickup => pickup.Collected).ToList(),
+        };
+    }
+
+    private void ApplyDebugCheckpoint(DebugCheckpointData checkpoint)
+    {
+        var levelId = string.IsNullOrWhiteSpace(checkpoint.LevelId) ? _currentLevelId : checkpoint.LevelId;
+        DebugEnterLevel(levelId);
+        ApplyPlacedTilesCheckpoint(checkpoint.PlacedTiles);
+        ApplyCoinPickupCheckpoint(checkpoint.CoinPickupCollected);
+        RestoreSpriteActors(checkpoint.Actors);
+        RestorePlayerFireballs(checkpoint.Fireballs);
+        RestoreGoalTapes(checkpoint.GoalTapes);
+
+        _currentLevelId = levelId;
+        _state = checkpoint.State;
+        _debugFrameCounter = checkpoint.Frame;
+        _cameraX = checkpoint.CameraX;
+        _cameraY = checkpoint.CameraY;
+        _cameraHorizontalFocus = checkpoint.CameraHorizontalFocus;
+        _cameraInitialized = checkpoint.CameraInitialized;
+        _debugCameraLocked = checkpoint.DebugCameraLocked;
+        _debugCameraLockPosition = new Vector2(checkpoint.DebugCameraLockX, checkpoint.DebugCameraLockY);
+        _lastPlayerPose = checkpoint.LastPlayerPose;
+        _lastPlayerFacing = checkpoint.LastPlayerFacing;
+        _lastPlayerPowerup = checkpoint.LastPlayerPowerup;
+        _lastPlayerDucking = checkpoint.LastPlayerDucking;
+        _lastPlayerBlinkHidden = checkpoint.LastPlayerBlinkHidden;
+        _courseClear = checkpoint.CourseClear;
+        _courseClearGoalCoinAwarded = checkpoint.CourseClearGoalCoinAwarded;
+        _gamePaused = checkpoint.GamePaused;
+        _gameOver = checkpoint.GameOver;
+        _queuedPlayerDeathCause = checkpoint.QueuedPlayerDeathCause;
+        _queuedPlayerDeathEvent = checkpoint.QueuedPlayerDeathEvent;
+        _courseClearWalkoutFrames = checkpoint.CourseClearWalkoutFrames;
+        _courseClearPostWalkPauseFrames = checkpoint.CourseClearPostWalkPauseFrames;
+        _courseClearExitWalkFrames = checkpoint.CourseClearExitWalkFrames;
+        _courseClearExitTransitionFrames = checkpoint.CourseClearExitTransitionFrames;
+        _courseClearInitialWalkoutInputFrame = checkpoint.CourseClearInitialWalkoutInputFrame;
+        _courseClearExitTransition = checkpoint.CourseClearExitTransition;
+        _entranceMotionFrames = checkpoint.EntranceMotionFrames;
+        _entranceMotionAction = checkpoint.EntranceMotionAction;
+        _entranceMotionPixelsPerFrame = new Vector2(checkpoint.EntranceMotionX, checkpoint.EntranceMotionY);
+        _entranceMotionDelayFrames = checkpoint.EntranceMotionDelayFrames;
+        _entranceReleaseHoldFrames = checkpoint.EntranceReleaseHoldFrames;
+        _deferredEntranceMotionFrames = checkpoint.DeferredEntranceMotionFrames;
+        _deferredEntranceMotionPixelsPerFrame = new Vector2(checkpoint.DeferredEntranceMotionX, checkpoint.DeferredEntranceMotionY);
+        _pipeExitPassThroughFrames = checkpoint.PipeExitPassThroughFrames;
+        _pipeExitJumpSubYFrames = checkpoint.PipeExitJumpSubYFrames;
+        _pipeExitSyntheticGroundSubY = checkpoint.PipeExitSyntheticGroundSubY;
+        _pipeEntryHorizontal = checkpoint.PipeEntryHorizontal;
+        _pipeEntryInitialFrames = checkpoint.PipeEntryInitialFrames;
+        _pipeEntryPixelsPerFrame = new Vector2(checkpoint.PipeEntryMotionX, checkpoint.PipeEntryMotionY);
+        _pipeTransitionDelayAfterEntryFrames = checkpoint.PipeTransitionDelayAfterEntryFrames;
+        _postPipeShootoutPMeterFloorFrames = checkpoint.PostPipeShootoutPMeterFloorFrames;
+        _coinCount = checkpoint.CoinCount;
+        _dragonCoinCount = checkpoint.DragonCoinCount;
+        _pendingNormalCoinIncrements = checkpoint.PendingNormalCoinIncrements;
+        _pendingDragonCoinNormalCoins = checkpoint.PendingDragonCoinNormalCoins;
+        _normalCoinPickupCooldownFrames = checkpoint.NormalCoinPickupCooldownFrames;
+        _oneUpCount = checkpoint.OneUpCount;
+        _score = checkpoint.Score;
+        _stompChainCounter = checkpoint.StompChainCounter;
+        _starPowerTimer = checkpoint.StarPowerTimer;
+        _fireballShootPoseTimer = checkpoint.FireballShootPoseTimer;
+        _spinJumpFireballTimer = checkpoint.SpinJumpFireballTimer;
+        _lives = checkpoint.Lives;
+        _levelTimerFrames = checkpoint.LevelTimerFrames;
+        _blockBreakCount = checkpoint.BlockBreakCount;
+        _deathCount = checkpoint.DeathCount;
+        _powerupAnimationFrames = checkpoint.PowerupAnimationFrames;
+        _powerupSettleFrames = checkpoint.PowerupSettleFrames;
+        _pendingPowerup = checkpoint.PendingPowerup;
+        _suppressNextPipeCornerLeft = checkpoint.SuppressNextPipeCornerLeft;
+        _pipeEntryMotionFrames = checkpoint.PipeEntryMotionFrames;
+        _pipeTransitionDelayFrames = checkpoint.PipeTransitionDelayFrames;
+        _pendingPipeTransitionEntrance = EntranceFromCheckpoint(checkpoint.PendingPipeTransitionEntrance);
+        _pendingEntrancePowerup = checkpoint.PendingEntrancePowerup;
+        _inputScriptIndex = checkpoint.InputScriptIndex;
+        _inputScriptFrame = checkpoint.InputScriptFrame;
+        _inputScriptElapsedFrames = checkpoint.InputScriptElapsedFrames;
+        _inputScriptName = checkpoint.InputScriptName;
+        _inputScriptDoneLogged = checkpoint.InputScriptDoneLogged;
+        _lastFrameInput = checkpoint.LastFrameInput;
+        _playerWalkingFrame = checkpoint.PlayerWalkingFrame;
+        _playerAnimTimer = checkpoint.PlayerAnimTimer;
+        _playerHurtCooldown = checkpoint.PlayerHurtCooldown;
+        _debugMaxPlayerX = checkpoint.DebugMaxPlayerX;
+        _autoplayFrame = checkpoint.AutoplayFrame;
+        _autoplayLastPlayerX = checkpoint.AutoplayLastPlayerX;
+        _autoplayStuckFrames = checkpoint.AutoplayStuckFrames;
+        _autoplayJumpHeld = checkpoint.AutoplayJumpHeld;
+        _lastActorEvent = checkpoint.LastActorEvent;
+        _lastActorContact = checkpoint.LastActorContact;
+
+        RefreshPlayerDebugPresentation(forceGraphic: true);
+        UpdateCamera();
+        UpdateHud();
+        UpdateDebugGizmos();
+    }
+
+    private static LevelEntranceCheckpoint? CheckpointForEntrance(LevelEntrance? entrance)
+    {
+        return entrance is { } value
+            ? new LevelEntranceCheckpoint
+            {
+                LevelId = value.LevelId,
+                X = value.Position.X,
+                Y = value.Position.Y,
+                EntranceSettings = value.EntranceSettings,
+                Secondary = value.Secondary,
+                SourceId = value.SourceId,
+            }
+            : null;
+    }
+
+    private static LevelEntrance? EntranceFromCheckpoint(LevelEntranceCheckpoint? checkpoint)
+    {
+        return checkpoint == null
+            ? null
+            : new LevelEntrance(
+                checkpoint.LevelId,
+                new Vector2(checkpoint.X, checkpoint.Y),
+                checkpoint.EntranceSettings,
+                checkpoint.Secondary,
+                checkpoint.SourceId);
+    }
+
+    private static ActorCheckpoint CheckpointForActor(RuntimeSpriteActor actor)
+    {
+        return new ActorCheckpoint
+        {
+            SpriteId = actor.SpriteId,
+            X = actor.X,
+            Y = actor.Y,
+            PreviousX = actor.PreviousX,
+            PreviousY = actor.PreviousY,
+            HomeY = actor.HomeY,
+            XSpeed = actor.XSpeed,
+            YSpeed = actor.YSpeed,
+            MotionFrame = actor.MotionFrame,
+            InteractionCooldownFrames = actor.InteractionCooldownFrames,
+            MotionFreezeFrames = actor.MotionFreezeFrames,
+            SolidSideCooldownFrames = actor.SolidSideCooldownFrames,
+            Used = actor.Used,
+            Alive = actor.Alive,
+            Active = actor.Active,
+            AlwaysActive = actor.AlwaysActive,
+            OnGround = actor.OnGround,
+            WakeDelayFrames = actor.WakeDelayFrames,
+            WakeScreen = actor.WakeScreen,
+            ContentIndex = actor.ContentIndex,
+            SpawnOffset = actor.SpawnOffset,
+            State = actor.State,
+        };
+    }
+
+    private static FireballCheckpoint CheckpointForFireball(PlayerFireball fireball)
+    {
+        return new FireballCheckpoint
+        {
+            X = fireball.X,
+            Y = fireball.Y,
+            XSpeed = fireball.XSpeed,
+            YSpeed = fireball.YSpeed,
+            SubY = fireball.SubY,
+            MotionFrame = fireball.MotionFrame,
+            BounceCount = fireball.BounceCount,
+            Alive = fireball.Alive,
+        };
+    }
+
+    private void ApplyPlacedTilesCheckpoint(List<TileCheckpoint> tiles)
+    {
+        if (tiles.Count == 0)
+        {
+            return;
+        }
+
+        _placedTiles.Clear();
+        _map16TilesByCoord.Clear();
+        foreach (var tile in tiles)
+        {
+            var placed = new PlacedMap16Tile(tile.X, tile.Y, tile.Map16, tile.Source);
+            _placedTiles.Add(placed);
+            if (placed.Map16 >= 0)
+            {
+                _map16TilesByCoord[(placed.X, placed.Y)] = placed;
+            }
+        }
+
+        if (_map16Texture != null && _map16Layer != null)
+        {
+            _map16Layer.Configure(_map16Texture, _placedTiles.Where(tile => tile.Map16 >= 0));
+        }
+        AddGeneratedCollision(DebugOverlays);
+        RebuildPipeEntrances();
+    }
+
+    private void ApplyCoinPickupCheckpoint(List<bool> collected)
+    {
+        for (var i = 0; i < _coinPickups.Count && i < collected.Count; i++)
+        {
+            var pickup = _coinPickups[i];
+            pickup.Collected = collected[i];
+            if (!pickup.Collected)
+            {
+                continue;
+            }
+
+            foreach (var tile in pickup.Tiles)
+            {
+                _map16Layer?.HideTile(tile.X, tile.Y);
+                _map16TilesByCoord.Remove((tile.X, tile.Y));
+            }
+        }
+    }
+
+    private void RestoreSpriteActors(List<ActorCheckpoint> actors)
+    {
+        foreach (var actor in _spriteActors)
+        {
+            actor.Node.QueueFree();
+        }
+        _spriteActors.Clear();
+
+        foreach (var checkpoint in actors)
+        {
+            var actor = CreateRuntimeSpriteActorFromCheckpoint(checkpoint);
+            _spriteActors.Add(actor);
+            AddWorldChild(actor.Node);
+            ApplySpriteActorVisualVisibility(actor);
+        }
+    }
+
+    private RuntimeSpriteActor CreateRuntimeSpriteActorFromCheckpoint(ActorCheckpoint checkpoint)
+    {
+        var behavior = SpriteActorBehaviorForCheckpoint(checkpoint);
+        var color = SpriteActorColor(checkpoint.SpriteId);
+        var node = new Node2D
+        {
+            Name = $"CheckpointSprite_{checkpoint.SpriteId:X2}_{checkpoint.SpawnOffset:X}",
+            Position = new Vector2(checkpoint.X, checkpoint.Y),
+            ZIndex = checkpoint.SpawnOffset < 0 ? 7 : 6,
+            Visible = _debugActorVisualsEnabled,
+        };
+        var visuals = AddSpriteActorVisuals(node, checkpoint.SpriteId, checkpoint.State, checkpoint.Used);
+        var body = new ColorRect
+        {
+            Name = visuals.Count > 0 ? "ActorCollisionDebug" : "ActorPlaceholderDebug",
+            Color = DebugOverlays ? new Color(color.R, color.G, color.B, 0.20f) : color,
+            Position = behavior.Hitbox.Position,
+            Size = behavior.Hitbox.Size,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Visible = false,
+        };
+        node.AddChild(body);
+        if (DebugOverlays)
+        {
+            AddRectOutline(node, behavior.Hitbox, new Color(1.0f, 0.10f, 0.10f, 0.88f), 1.0f, 60);
+        }
+
+        return new RuntimeSpriteActor
+        {
+            Node = node,
+            Body = body,
+            SpriteId = checkpoint.SpriteId,
+            X = checkpoint.X,
+            Y = checkpoint.Y,
+            PreviousX = checkpoint.PreviousX,
+            PreviousY = checkpoint.PreviousY,
+            HomeY = checkpoint.HomeY,
+            XSpeed = checkpoint.XSpeed,
+            YSpeed = checkpoint.YSpeed,
+            MotionFrame = checkpoint.MotionFrame,
+            InteractionCooldownFrames = checkpoint.InteractionCooldownFrames,
+            MotionFreezeFrames = checkpoint.MotionFreezeFrames,
+            SolidSideCooldownFrames = checkpoint.SolidSideCooldownFrames,
+            Used = checkpoint.Used,
+            Alive = checkpoint.Alive,
+            Active = checkpoint.Active,
+            AlwaysActive = checkpoint.AlwaysActive,
+            OnGround = checkpoint.OnGround,
+            WakeDelayFrames = checkpoint.WakeDelayFrames,
+            WakeScreen = checkpoint.WakeScreen,
+            ContentIndex = checkpoint.ContentIndex,
+            SpawnOffset = checkpoint.SpawnOffset,
+            Visuals = visuals,
+            Behavior = behavior,
+            State = checkpoint.State,
+        };
+    }
+
+    private static SpriteActorBehavior SpriteActorBehaviorForCheckpoint(ActorCheckpoint checkpoint)
+    {
+        var behavior = SpriteActorBehaviorFor(checkpoint.SpriteId);
+        if (IsCarryableShellSprite(checkpoint.SpriteId) && checkpoint.State == NativeCarriedShellState)
+        {
+            return new SpriteActorBehavior(
+                behavior.Hitbox,
+                CanInteract: false,
+                Stompable: false,
+                TerrainCollision: false,
+                Gravity: false,
+                InitialXSpeed: 0.0f,
+                TerrainHitbox: behavior.TerrainHitbox);
+        }
+
+        if (checkpoint.SpriteId == 0xAB && checkpoint.State == 1)
+        {
+            return SquishedRexBehavior(checkpoint.XSpeed, checkpoint.SpawnOffset == 0x46);
+        }
+
+        if (checkpoint.SpriteId == 0xAB && checkpoint.State == 2)
+        {
+            var squished = SquishedRexBehavior(checkpoint.XSpeed, checkpoint.SpawnOffset == 0x46);
+            return new SpriteActorBehavior(
+                squished.Hitbox,
+                CanInteract: false,
+                Stompable: false,
+                TerrainCollision: false,
+                Gravity: false,
+                InitialXSpeed: 0.0f,
+                TerrainHitbox: squished.TerrainHitbox);
+        }
+
+        return behavior;
+    }
+
+    private void RestorePlayerFireballs(List<FireballCheckpoint> fireballs)
+    {
+        foreach (var fireball in _playerFireballs)
+        {
+            fireball.Node.QueueFree();
+        }
+        _playerFireballs.Clear();
+
+        foreach (var checkpoint in fireballs)
+        {
+            var fireball = CreatePlayerFireball(checkpoint.X, checkpoint.Y, checkpoint.XSpeed);
+            fireball.YSpeed = checkpoint.YSpeed;
+            fireball.SubY = checkpoint.SubY;
+            fireball.MotionFrame = checkpoint.MotionFrame;
+            fireball.BounceCount = checkpoint.BounceCount;
+            fireball.Alive = checkpoint.Alive;
+            _playerFireballs.Add(fireball);
+            _worldRoot?.AddChild(fireball.Node);
+        }
+    }
+
+    private void RestoreGoalTapes(List<GoalTapeCheckpoint> goalTapes)
+    {
+        for (var i = 0; i < _goalTapes.Count && i < goalTapes.Count; i++)
+        {
+            _goalTapes[i].Y = goalTapes[i].Y;
+            _goalTapes[i].Timer = goalTapes[i].Timer;
+            _goalTapes[i].Direction = goalTapes[i].Direction;
+            _goalTapes[i].Node.Position = new Vector2(_goalTapes[i].X, _goalTapes[i].Y);
+        }
+    }
+
+    private static string FormatCheckpointLine(string action, string slot, DebugCheckpointData checkpoint, string suffix)
+    {
+        return
+            $"smw-debug-checkpoint: action={action} slot={slot} level={checkpoint.LevelId} saved_frame={checkpoint.Frame} " +
+            $"frame={checkpoint.Frame} x={checkpoint.State.XFloat:0.00} y={checkpoint.State.YFloat:0.00} " +
+            $"xs={checkpoint.State.XSpeed} ys={checkpoint.State.YSpeed} star={checkpoint.StarPowerTimer:X2} " +
+            $"cam={checkpoint.CameraX:0.00},{checkpoint.CameraY:0.00} actors={checkpoint.Actors.Count} " +
+            $"fireballs={checkpoint.Fireballs.Count} tiles={checkpoint.PlacedTiles.Count} score={checkpoint.Score} " +
+            $"coins={checkpoint.CoinCount} dragon={checkpoint.DragonCoinCount} {suffix}";
     }
 
     private void RefreshPlayerDebugPresentation(bool forceGraphic)
