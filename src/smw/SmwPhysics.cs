@@ -775,7 +775,10 @@ public sealed class SmwPhysics
         int? slopePlayerOverride = null)
     {
         var dir = 0;
-        var horizontalSuppressed = state.OnGround && input.Down && state.LeadingFootCarryFrames <= 1;
+        var horizontalSuppressed = state.OnGround &&
+            input.Down &&
+            state.LeadingFootCarryFrames <= 1;
+        var suppressedDirectionalInput = horizontalSuppressed && (input.Left || input.Right);
         if (!horizontalSuppressed && input.Left)
         {
             dir--;
@@ -790,7 +793,7 @@ public sealed class SmwPhysics
             state.Facing = dir > 0 ? 1 : 0;
             var absSpeed = Math.Abs(state.XSpeed);
             var pMeterMode = UpdatePMeterEx(ref state, PMeterModeForHorizontal(state, input, absSpeed));
-            var slopePlayer = slopePlayerOverride ?? HorizontalSlopePlayerForState(state);
+            var slopePlayer = slopePlayerOverride ?? HorizontalSlopePlayerForInput(state, input, suppressedDirectionalInput);
             ApplyNativeHorizontal(
                 ref state,
                 dir,
@@ -809,7 +812,19 @@ public sealed class SmwPhysics
 
             if (state.XSpeed > 0)
             {
-                ApplyNativeHorizontalDrag(ref state, slopePlayerOverride ?? HorizontalSlopePlayerForState(state), useIceFriction: false);
+                if (ShouldApplyDuckingSteepRightSuppressedTurn(state, suppressedDirectionalInput))
+                {
+                    AddXAccel(ref state, -0x0300);
+                    return;
+                }
+
+                if (ShouldApplyDuckingSteepRightDownhillCarry(state, input, suppressedDirectionalInput))
+                {
+                    AddXAccel(ref state, 0x0180);
+                    return;
+                }
+
+                ApplyNativeHorizontalDrag(ref state, slopePlayerOverride ?? HorizontalSlopePlayerForInput(state, input, suppressedDirectionalInput), useIceFriction: false);
                 if (state.XSpeed < 0)
                 {
                     state.XSpeed = 0;
@@ -818,7 +833,7 @@ public sealed class SmwPhysics
             }
             else if (state.XSpeed < 0)
             {
-                ApplyNativeHorizontalDrag(ref state, slopePlayerOverride ?? HorizontalSlopePlayerForState(state), useIceFriction: false);
+                ApplyNativeHorizontalDrag(ref state, slopePlayerOverride ?? HorizontalSlopePlayerForInput(state, input, suppressedDirectionalInput), useIceFriction: false);
                 if (state.XSpeed > 0)
                 {
                     state.XSpeed = 0;
@@ -951,6 +966,43 @@ public sealed class SmwPhysics
     private static int HorizontalSlopePlayerForState(PlayerState state)
     {
         return state.OnGround ? state.SlopePlayer : 0;
+    }
+
+    private static int HorizontalSlopePlayerForInput(PlayerState state, FrameInput input, bool suppressedDirectionalInput)
+    {
+        if ((input.Left || input.Right || suppressedDirectionalInput) &&
+            ShouldUseFlatHorizontalForDuckingSteepRightSlopeInput(state))
+        {
+            return 0;
+        }
+
+        return HorizontalSlopePlayerForState(state);
+    }
+
+    private static bool ShouldUseFlatHorizontalForDuckingSteepRightSlopeInput(PlayerState state)
+    {
+        return state.OnGround &&
+            state.Ducking &&
+            state.SlopeKind == 13 &&
+            state.YSpeed > NativeSlopePlayerStationaryYSpeedTable[13];
+    }
+
+    private static bool ShouldApplyDuckingSteepRightDownhillCarry(
+        PlayerState state,
+        FrameInput input,
+        bool suppressedDirectionalInput)
+    {
+        return input.Down &&
+            !input.Left &&
+            !input.Right &&
+            !suppressedDirectionalInput &&
+            ShouldUseFlatHorizontalForDuckingSteepRightSlopeInput(state);
+    }
+
+    private static bool ShouldApplyDuckingSteepRightSuppressedTurn(PlayerState state, bool suppressedDirectionalInput)
+    {
+        return suppressedDirectionalInput &&
+            ShouldUseFlatHorizontalForDuckingSteepRightSlopeInput(state);
     }
 
     private static int NativeDirectionBit(int dir)
@@ -1481,8 +1533,12 @@ public sealed class SmwPhysics
         }
 
         floorY = AdjustPlayerFloorYForNativeSlope(floorY, floorSlope, state);
+        var preserveSlopeSubY = ShouldPreserveDuckingSteepRightSlopeSubY(state, floorSlope);
         state.Y = AnchorYForCollisionBottom(floorY, state);
-        state.SubY = 0;
+        if (!preserveSlopeSubY)
+        {
+            state.SubY = 0;
+        }
         state.SubYSpeed = 0;
         ApplyNativeSlopeContact(ref state, floorSlope);
         state.OnGround = true;
@@ -1680,9 +1736,42 @@ public sealed class SmwPhysics
 
     private static float AdjustPlayerFloorYForNativeSlope(float floorY, SlopeSurface slope, PlayerState state)
     {
+        if (TryAdjustDuckingSteepRightSlopeFloorY(floorY, slope, state, out var adjustedFloorY))
+        {
+            return adjustedFloorY;
+        }
+
         return slope.NativeSlopeKind == 12 && state.XSpeed > 8
             ? floorY + 1.0f
             : floorY;
+    }
+
+    private static bool TryAdjustDuckingSteepRightSlopeFloorY(
+        float floorY,
+        SlopeSurface slope,
+        PlayerState state,
+        out float adjustedFloorY)
+    {
+        adjustedFloorY = floorY;
+        if (!state.Ducking ||
+            state.LeadingFootCarryFrames > 1 ||
+            slope.NativeSlopeKind != 13 ||
+            slope.NativeSlopeKind * 16 + 15 >= NativeSlopeShapeTable.Length)
+        {
+            return false;
+        }
+
+        var localX = ((state.X & 0x0F) + 8) & 0x0F;
+        var shape = unchecked((sbyte)NativeSlopeShapeTable[slope.NativeSlopeKind * 16 + localX]);
+        var pushOut = (state.Y & 0x0F) - shape;
+        if (pushOut < 0 || pushOut >= NativeSlopeSnapDistanceForKind(slope.NativeSlopeKind))
+        {
+            return false;
+        }
+
+        var nativeAnchorY = state.Y - pushOut;
+        adjustedFloorY = nativeAnchorY + PlayerCollisionYOffsetFor(state) + PlayerCollisionHeightFor(state);
+        return true;
     }
 
     private static bool TryResolvePlayerFloorSlopeFromAbove(
@@ -1768,6 +1857,7 @@ public sealed class SmwPhysics
         SlopeSurface floorSlope)
     {
         return (state.XSpeed > 0 &&
+                state.LeadingFootCarryFrames <= 1 &&
                 floorSlope.NativeSlopeKind == 13 &&
                 MathF.Abs(probeX - legacyRightSupportProbe) > 0.01f);
     }
@@ -1851,10 +1941,34 @@ public sealed class SmwPhysics
         }
 
         var stationaryYSpeed = NativeSlopePlayerStationaryYSpeedTable[stationaryKind];
+        if (ShouldPreserveDuckingSteepRightSlopeFallSpeed(state, slope, stationaryKind, stationaryYSpeed))
+        {
+            return;
+        }
+
         if (state.YSpeed > stationaryYSpeed)
         {
             state.YSpeed = stationaryYSpeed;
         }
+    }
+
+    private static bool ShouldPreserveDuckingSteepRightSlopeFallSpeed(
+        PlayerState state,
+        SlopeSurface slope,
+        int stationaryKind,
+        int stationaryYSpeed)
+    {
+        return state.Ducking &&
+            slope.NativeSlopeKind == 13 &&
+            stationaryKind == 13 &&
+            state.YSpeed > stationaryYSpeed;
+    }
+
+    private static bool ShouldPreserveDuckingSteepRightSlopeSubY(PlayerState state, SlopeSurface slope)
+    {
+        return state.Ducking &&
+            slope.NativeSlopeKind == 13 &&
+            state.YSpeed > NativeSlopePlayerStationaryYSpeedTable[13];
     }
 
     private static void ApplyLooseSteepSlopeGround(ref PlayerState state, int kind)
