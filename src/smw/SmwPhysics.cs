@@ -54,6 +54,8 @@ public sealed class SmwPhysics
     private const float MaxHorizontalCollisionCorrection = 64.0f;
     private const float NativeHorizontalWallSlack = 1.0f;
     private const float NativeVerticalPipePoweredAirRightWallSlack = 2.1875f;
+    private const float NativeLateVerticalPipeLeftX = 4544.0f;
+    private const float NativeLateVerticalPipePositionTolerance = 0.5f;
     private const int NativeFastAirborneWallSnapSpeed = 0x10;
     private const int NativeRightWallPostCorrectionNibble = 0x02;
     private const int NativeLeftWallPostCorrectionNibble = 0x0D;
@@ -1266,6 +1268,13 @@ public sealed class SmwPhysics
                     continue;
                 }
                 if (supportMode == SolidSupportLeadingFoot && !state.OnGround && state.YSpeed < 0)
+                {
+                    continue;
+                }
+                if (supportMode == SolidSupportVerticalPipe &&
+                    !state.OnGround &&
+                    state.YSpeed < 0 &&
+                    MathF.Abs(solid.Position.X - NativeLateVerticalPipeLeftX) <= NativeLateVerticalPipePositionTolerance)
                 {
                     continue;
                 }
