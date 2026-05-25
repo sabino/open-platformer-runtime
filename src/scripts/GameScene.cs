@@ -42,7 +42,7 @@ public partial class GameScene : Node2D
     private const float RexStompMinimumTopPenetration = 5.0f;
     private const float BigRexStompMinimumTopPenetration = 3.0f;
     private const float SquishedRexStompMinimumTopPenetration = 8.0f;
-    private const float BigSquishedRexStompMinimumTopPenetration = 5.0f;
+    private const float BigSquishedRexStompMinimumTopPenetration = 9.0f;
     private const float PostBanzaiSquishedRexStompMinimumTopPenetration = 3.0f;
     private const float PostBanzaiRexHorizontalStompSlack = 0.5f;
     private const float BanzaiBillStompMinimumTopPenetration = 2.5f;
