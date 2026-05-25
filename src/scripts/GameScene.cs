@@ -8598,6 +8598,7 @@ public partial class GameScene : Node2D
             $"p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
+            $"loose={_state.LooseSteepSlopeGroundFrames} loose_kind={_state.LooseSteepSlopeKind} overrun={(_state.NativeSlopeOverrunGround ? 1 : 0)} lead={_state.LeadingFootCarryFrames} preserve_y={_state.PreserveGroundYSpeedFrames} " +
             $"jump_idx={SmwPhysics.JumpSpeedIndexFor(_state.XSpeed, frameInput.SpinPressed)} " +
             $"clear={(_courseClear ? 1 : 0)} walkout={_courseClearWalkoutFrames} " +
             $"score={_score} coins={_coinCount} dragon={_dragonCoinCount} lives={_lives} oneups={_oneUpCount} " +
@@ -9350,7 +9351,7 @@ public partial class GameScene : Node2D
             $"max_x={_debugMaxPlayerX:0.00} " +
             $"sub={_state.SubX:X2},{_state.SubY:X2} p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} hurt={_playerHurtCooldown} blink={(_lastPlayerBlinkHidden ? 1 : 0)} " +
-            $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
+            $"slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} loose={_state.LooseSteepSlopeGroundFrames} loose_kind={_state.LooseSteepSlopeKind} overrun={(_state.NativeSlopeOverrunGround ? 1 : 0)} lead={_state.LeadingFootCarryFrames} preserve_y={_state.PreserveGroundYSpeedFrames} pose={_lastPlayerPose} pose_face={_lastPlayerFacing} " +
             $"clear={(_courseClear ? 1 : 0)} gamepause={(_gamePaused ? 1 : 0)} gameover={(_gameOver ? 1 : 0)} walkout={_courseClearWalkoutFrames} score={_score} lives={_lives} coins={_coinCount} dragon={_dragonCoinCount} oneups={_oneUpCount} stomp_chain={_stompChainCounter} time={LevelTimerSecondsRemaining()} timer_frames={_levelTimerFrames} " +
             $"cam={_cameraX:0.00},{_cameraY:0.00} cam_lock={(_debugCameraLocked ? 1 : 0)} tile={DescribeFootTile()} solids={_solids.Count} slopes={_slopes.Count} " +
             $"actors={_spriteActors.Count} actors_active={activeActorCount} fireballs={_playerFireballs.Count} actors_on={(_debugActorsEnabled ? 1 : 0)} actor_visuals={(_debugActorVisualsEnabled ? 1 : 0)} overlays={(DebugOverlays ? 1 : 0)} god={(_debugInvincible ? 1 : 0)} autoplay={AutoplayModeName(_autoplayMode)} auto_frame={_autoplayFrame} " +
