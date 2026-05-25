@@ -1175,6 +1175,17 @@ public sealed class SmwPhysics
                     solidIndex >= solidStepUpEnabled.Count ||
                     solidStepUpEnabled[solidIndex];
                 var supportMode = SupportModeAt(solidSupportModes, solidIndex);
+                if (!allowVerticalForWallSlack &&
+                    !state.OnGround &&
+                    solid.Size.Y <= 16.0f &&
+                    rect.Position.Y < solid.Position.Y)
+                {
+                    continue;
+                }
+                if (supportMode == SolidSupportLeadingFoot && !state.OnGround && state.XSpeed < 0)
+                {
+                    continue;
+                }
                 if (supportMode == SolidSupportLeadingFoot && !state.OnGround && state.YSpeed < 0)
                 {
                     continue;
@@ -1408,7 +1419,9 @@ public sealed class SmwPhysics
 
     private static bool HasNativeSolidSupport(PlayerState state, Rect2 solid, int supportMode = SolidSupportLegacy)
     {
-        var useLeadingFootSupport = supportMode == SolidSupportLeadingFoot && state.InAirState != 0;
+        var useLeadingFootSupport = supportMode == SolidSupportLeadingFoot &&
+            state.InAirState != 0 &&
+            state.XSpeed > 0;
         var supportX = useLeadingFootSupport
             ? state.XSpeed switch
             {

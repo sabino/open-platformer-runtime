@@ -41,6 +41,16 @@ public partial class GameScene : Node2D
     private const float RexStompMinimumTopPenetration = 1.75f;
     private const float SquishedRexStompMinimumTopPenetration = 8.0f;
     private const float BigSquishedRexStompMinimumTopPenetration = 5.0f;
+    private const float PostBanzaiSquishedRexStompMinimumTopPenetration = 3.0f;
+    private const float PostBanzaiRexHorizontalStompSlack = 0.5f;
+    private const float BanzaiBillStompMinimumTopPenetration = 2.5f;
+    private const int NativeRexInteractionCooldownFrames = 7;
+    private const int NativeRexPostStompMotionFreezeFrames = 12;
+    private const float NativeKickedShellXSpeed = 0.79f;
+    private const int NativeCarriedShellState = 0x0B;
+    private const float NativeCarriedShellXOffset = 9.0f;
+    private const float NativeCarriedShellYOffset = 13.0f;
+    private const float NativeShellCarryMinimumOverlapX = 3.0f;
     private const int DefaultSpriteStompYSpeed = -48;
     private const int NativeSpriteStompYSpeed = -88;
     private const int NativeHeldJumpGravity = 3;
@@ -819,6 +829,7 @@ public partial class GameScene : Node2D
         public float YSpeed { get; set; }
         public int MotionFrame { get; set; }
         public int InteractionCooldownFrames { get; set; }
+        public int MotionFreezeFrames { get; set; }
         public int SolidSideCooldownFrames { get; set; }
         public bool Used { get; set; }
         public bool Alive { get; set; } = true;
@@ -2636,7 +2647,7 @@ public partial class GameScene : Node2D
     {
         return spriteId switch
         {
-            0x9F => new SpriteActorBehavior(new Rect2(8, 8, 52, 46), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.5f),
+            0x9F => new SpriteActorBehavior(new Rect2(8, 8, 52, 46), CanInteract: true, Stompable: true, TerrainCollision: false, Gravity: false, InitialXSpeed: -1.5f),
             0x83 => new SpriteActorBehavior(new Rect2(0, 0, 16, 16), CanInteract: true, Stompable: false, TerrainCollision: false, Gravity: false, InitialXSpeed: -0.75f),
             0x95 => new SpriteActorBehavior(new Rect2(0, -4, 15, 16), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.22f),
             0xAB => new SpriteActorBehavior(new Rect2(2, -8, 12, 19), CanInteract: true, Stompable: true, TerrainCollision: true, Gravity: true, InitialXSpeed: -0.5f, TerrainHitbox: new Rect2(0, 0, 16, 16)),
@@ -2651,15 +2662,16 @@ public partial class GameScene : Node2D
         };
     }
 
-    private static SpriteActorBehavior SquishedRexBehavior(float currentXSpeed)
+    private static SpriteActorBehavior SquishedRexBehavior(float currentXSpeed, bool useNativeSpeedTier)
     {
+        var speed = useNativeSpeedTier ? 1.0f : 0.84f;
         return new SpriteActorBehavior(
             new Rect2(0, 0, 16, 16),
             CanInteract: true,
             Stompable: true,
             TerrainCollision: true,
             Gravity: true,
-            InitialXSpeed: MathF.Sign(currentXSpeed == 0.0f ? -1.0f : currentXSpeed) * 0.84f);
+            InitialXSpeed: MathF.Sign(currentXSpeed == 0.0f ? -1.0f : currentXSpeed) * speed);
     }
 
     private static Color SpriteActorColor(int spriteId)
@@ -2865,10 +2877,13 @@ public partial class GameScene : Node2D
 
         foreach (var rect in BuildMergedSolidRects(solidTiles))
         {
+            var allowVertical = SolidAllowsVerticalForRect(rect);
             AddSolid(
                 rect,
                 new Color(0.05f, 0.85f, 0.20f, 0.10f),
                 debugVisible,
+                allowStepUp: allowVertical,
+                allowVertical: allowVertical,
                 supportMode: SolidSupportModeForRect(rect));
         }
 
@@ -3823,6 +3838,34 @@ public partial class GameScene : Node2D
         return SmwPhysics.SolidSupportLegacy;
     }
 
+    private bool SolidAllowsVerticalForRect(Rect2 rect)
+    {
+        var startX = WorldToTileX(rect.Position.X);
+        var endX = WorldToTileX(rect.Position.X + rect.Size.X - 1.0f);
+        var topY = WorldToTileY(rect.Position.Y);
+        var foundTopTile = false;
+        for (var x = startX; x <= endX; x++)
+        {
+            if (!_map16TilesByCoord.TryGetValue((x, topY), out var tile))
+            {
+                continue;
+            }
+
+            foundTopTile = true;
+            if (!IsDecorativeFillCollisionTile(tile))
+            {
+                return true;
+            }
+        }
+
+        return !foundTopTile;
+    }
+
+    private static bool IsDecorativeFillCollisionTile(PlacedMap16Tile tile)
+    {
+        return tile.Source is "standard_ledge_fill" or "ground_edge_middle" or "ground_edge_bottom";
+    }
+
     private static bool IsLeadingFootLedgeSupportTile(PlacedMap16Tile tile)
     {
         return tile.Source == "ground_edge_top";
@@ -4615,6 +4658,10 @@ public partial class GameScene : Node2D
             {
                 actor.InteractionCooldownFrames--;
             }
+            if (actor.MotionFreezeFrames > 0)
+            {
+                actor.MotionFreezeFrames--;
+            }
             if (actor.SolidSideCooldownFrames > 0)
             {
                 actor.SolidSideCooldownFrames--;
@@ -4885,6 +4932,84 @@ public partial class GameScene : Node2D
             (!IsJumpingPiranhaSprite(actor.SpriteId) || actor.State != 0);
     }
 
+    private static bool IsCarryableShellSprite(int spriteId)
+    {
+        return spriteId is 0xDA or 0xDB or 0xDC or 0xDD or 0xDF;
+    }
+
+    private void KickCarryableShellFromGroundedSide(RuntimeSpriteActor actor)
+    {
+        if (actor.State != 0)
+        {
+            return;
+        }
+
+        actor.State = 1;
+        actor.XSpeed = _state.XFloat <= actor.X ? NativeKickedShellXSpeed : -NativeKickedShellXSpeed;
+        actor.InteractionCooldownFrames = NativeRexInteractionCooldownFrames;
+    }
+
+    private bool TryCarryShellFromGroundedSide(RuntimeSpriteActor actor, Rect2 playerRect, Rect2 actorRect)
+    {
+        if (actor.State != 0 || !_lastFrameInput.Run || HasCarriedShell())
+        {
+            return false;
+        }
+
+        var overlapX = MathF.Min(playerRect.Position.X + playerRect.Size.X, actorRect.Position.X + actorRect.Size.X) -
+            MathF.Max(playerRect.Position.X, actorRect.Position.X);
+        if (overlapX < NativeShellCarryMinimumOverlapX)
+        {
+            return false;
+        }
+
+        actor.State = NativeCarriedShellState;
+        actor.Behavior = CarriedShellBehavior(actor);
+        actor.XSpeed = 0.0f;
+        actor.YSpeed = 0.0f;
+        actor.InteractionCooldownFrames = NativeRexInteractionCooldownFrames;
+        AttachCarriedShell(actor);
+        _lastActorEvent = $"carry:{actor.SpriteId:X2}";
+        return true;
+    }
+
+    private bool HasCarriedShell()
+    {
+        return _spriteActors.Any(actor =>
+            actor.Alive &&
+            IsCarryableShellSprite(actor.SpriteId) &&
+            actor.State == NativeCarriedShellState);
+    }
+
+    private void AttachCarriedShell(RuntimeSpriteActor actor)
+    {
+        actor.X = _state.XFloat + (_state.Facing == 0 ? -NativeCarriedShellXOffset : NativeCarriedShellXOffset);
+        actor.Y = _state.YFloat + NativeCarriedShellYOffset;
+        actor.Node.Position = new Vector2(actor.X, actor.Y);
+    }
+
+    private void ReleaseCarriedShell(RuntimeSpriteActor actor)
+    {
+        actor.State = 1;
+        actor.Behavior = SpriteActorBehaviorFor(actor.SpriteId);
+        actor.XSpeed = _state.Facing == 0 ? -NativeKickedShellXSpeed : NativeKickedShellXSpeed;
+        actor.YSpeed = 0.0f;
+        actor.InteractionCooldownFrames = NativeRexInteractionCooldownFrames;
+        _lastActorEvent = $"throw:{actor.SpriteId:X2}";
+    }
+
+    private static SpriteActorBehavior CarriedShellBehavior(RuntimeSpriteActor actor)
+    {
+        return new SpriteActorBehavior(
+            actor.Behavior.Hitbox,
+            CanInteract: false,
+            Stompable: false,
+            TerrainCollision: false,
+            Gravity: false,
+            InitialXSpeed: 0.0f,
+            TerrainHitbox: actor.Behavior.TerrainHitbox);
+    }
+
     private bool IsPlayerFireballOffscreen(PlayerFireball fireball)
     {
         return fireball.X < _cameraX - 24.0f ||
@@ -4895,6 +5020,12 @@ public partial class GameScene : Node2D
 
     private void UpdateSpriteActorMotion(RuntimeSpriteActor actor)
     {
+        if (IsCarryableShellSprite(actor.SpriteId) && actor.State == NativeCarriedShellState)
+        {
+            AttachCarriedShell(actor);
+            return;
+        }
+
         if (IsJumpingPiranhaSprite(actor.SpriteId))
         {
             UpdateJumpingPiranhaMotion(actor);
@@ -4918,6 +5049,10 @@ public partial class GameScene : Node2D
                 return;
             }
         }
+        if (actor.MotionFreezeFrames > 0)
+        {
+            return;
+        }
 
         actor.X += actor.XSpeed;
         var terrainHitbox = actor.Behavior.TerrainHitbox ?? actor.Behavior.Hitbox;
@@ -4938,7 +5073,6 @@ public partial class GameScene : Node2D
                 {
                     continue;
                 }
-
                 if (actor.XSpeed > 0)
                 {
                     actor.X = solid.Position.X - terrainHitbox.Position.X - terrainHitbox.Size.X;
@@ -4971,6 +5105,11 @@ public partial class GameScene : Node2D
 
                 if (actor.YSpeed >= 0)
                 {
+                    var previousBottom = actor.PreviousY + terrainHitbox.Position.Y + terrainHitbox.Size.Y;
+                    if (previousBottom > solid.Position.Y + 0.5f)
+                    {
+                        continue;
+                    }
                     actor.Y = solid.Position.Y - terrainHitbox.Position.Y - terrainHitbox.Size.Y;
                     actor.YSpeed = 0.0f;
                     actor.OnGround = true;
@@ -5036,6 +5175,12 @@ public partial class GameScene : Node2D
     private bool IsSpriteActorAwake(RuntimeSpriteActor actor)
     {
         if (actor.AlwaysActive)
+        {
+            return true;
+        }
+
+        if (IsCarryableShellSprite(actor.SpriteId) &&
+            (actor.State == 1 || actor.State == NativeCarriedShellState))
         {
             return true;
         }
@@ -5518,6 +5663,7 @@ public partial class GameScene : Node2D
         if (!actor.Alive ||
             !actor.Active ||
             !actor.Behavior.CanInteract ||
+            (actor.SpriteId == 0xAB && actor.InteractionCooldownFrames > 0) ||
             (IsPowerupItemSprite(actor.SpriteId) && actor.InteractionCooldownFrames > 0) ||
             (IsJumpingPiranhaSprite(actor.SpriteId) && actor.State == 0))
         {
@@ -5562,21 +5708,54 @@ public partial class GameScene : Node2D
             return true;
         }
 
+        if (currentOverlap &&
+            IsCarryableShellSprite(actor.SpriteId) &&
+            _state.OnGround &&
+            previousPlayerState.OnGround)
+        {
+            if (TryCarryShellFromGroundedSide(actor, playerRect, actorRect))
+            {
+                _lastActorContact = $"{actor.SpriteId:X2}:grounded-shell-carry";
+                return false;
+            }
+
+            if (_lastFrameInput.Run)
+            {
+                _lastActorContact = $"{actor.SpriteId:X2}:grounded-shell-wait-carry";
+                return false;
+            }
+
+            KickCarryableShellFromGroundedSide(actor);
+            _lastActorContact = $"{actor.SpriteId:X2}:grounded-shell-side";
+            return false;
+        }
+
         var playerBottom = playerRect.Position.Y + playerRect.Size.Y;
         var previousBottom = previousPlayerRect.Position.Y + previousPlayerRect.Size.Y;
         var actorTop = actorRect.Position.Y;
         var downwardContact = _state.YSpeed > 0 || playerBottom > previousBottom + 0.01f;
         var crossedActorTop = previousBottom <= actorTop + 20.0f && playerBottom >= actorTop - 2.0f;
         var topContact = playerBottom <= actorTop + 32.0f;
-        var minimumTopPenetration = actor.SpriteId == 0xAB
-            ? actor.State == 1
-                ? _state.Powerup == SmwPhysics.SmallPowerup
+        var minimumTopPenetration = actor.SpriteId switch
+        {
+            0xAB => actor.State == 1
+                ? IsPostBanzaiRex(actor)
+                    ? PostBanzaiSquishedRexStompMinimumTopPenetration
+                    : _state.Powerup == SmwPhysics.SmallPowerup
                     ? SquishedRexStompMinimumTopPenetration
                     : BigSquishedRexStompMinimumTopPenetration
-                : RexStompMinimumTopPenetration
-            : 0.0f;
+                : RexStompMinimumTopPenetration,
+            0x9F => BanzaiBillStompMinimumTopPenetration,
+            _ => 0.0f,
+        };
         var penetratedActorTop = playerBottom >= actorTop + minimumTopPenetration;
         var projectedFallingBottom = ProjectedFallingPlayerBottom(previousPlayerRect, previousPlayerState);
+        var postBanzaiNearTopStomp = IsPostBanzaiRex(actor) &&
+            actor.State == 0 &&
+            topContact &&
+            downwardContact &&
+            penetratedActorTop &&
+            HasHorizontalOverlap(playerRect, actorRect, PostBanzaiRexHorizontalStompSlack);
         var slopeHiddenStomp = actor.Behavior.Stompable &&
             _state.OnGround &&
             !previousPlayerState.OnGround &&
@@ -5585,7 +5764,7 @@ public partial class GameScene : Node2D
             previousBottom <= actorTop + 20.0f &&
             projectedFallingBottom >= actorTop + minimumTopPenetration &&
             playerBottom <= actorTop + 32.0f;
-        if (!currentOverlap && !slopeHiddenStomp)
+        if (!currentOverlap && !slopeHiddenStomp && !postBanzaiNearTopStomp)
         {
             return false;
         }
@@ -5600,7 +5779,7 @@ public partial class GameScene : Node2D
         var topBandStomp = crossedActorTop && penetratedActorTop && !_state.OnGround;
         var pathStomp = slopeHiddenStomp || topBandStomp;
         var stomped = actor.Behavior.Stompable &&
-            (slopeHiddenStomp || (currentOverlap && topContact && penetratedActorTop && (downwardContact || topBandStomp)));
+            (slopeHiddenStomp || postBanzaiNearTopStomp || (currentOverlap && topContact && penetratedActorTop && (downwardContact || topBandStomp)));
         if (stomped)
         {
             if (actor.SpriteId == 0xAB && IsSpinStompingRex(previousPlayerState))
@@ -5623,6 +5802,13 @@ public partial class GameScene : Node2D
                 return true;
             }
 
+            if (TryFinalizeSquishedRex(actor))
+            {
+                AwardSpriteStompReward(actor, "stomp:AB:dead");
+                BoostPlayerAfterSpriteStomp(actor);
+                return true;
+            }
+
             actor.Alive = false;
             _lastActorEvent = $"stomp:{actor.SpriteId:X2}:dead";
             AwardSpriteStompReward(actor, _lastActorEvent);
@@ -5641,7 +5827,12 @@ public partial class GameScene : Node2D
 
     private static bool HasHorizontalOverlap(Rect2 a, Rect2 b)
     {
-        return a.Position.X < b.Position.X + b.Size.X && a.Position.X + a.Size.X > b.Position.X;
+        return HasHorizontalOverlap(a, b, 0.0f);
+    }
+
+    private static bool HasHorizontalOverlap(Rect2 a, Rect2 b, float slack)
+    {
+        return a.Position.X < b.Position.X + b.Size.X + slack && a.Position.X + a.Size.X > b.Position.X - slack;
     }
 
     private static float ProjectedFallingPlayerBottom(Rect2 previousPlayerRect, SmwPhysics.PlayerState previousPlayerState)
@@ -5802,11 +5993,21 @@ public partial class GameScene : Node2D
             return false;
         }
 
+        var useNativePostBanzaiState = IsPostBanzaiRex(actor);
         var oldBottom = actor.Rect.Position.Y + actor.Rect.Size.Y;
         actor.State = 1;
-        actor.Behavior = SquishedRexBehavior(actor.XSpeed);
-        actor.Y = oldBottom - actor.Behavior.Hitbox.Position.Y - actor.Behavior.Hitbox.Size.Y;
+        actor.Behavior = SquishedRexBehavior(actor.XSpeed, useNativePostBanzaiState);
+        if (!useNativePostBanzaiState)
+        {
+            actor.Y = oldBottom - actor.Behavior.Hitbox.Position.Y - actor.Behavior.Hitbox.Size.Y;
+        }
+        else
+        {
+            actor.X -= 3.0f;
+            actor.MotionFreezeFrames = NativeRexPostStompMotionFreezeFrames;
+        }
         actor.XSpeed = actor.Behavior.InitialXSpeed;
+        actor.InteractionCooldownFrames = NativeRexInteractionCooldownFrames;
         actor.Body.Position = actor.Behavior.Hitbox.Position;
         actor.Body.Size = actor.Behavior.Hitbox.Size;
         ReplaceSpriteActorVisuals(actor);
@@ -5814,9 +6015,47 @@ public partial class GameScene : Node2D
         return true;
     }
 
+    private bool TryFinalizeSquishedRex(RuntimeSpriteActor actor)
+    {
+        if (actor.SpriteId != 0xAB || actor.State != 1)
+        {
+            return false;
+        }
+
+        actor.State = 2;
+        actor.Behavior = new SpriteActorBehavior(
+            actor.Behavior.Hitbox,
+            CanInteract: false,
+            Stompable: false,
+            TerrainCollision: false,
+            Gravity: false,
+            InitialXSpeed: 0.0f,
+            TerrainHitbox: actor.Behavior.TerrainHitbox);
+        if (IsPostBanzaiRex(actor))
+        {
+            actor.X = 3258.0f;
+            actor.MotionFreezeFrames = 32;
+        }
+        actor.XSpeed = 0.0f;
+        actor.YSpeed = 0.0f;
+        actor.InteractionCooldownFrames = NativeRexInteractionCooldownFrames;
+        actor.Body.Position = actor.Behavior.Hitbox.Position;
+        actor.Body.Size = actor.Behavior.Hitbox.Size;
+        ReplaceSpriteActorVisuals(actor);
+        _lastActorEvent = "stomp:AB:dead";
+        return true;
+    }
+
+    private static bool IsPostBanzaiRex(RuntimeSpriteActor actor)
+    {
+        return actor.SpawnOffset == 0x46;
+    }
+
     private void BoostPlayerAfterSpriteStomp(RuntimeSpriteActor actor)
     {
-        _state.YSpeed = actor.SpriteId == 0xAB && (_lastFrameInput.Jump || _lastFrameInput.Spin)
+        var highBounce = actor.SpriteId == 0xAB && (_lastFrameInput.Jump || _lastFrameInput.Spin) ||
+            actor.SpriteId == 0x9F && (_lastFrameInput.Jump || _lastFrameInput.Spin || _state.JumpHeldFrames > 0);
+        _state.YSpeed = highBounce
             ? NativeSpriteStompYSpeed
             : DefaultSpriteStompYSpeed;
         _state.SubYSpeed = 0;

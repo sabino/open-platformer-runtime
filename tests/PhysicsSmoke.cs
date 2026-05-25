@@ -75,6 +75,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckRightEdgeLedgePassThroughFromRight(physics))
+        {
+            return 1;
+        }
         if (!CheckHorizontalOnlySolid(physics))
         {
             return 1;
@@ -1151,6 +1155,34 @@ public static class PhysicsSmoke
         return true;
     }
 
+    private static bool CheckRightEdgeLedgePassThroughFromRight(SmwPhysics physics)
+    {
+        var state = physics.MakeState(3040, 260, SmwPhysics.BigPowerup);
+        state.SubX = 0x10;
+        state.SubY = 0x80;
+        state.XSpeed = -35;
+        state.YSpeed = 51;
+        state.InAirState = SmwPhysics.NativeFallingInAirState;
+
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Left = true, Run = true },
+            [new Rect2(3008, 288, 32, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportLeadingFoot],
+            []);
+
+        if (state.OnGround || state.Y <= 256 || state.YSpeed == 0 || state.XSpeed >= 0)
+        {
+            Console.Error.WriteLine(
+                $"expected leftward right-edge ledge pass-through at TAS index 3013, got x={state.X}:{state.SubX:X2} y={state.Y}:{state.SubY:X2} xs={state.XSpeed} ys={state.YSpeed} ground={state.OnGround}");
+            return false;
+        }
+
+        return true;
+    }
+
     private static bool CheckSlopeCeiling(SmwPhysics physics)
     {
         var slopes = new List<SmwPhysics.SlopeSurface>
@@ -1208,6 +1240,26 @@ public static class PhysicsSmoke
         if (state.OnGround || state.Y <= 36 || state.YSpeed <= 0)
         {
             Console.Error.WriteLine($"expected horizontal-only solid to ignore vertical floor resolution, got y={state.Y} ys={state.YSpeed} ground={state.OnGround}");
+            return false;
+        }
+
+        state = physics.MakeState(3031, 279, SmwPhysics.BigPowerup);
+        state.SubY = 0xE0;
+        state.XSpeed = -15;
+        state.YSpeed = 70;
+        state.InAirState = SmwPhysics.NativeFallingInAirState;
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Right = true, Run = true },
+            [new Rect2(2784, 304, 256, 16)],
+            [false],
+            [false],
+            [SmwPhysics.SolidSupportLegacy],
+            []);
+        if (state.OnGround || state.XSpeed >= 0 || state.YSpeed <= 0)
+        {
+            Console.Error.WriteLine(
+                $"expected shallow horizontal-only fill row to pass during airborne fall, got x={state.X}:{state.SubX:X2} y={state.Y}:{state.SubY:X2} xs={state.XSpeed} ys={state.YSpeed} ground={state.OnGround}");
             return false;
         }
 
