@@ -242,7 +242,8 @@ public static class PhysicsSmoke
             SmwPhysics.NativeSlopePlayerTowardsPeakYSpeedTable.Length != 33 ||
             SmwPhysics.NativeSlopePlayerSnapDistanceTable.Length != 33 ||
             SmwPhysics.NativeSlopeTypeTable.Length != 33 ||
-            SmwPhysics.NativeSlopeSteepnessTable.Length != 106)
+            SmwPhysics.NativeSlopeSteepnessTable.Length != 106 ||
+            SmwPhysics.NativeGrasslandSlopeSteepnessTable.Length != 106)
         {
             Console.Error.WriteLine("expected native slope tables to match SMW table lengths");
             return false;
@@ -257,6 +258,19 @@ public static class PhysicsSmoke
             SmwPhysics.TryNativeSlopeKindForMap16(0x01EB, out _))
         {
             Console.Error.WriteLine("expected native Map16 slope-kind decode to follow SMW slope steepness table");
+            return false;
+        }
+
+        if (!SmwPhysics.TryNativeSlopeKindForMap16(0x01C7, out var defaultPipeSlope) ||
+            defaultPipeSlope != 21 ||
+            !SmwPhysics.TryNativeSlopeKindForMap16(0x01C7, 7, out var grasslandPipeSlope) ||
+            grasslandPipeSlope != 12 ||
+            !SmwPhysics.TryNativeSlopeKindForMap16(0x01C7, 3, out var cavePipeSlope) ||
+            cavePipeSlope != 21 ||
+            !SmwPhysics.TryNativeSlopeKindForMap16(0x01C6, 7, out var grasslandPipeNeighbor) ||
+            grasslandPipeNeighbor != 13)
+        {
+            Console.Error.WriteLine("expected tileset-specific slope-kind decode to switch level 105 diagonal pipe tiles to the grassland table");
             return false;
         }
 

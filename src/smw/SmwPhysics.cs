@@ -195,6 +195,21 @@ public sealed class SmwPhysics
         8, 9, 10, 11, 12, 13,
     ];
 
+    public static readonly byte[] NativeGrasslandSlopeSteepnessTable =
+    [
+        0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
+        2, 2, 2, 2, 2, 3, 3, 3, 3, 3,
+        4, 4, 4, 4, 4, 5, 5, 5, 5, 5,
+        6, 6, 6, 6, 6, 7, 7, 7, 7, 7,
+        8, 8, 8, 8, 8, 9, 9, 9, 9, 9,
+        10, 10, 10, 10, 10, 11, 11, 11, 11, 11,
+        12, 12, 12, 12, 12, 13, 13, 13, 13, 13,
+        14, 15, 16, 17, 3, 3, 4, 4, 9, 9,
+        10, 10, 12, 12, 13, 13, 12, 13, 13, 12,
+        22, 23, 28, 29, 30, 31, 24, 25, 26, 27,
+        8, 9, 10, 11, 12, 13,
+    ];
+
     private static readonly byte[] NativeSlopeShapeTable = Convert.FromHexString(
         "0F0F0F0F0E0E0E0E0D0D0D0D0C0C0C0C0B0B0B0B0A0A0A0A09090909080808080707070706060606050505050404040403030303020202020101010100000000" +
         "000000000101010102020202030303030404040405050505060606060707070708080808090909090A0A0A0A0B0B0B0B0C0C0C0C0D0D0D0D0E0E0E0E0F0F0F0F" +
@@ -442,7 +457,7 @@ public sealed class SmwPhysics
         {
             state.PostLandingAirDragFrames = Math.Max(state.PostLandingAirDragFrames, PostLandingAirDragFrameCount);
         }
-        if (state.OnGround && !state.NativeSlopeOverrunGround)
+        if (state.OnGround && !state.NativeSlopeOverrunGround && !ShouldPreserveLooseSteepPipeAirState(state))
         {
             state.InAirState = 0;
         }
@@ -469,7 +484,8 @@ public sealed class SmwPhysics
             state.Powerup != SmallPowerup &&
             slopePlayerBeforeJump == 0x28 &&
             state.XSpeed > 0 &&
-            state.XSpeed <= 8)
+            state.XSpeed <= 8 &&
+            state.SubXSpeed == 0)
         {
             AddXAccel(ref state, 0x0080);
         }
@@ -627,15 +643,28 @@ public sealed class SmwPhysics
 
     public static bool TryNativeSlopeKindForMap16(int map16, out int kind)
     {
+        return TryNativeSlopeKindForMap16(map16, useGrasslandSlopeOverrides: false, out kind);
+    }
+
+    public static bool TryNativeSlopeKindForMap16(int map16, int tileset, out int kind)
+    {
+        return TryNativeSlopeKindForMap16(map16, tileset is 0 or 7, out kind);
+    }
+
+    private static bool TryNativeSlopeKindForMap16(int map16, bool useGrasslandSlopeOverrides, out int kind)
+    {
         var low = map16 & 0xFF;
         var index = low - 0x6E;
-        if (index < 0 || index >= NativeSlopeSteepnessTable.Length)
+        var table = useGrasslandSlopeOverrides
+            ? NativeGrasslandSlopeSteepnessTable
+            : NativeSlopeSteepnessTable;
+        if (index < 0 || index >= table.Length)
         {
             kind = 32;
             return false;
         }
 
-        kind = NativeSlopeSteepnessTable[index];
+        kind = table[index];
         return kind >= 0 && kind < NativeSlopePlayerSnapDistanceTable.Length;
     }
 
@@ -873,7 +902,8 @@ public sealed class SmwPhysics
             return 0;
         }
 
-        if (absSpeed >= PMeterSprintThreshold && (state.OnGround || state.RunningTakeoff))
+        if (absSpeed >= PMeterSprintThreshold &&
+            ((state.OnGround && state.InAirState == 0) || state.RunningTakeoff))
         {
             return 2;
         }
@@ -1030,6 +1060,14 @@ public sealed class SmwPhysics
             state.XSpeed >= 0x31;
     }
 
+    private static bool ShouldPreserveLooseSteepPipeAirState(PlayerState state)
+    {
+        return state.OnGround &&
+            state.SlopeKind is >= 20 and <= 23 &&
+            state.LooseSteepSlopeGroundFrames > 1 &&
+            state.InAirState != 0;
+    }
+
     private static int NativeDirectionBit(int dir)
     {
         return dir > 0 ? 1 : 0;
@@ -1039,7 +1077,7 @@ public sealed class SmwPhysics
     {
         var jumpStarted = input.JumpPressed || input.SpinPressed;
         var jumpedThisFrame = false;
-        if (state.OnGround && !state.NativeSlopeOverrunGround && jumpStarted)
+        if (state.OnGround && !state.NativeSlopeOverrunGround && state.InAirState == 0 && jumpStarted)
         {
             state.YSpeed = JumpYSpeedFor(state.XSpeed, input.SpinPressed);
             state.OnGround = false;
@@ -1058,7 +1096,10 @@ public sealed class SmwPhysics
             state.SpinJump = false;
             state.JumpHeldFrames = 0;
             state.CapeFloatFrames = 0;
-            state.InAirState = 0;
+            if (!ShouldPreserveLooseSteepPipeAirState(state))
+            {
+                state.InAirState = 0;
+            }
             if (state.SlopeKind >= 0)
             {
                 return false;

@@ -264,6 +264,7 @@ public partial class GameScene : Node2D
     private string _levelLayoutPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
     private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
     private string _levelLayer2BackgroundPath = "res://generated/smw/levels/level_105_layer2_background.png";
+    private int _currentLevelTileset = 7;
     private int _currentLevelMusicIndex;
     private string _currentLevelMusicPreview = "Level";
     private float _cameraX;
@@ -1487,6 +1488,11 @@ public partial class GameScene : Node2D
         }
 
         var header = headerVariant.AsGodotDictionary();
+        if (header.TryGetValue("tileset", out var tilesetVariant))
+        {
+            _currentLevelTileset = tilesetVariant.AsInt32();
+        }
+
         if (header.TryGetValue("music_index", out var musicVariant))
         {
             _currentLevelMusicIndex = musicVariant.AsInt32();
@@ -3424,7 +3430,7 @@ public partial class GameScene : Node2D
         return (tile.X, tile.Y, tile.Map16, IsDiagonalPipeCeilingTile(tile));
     }
 
-    private static List<SmwPhysics.SlopeSurface> BuildSlopeSurfaces(IReadOnlyList<PlacedMap16Tile> slopeTiles)
+    private List<SmwPhysics.SlopeSurface> BuildSlopeSurfaces(IReadOnlyList<PlacedMap16Tile> slopeTiles)
     {
         var slopes = new List<SmwPhysics.SlopeSurface>();
         foreach (var tile in slopeTiles)
@@ -3438,7 +3444,7 @@ public partial class GameScene : Node2D
         return slopes;
     }
 
-    private static List<SmwPhysics.SlopeSurface> BuildSpriteSlopeSurfaces(IReadOnlyList<PlacedMap16Tile> slopeTiles)
+    private List<SmwPhysics.SlopeSurface> BuildSpriteSlopeSurfaces(IReadOnlyList<PlacedMap16Tile> slopeTiles)
     {
         var slopes = new List<SmwPhysics.SlopeSurface>();
         foreach (var tile in slopeTiles)
@@ -3452,7 +3458,7 @@ public partial class GameScene : Node2D
         return slopes;
     }
 
-    private static bool TryBuildSlopeTileSurface(PlacedMap16Tile tile, out SmwPhysics.SlopeSurface slope)
+    private bool TryBuildSlopeTileSurface(PlacedMap16Tile tile, out SmwPhysics.SlopeSurface slope)
     {
         var x0 = tile.X * Map16TileSize;
         var y0 = tile.Y * Map16TileSize + LevelVisualYOffset;
@@ -3486,7 +3492,7 @@ public partial class GameScene : Node2D
         return false;
     }
 
-    private static bool TryBuildSpriteSlopeTileSurface(PlacedMap16Tile tile, out SmwPhysics.SlopeSurface slope)
+    private bool TryBuildSpriteSlopeTileSurface(PlacedMap16Tile tile, out SmwPhysics.SlopeSurface slope)
     {
         var x0 = tile.X * Map16TileSize;
         var y0 = tile.Y * Map16TileSize + LevelVisualYOffset;
@@ -3511,7 +3517,7 @@ public partial class GameScene : Node2D
         return TryBuildSlopeTileSurface(tile, out slope);
     }
 
-    private static bool TryBuildStandardSlopeTileSurface(
+    private bool TryBuildStandardSlopeTileSurface(
         PlacedMap16Tile tile,
         float x0,
         float y0,
@@ -3528,7 +3534,7 @@ public partial class GameScene : Node2D
         return false;
     }
 
-    private static SmwPhysics.SlopeSurface MakeSlopeSurface(
+    private SmwPhysics.SlopeSurface MakeSlopeSurface(
         int map16,
         float x0,
         float y0,
@@ -3536,7 +3542,7 @@ public partial class GameScene : Node2D
         float y1,
         bool ceiling = false)
     {
-        var hasNativeKind = SmwPhysics.TryNativeSlopeKindForMap16(map16, out var kind);
+        var hasNativeKind = SmwPhysics.TryNativeSlopeKindForMap16(map16, _currentLevelTileset, out var kind);
         var nativeKind = hasNativeKind ? kind : 32;
         var snapDistance = hasNativeKind
             ? SmwPhysics.NativeSlopeSnapDistanceForKind(nativeKind)
