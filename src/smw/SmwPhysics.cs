@@ -38,6 +38,8 @@ public sealed class SmwPhysics
     public const int NativeFallingInAirState = 0x24;
     private const int CapeFloatFrameCount = 0x10;
     private const int PostLandingAirDragFrameCount = 48;
+    private const int MaxGroundedLeadingFootCarryFrames = 8;
+    private const float GroundedLeadingFootEdgeDropSlack = 0.25f;
     private const float StepUpTolerance = 12.0f;
     private const float MaxHorizontalCollisionCorrection = 64.0f;
     private const float NativeHorizontalWallSlack = 1.0f;
@@ -1491,6 +1493,21 @@ public sealed class SmwPhysics
         var supported = supportX >= solid.Position.X && supportX < solid.Position.X + solid.Size.X;
         if (supported)
         {
+            if (supportMode == SolidSupportLeadingFoot &&
+                state.InAirState == 0 &&
+                state.LeadingFootCarryFrames >= MaxGroundedLeadingFootCarryFrames)
+            {
+                var solidRight = solid.Position.X + solid.Size.X;
+                if (state.XSpeed > 0 && solidRight - supportX <= GroundedLeadingFootEdgeDropSlack)
+                {
+                    return false;
+                }
+                if (state.XSpeed < 0 && supportX - solid.Position.X <= GroundedLeadingFootEdgeDropSlack)
+                {
+                    return false;
+                }
+            }
+
             return true;
         }
 

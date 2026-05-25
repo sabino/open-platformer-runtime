@@ -79,6 +79,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckGroundedLeadingFootEdgeDrop(physics))
+        {
+            return 1;
+        }
         if (!CheckHorizontalOnlySolid(physics))
         {
             return 1;
@@ -1201,6 +1205,59 @@ public static class PhysicsSmoke
         {
             Console.Error.WriteLine(
                 $"expected leftward right-edge ledge pass-through at TAS index 3013, got x={state.X}:{state.SubX:X2} y={state.Y}:{state.SubY:X2} xs={state.XSpeed} ys={state.YSpeed} ground={state.OnGround}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckGroundedLeadingFootEdgeDrop(SmwPhysics physics)
+    {
+        var continuousState = physics.MakeState(134, 288, SmwPhysics.SmallPowerup);
+        continuousState.SubX = 0x40;
+        continuousState.XSpeed = 6;
+        continuousState.YSpeed = 6;
+        continuousState.OnGround = true;
+        continuousState.InAirState = 0;
+        continuousState.LeadingFootCarryFrames = 8;
+
+        physics.Step(
+            ref continuousState,
+            new SmwPhysics.FrameInput(),
+            [new Rect2(112, 320, 64, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportLeadingFoot],
+            []);
+
+        if (!continuousState.OnGround || continuousState.Y != 288)
+        {
+            Console.Error.WriteLine(
+                $"expected continuous leading-foot floor to stay grounded, got x={continuousState.X}:{continuousState.SubX:X2} y={continuousState.Y}:{continuousState.SubY:X2} ground={continuousState.OnGround}");
+            return false;
+        }
+
+        var edgeState = physics.MakeState(3498, 288, SmwPhysics.SmallPowerup);
+        edgeState.SubX = 0x20;
+        edgeState.XSpeed = 14;
+        edgeState.YSpeed = 6;
+        edgeState.OnGround = true;
+        edgeState.InAirState = 0;
+        edgeState.LeadingFootCarryFrames = 8;
+
+        physics.Step(
+            ref edgeState,
+            new SmwPhysics.FrameInput(),
+            [new Rect2(3456, 320, 48, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportLeadingFoot],
+            []);
+
+        if (edgeState.OnGround || edgeState.YFloat <= 288.0f || edgeState.YSpeed <= 6)
+        {
+            Console.Error.WriteLine(
+                $"expected grounded leading-foot edge drop at post-Banzai ledge, got x={edgeState.X}:{edgeState.SubX:X2} y={edgeState.Y}:{edgeState.SubY:X2} ys={edgeState.YSpeed} ground={edgeState.OnGround}");
             return false;
         }
 
