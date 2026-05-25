@@ -19,6 +19,8 @@ public sealed class SmwPhysics
     public const int SolidSupportLegacy = 0;
     public const int SolidSupportLeadingFoot = 1;
     public const int SolidSupportFullOverlap = 2;
+    public const int SolidSupportVerticalPipe = 3;
+    public const int SolidSupportVerticalPipeShaft = 4;
     public const int SmallPowerup = 0;
     public const int BigPowerup = 1;
     public const int CapePowerup = 2;
@@ -51,6 +53,7 @@ public sealed class SmwPhysics
     private const float StepUpTolerance = 12.0f;
     private const float MaxHorizontalCollisionCorrection = 64.0f;
     private const float NativeHorizontalWallSlack = 1.0f;
+    private const float NativeVerticalPipePoweredAirRightWallSlack = 2.1875f;
     private const int NativeFastAirborneWallSnapSpeed = 0x10;
     private const int NativeRightWallPostCorrectionNibble = 0x02;
     private const int NativeLeftWallPostCorrectionNibble = 0x0D;
@@ -1266,6 +1269,10 @@ public sealed class SmwPhysics
                 {
                     continue;
                 }
+                if (supportMode == SolidSupportVerticalPipeShaft && state.OnGround)
+                {
+                    continue;
+                }
                 if (allowStepUp && TryStepUp(ref state, solid, rect, supportMode))
                 {
                     rect = PlayerRect(state);
@@ -1282,6 +1289,7 @@ public sealed class SmwPhysics
                 }
 
                 var preserveSubXSpeed = !state.OnGround && allowVerticalForWallSlack;
+                var preserveResolvedSubX = false;
                 if (state.XSpeed > 0)
                 {
                     if (preserveSubXSpeed &&
@@ -1309,12 +1317,27 @@ public sealed class SmwPhysics
                     {
                         var wallSlack = !state.OnGround && allowVerticalForWallSlack ? NativeHorizontalWallSlack : 0.0f;
                         var resolvedX = solid.Position.X - PlayerWidth + wallSlack;
+                        if (supportMode == SolidSupportVerticalPipe &&
+                            preserveSubXSpeed &&
+                            state.Powerup != SmallPowerup &&
+                            state.YSpeed >= VerticalMaxFallTable[0])
+                        {
+                            resolvedX = solid.Position.X - PlayerWidth + NativeVerticalPipePoweredAirRightWallSlack;
+                            preserveResolvedSubX = true;
+                        }
                         if (MathF.Abs(resolvedX - state.XFloat) > MaxHorizontalCollisionCorrection)
                         {
                             continue;
                         }
 
-                        state.X = (int)MathF.Round(resolvedX);
+                        if (preserveResolvedSubX)
+                        {
+                            SetXFloat(ref state, resolvedX);
+                        }
+                        else
+                        {
+                            state.X = (int)MathF.Round(resolvedX);
+                        }
                     }
                 }
                 else if (state.XSpeed < 0)
@@ -1352,7 +1375,8 @@ public sealed class SmwPhysics
                         state.X = (int)MathF.Round(resolvedX);
                     }
                 }
-                if (!preserveSubXSpeed || Math.Abs(state.XSpeed) >= NativeFastAirborneWallSnapSpeed)
+                if (!preserveResolvedSubX &&
+                    (!preserveSubXSpeed || Math.Abs(state.XSpeed) >= NativeFastAirborneWallSnapSpeed))
                 {
                     state.SubX = 0;
                 }

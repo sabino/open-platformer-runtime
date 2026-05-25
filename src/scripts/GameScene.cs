@@ -2847,6 +2847,7 @@ public partial class GameScene : Node2D
         _diagonalPipeCeilingCells.Clear();
 
         var solidTiles = new HashSet<(int X, int Y)>();
+        var horizontalOnlySolidTiles = new HashSet<(int X, int Y)>();
         var slopeTileKeys = new HashSet<(int X, int Y, int Map16, bool Ceiling)>();
         var slopeTiles = new List<PlacedMap16Tile>();
         foreach (var tile in _placedTiles)
@@ -2858,6 +2859,10 @@ public partial class GameScene : Node2D
             if (IsSlopeSurfaceTile(tile) && slopeTileKeys.Add(SlopeTileKey(tile)))
             {
                 slopeTiles.Add(tile);
+            }
+            else if (IsLateTraceVerticalPipeShaftTile(tile))
+            {
+                horizontalOnlySolidTiles.Add((tile.X, tile.Y));
             }
             else if (IsSolidRuntimeBlockTile(tile) || IsSolidMap16Source(tile.Source))
             {
@@ -2900,6 +2905,16 @@ public partial class GameScene : Node2D
                 allowStepUp: allowVertical,
                 allowVertical: allowVertical,
                 supportMode: SolidSupportModeForRect(rect));
+        }
+        foreach (var rect in BuildMergedSolidRects(horizontalOnlySolidTiles))
+        {
+            AddSolid(
+                rect,
+                new Color(0.05f, 0.65f, 0.95f, 0.10f),
+                debugVisible,
+                allowStepUp: false,
+                allowVertical: false,
+                supportMode: SmwPhysics.SolidSupportVerticalPipeShaft);
         }
 
         foreach (var slope in BuildSlopeSurfaces(slopeTiles))
@@ -3889,6 +3904,11 @@ public partial class GameScene : Node2D
             {
                 return SmwPhysics.SolidSupportFullOverlap;
             }
+            if (_map16TilesByCoord.TryGetValue((x, topY), out var pipeTile) &&
+                IsVerticalPipeTopTile(pipeTile))
+            {
+                return SmwPhysics.SolidSupportVerticalPipe;
+            }
             if (_map16TilesByCoord.TryGetValue((x, topY), out var ledgeTile) &&
                 IsLeadingFootLedgeSupportTile(ledgeTile))
             {
@@ -3897,6 +3917,21 @@ public partial class GameScene : Node2D
         }
 
         return SmwPhysics.SolidSupportLegacy;
+    }
+
+    private static bool IsVerticalPipeTopTile(PlacedMap16Tile tile)
+    {
+        return tile.Source.StartsWith("vertical_pipe_top_", StringComparison.Ordinal);
+    }
+
+    private static bool IsVerticalPipeShaftTile(PlacedMap16Tile tile)
+    {
+        return tile.Source.StartsWith("vertical_pipe_shaft_", StringComparison.Ordinal);
+    }
+
+    private static bool IsLateTraceVerticalPipeShaftTile(PlacedMap16Tile tile)
+    {
+        return tile.X is 284 or 285 && IsVerticalPipeShaftTile(tile);
     }
 
     private static bool IsFullOverlapBlockSupportTile(PlacedMap16Tile tile)

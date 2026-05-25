@@ -87,6 +87,10 @@ public static class PhysicsSmoke
         {
             return 1;
         }
+        if (!CheckVerticalPipePoweredAirWallContact(physics))
+        {
+            return 1;
+        }
         if (!CheckHorizontalOnlySolid(physics))
         {
             return 1;
@@ -1353,6 +1357,35 @@ public static class PhysicsSmoke
         {
             Console.Error.WriteLine(
                 $"expected native block-edge bridge to release instead of buffering a ground jump or side wall, got x={state.X}:{state.SubX:X2} xs={state.XSpeed} y={state.Y}:{state.SubY:X2} ys={state.YSpeed} ground={state.OnGround}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool CheckVerticalPipePoweredAirWallContact(SmwPhysics physics)
+    {
+        var state = physics.MakeState(4531, 232, SmwPhysics.FirePowerup);
+        state.SubX = 0x20;
+        state.SubY = 0x70;
+        state.XSpeed = 37;
+        state.SubXSpeed = 0;
+        state.YSpeed = 70;
+        state.InAirState = SmwPhysics.NativeFallingInAirState;
+
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Right = true, Run = true },
+            [new Rect2(4544, 256, 32, 16)],
+            [true],
+            [true],
+            [SmwPhysics.SolidSupportVerticalPipe],
+            []);
+
+        if (state.X != 4532 || state.SubX != 0x30 || state.XSpeed != 1 || state.SubXSpeed != 0x80)
+        {
+            Console.Error.WriteLine(
+                $"expected native powered vertical-pipe air wall anchor, got x={state.X}:{state.SubX:X2} xs={state.XSpeed}:{state.SubXSpeed:X2}");
             return false;
         }
 
