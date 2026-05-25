@@ -13,6 +13,7 @@ public sealed class SmwPhysics
     private const int SteepPipeLooseGroundFirstCarryYSpeed = 0x3D;
     private const int SteepPipeLooseGroundPreJumpYSpeed = -0x1A;
     private const int NativeSlopeOverrunLandingSubpixelCorrection = -0x110;
+    private const int DuckingSteepRightSlopeLaunchCooldownFrames = 48;
 
     public const int PlayerWidth = 14;
     public const int SolidSupportLegacy = 0;
@@ -241,6 +242,7 @@ public sealed class SmwPhysics
         public int LeadingFootCarryFrames;
         public bool NativeSlopeOverrunGround;
         public int PreserveGroundYSpeedFrames;
+        public int DuckingSteepRightSlopeLaunchCooldownFrames;
 
         public float XFloat => X + SubX / 256.0f;
         public float YFloat => Y + SubY / 256.0f;
@@ -391,6 +393,11 @@ public sealed class SmwPhysics
         var preserveTerrainlessGround = state.OnGround && solids.Count == 0 && slopes.Count == 0;
         var wasOnGround = state.OnGround;
         var usePostLandingAirDrag = state.PostLandingAirDragFrames > 0;
+        if (state.DuckingSteepRightSlopeLaunchCooldownFrames > 0)
+        {
+            state.DuckingSteepRightSlopeLaunchCooldownFrames--;
+        }
+
         var preservedSlopeKind = state.SlopeKind;
         var preservedSlopePlayer = state.SlopePlayer;
         var preservedSlopeType = state.SlopeType;
@@ -820,6 +827,18 @@ public sealed class SmwPhysics
 
                 if (ShouldApplyDuckingSteepRightDownhillCarry(state, input, suppressedDirectionalInput))
                 {
+                    if (ShouldApplyDuckingSteepRightSlopeLaunch(state))
+                    {
+                        state.X -= 1;
+                        state.SubX = 0x30;
+                        state.YSpeed = -0x30;
+                        state.SubYSpeed = 0;
+                        state.XSpeed = 0x31;
+                        state.SubXSpeed = 0;
+                        state.DuckingSteepRightSlopeLaunchCooldownFrames = DuckingSteepRightSlopeLaunchCooldownFrames;
+                        return;
+                    }
+
                     AddXAccel(ref state, 0x0180);
                     return;
                 }
@@ -1003,6 +1022,12 @@ public sealed class SmwPhysics
     {
         return suppressedDirectionalInput &&
             ShouldUseFlatHorizontalForDuckingSteepRightSlopeInput(state);
+    }
+
+    private static bool ShouldApplyDuckingSteepRightSlopeLaunch(PlayerState state)
+    {
+        return state.DuckingSteepRightSlopeLaunchCooldownFrames <= 0 &&
+            state.XSpeed >= 0x31;
     }
 
     private static int NativeDirectionBit(int dir)
@@ -1397,7 +1422,7 @@ public sealed class SmwPhysics
                 < 0 => state.XFloat + PlayerWidth - 5.0f,
                 _ => state.XFloat + PlayerWidth * 0.5f,
             };
-        if (!useLeadingFootSupport && supportMode == SolidSupportLeadingFoot && supportX >= solid.Position.X + solid.Size.X - 1.0f)
+        if (!useLeadingFootSupport && supportMode == SolidSupportLeadingFoot && supportX >= solid.Position.X + solid.Size.X + 1.0f)
         {
             return false;
         }
@@ -1761,7 +1786,7 @@ public sealed class SmwPhysics
             return false;
         }
 
-        var localX = ((state.X & 0x0F) + 8) & 0x0F;
+        var localX = NativeDuckingSteepRightSlopeLocalX(state);
         var shape = unchecked((sbyte)NativeSlopeShapeTable[slope.NativeSlopeKind * 16 + localX]);
         var pushOut = (state.Y & 0x0F) - shape;
         if (pushOut < 0 || pushOut >= NativeSlopeSnapDistanceForKind(slope.NativeSlopeKind))
@@ -1772,6 +1797,18 @@ public sealed class SmwPhysics
         var nativeAnchorY = state.Y - pushOut;
         adjustedFloorY = nativeAnchorY + PlayerCollisionYOffsetFor(state) + PlayerCollisionHeightFor(state);
         return true;
+    }
+
+    private static int NativeDuckingSteepRightSlopeLocalX(PlayerState state)
+    {
+        var nativeX = state.X;
+        if (state.SubX <= 0x20 ||
+            (state.XSpeed >= 0x1D && state.SubX <= 0xA0))
+        {
+            nativeX--;
+        }
+
+        return ((nativeX & 0x0F) + 8) & 0x0F;
     }
 
     private static bool TryResolvePlayerFloorSlopeFromAbove(

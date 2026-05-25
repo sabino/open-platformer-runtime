@@ -828,6 +828,7 @@ public partial class GameScene : Node2D
         public int WakeDelayFrames { get; set; }
         public int WakeScreen { get; init; }
         public int ContentIndex { get; init; }
+        public int SpawnOffset { get; init; }
         public required List<Node> Visuals { get; init; }
         public required SpriteActorBehavior Behavior { get; set; }
         public int State { get; set; }
@@ -2261,6 +2262,7 @@ public partial class GameScene : Node2D
             XSpeed = behavior.InitialXSpeed,
             WakeScreen = spawn.Screen,
             ContentIndex = WorldTileXNibble(spawn.X) & 0x03,
+            SpawnOffset = spawn.Offset,
             MotionFrame = InitialSpriteMotionFrame(spawn),
             Visuals = visuals,
             Behavior = behavior,
@@ -4928,6 +4930,14 @@ public partial class GameScene : Node2D
                 {
                     continue;
                 }
+                if (rect.Position.Y + rect.Size.Y <= solid.Position.Y + 0.5f)
+                {
+                    continue;
+                }
+                if (MathF.Abs(rect.Position.Y - solid.Position.Y) <= 0.5f)
+                {
+                    continue;
+                }
 
                 if (actor.XSpeed > 0)
                 {
@@ -5450,6 +5460,7 @@ public partial class GameScene : Node2D
             YSpeed = initialYSpeed,
             WakeScreen = wakeScreen,
             ContentIndex = WorldTileXNibble(x) & 0x03,
+            SpawnOffset = -1,
             Active = true,
             AlwaysActive = true,
             MotionFrame = 0,
@@ -9141,6 +9152,7 @@ public partial class GameScene : Node2D
         return
             $"track_9f={DescribeTrackedActor(0x9F)} " +
             $"track_ab={DescribeTrackedActor(0xAB)} " +
+            $"track_ab_all={DescribeTrackedActors(0xAB, 6)} " +
             $"track_74={DescribeTrackedActor(0x74)} " +
             $"track_83={DescribeTrackedActor(0x83)} " +
             $"track_bd={DescribeTrackedActor(0xBD)}";
@@ -9155,6 +9167,19 @@ public partial class GameScene : Node2D
         return actor == null
             ? "none"
             : $"{actor.State}:{actor.X:0.00},{actor.Y:0.00}:{actor.XSpeed:0.00},{actor.YSpeed:0.00}:{(IsSpriteActorDebugActive(actor) ? 1 : 0)}";
+    }
+
+    private string DescribeTrackedActors(int spriteId, int count)
+    {
+        var playerCenter = _physics.PlayerRect(_state).GetCenter();
+        var actors = _spriteActors
+            .Where(actor => actor.Alive && actor.SpriteId == spriteId)
+            .OrderBy(actor => actor.Rect.GetCenter().DistanceSquaredTo(playerCenter))
+            .Take(count)
+            .Select(actor =>
+                $"{actor.SpawnOffset:X}:{actor.State}:{actor.X:0.00},{actor.Y:0.00}:{actor.XSpeed:0.00},{actor.YSpeed:0.00}:{(IsSpriteActorDebugActive(actor) ? 1 : 0)}");
+        var description = string.Join(";", actors);
+        return string.IsNullOrEmpty(description) ? "none" : description;
     }
 
     private RuntimeSpriteActor? FindNearestActor()
