@@ -1415,8 +1415,7 @@ public sealed class SmwPhysics
                         state.X = (int)MathF.Round(resolvedX);
                     }
                 }
-                if (!preserveResolvedSubX &&
-                    (!preserveSubXSpeed || Math.Abs(state.XSpeed) >= NativeFastAirborneWallSnapSpeed))
+                if (!preserveResolvedSubX && !preserveSubXSpeed)
                 {
                     state.SubX = 0;
                 }

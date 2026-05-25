@@ -1492,6 +1492,32 @@ public static class PhysicsSmoke
             return false;
         }
 
+        state = physics.MakeState(1890, 277, SmwPhysics.BigPowerup);
+        state.SubX = 0x20;
+        state.SubY = 0x50;
+        state.XSpeed = 36;
+        state.YSpeed = -81;
+        state.InAirState = SmwPhysics.NativeNormalJumpInAirState;
+        physics.Step(
+            ref state,
+            new SmwPhysics.FrameInput { Right = true, Run = true, Jump = true },
+            [
+                new Rect2(1904, 272, 16, 16),
+                new Rect2(1904, 288, 64, 16),
+                new Rect2(1904, 304, 16, 16),
+            ],
+            [true, true, true],
+            [true, true, true],
+            [SmwPhysics.SolidSupportLegacy, SmwPhysics.SolidSupportLegacy, SmwPhysics.SolidSupportLegacy],
+            []);
+        if (state.X != 1891 || state.SubX != 0x60 || state.XSpeed != 1 || state.SubXSpeed != 0x80 ||
+            state.Y != 272 || state.SubY != 0x40 || state.YSpeed != -78)
+        {
+            Console.Error.WriteLine(
+                $"expected airborne block-column wall contact to preserve native X subpixel, got x={state.X}:{state.SubX:X2} y={state.Y}:{state.SubY:X2} xs={state.XSpeed}:{state.SubXSpeed:X2} ys={state.YSpeed}");
+            return false;
+        }
+
         return true;
     }
 
