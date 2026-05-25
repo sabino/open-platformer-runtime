@@ -771,6 +771,12 @@ public partial class GameScene : Node2D
         int SourceX,
         int SourceY,
         string Source);
+    private readonly record struct PipeEntranceCandidate(
+        int Score,
+        int ObjectId,
+        int Screen,
+        int TileX,
+        int TileY);
     private readonly record struct ScriptedInputSegment(int Frames, SmwPhysics.FrameInput Input);
     private readonly record struct DebugCheckpoint(
         SmwPhysics.PlayerState State,
@@ -4112,6 +4118,7 @@ public partial class GameScene : Node2D
 
     private void AddObjectMappedPipeEntrances(int screen)
     {
+        PipeEntranceCandidate? best = null;
         foreach (var obj in _levelObjects)
         {
             if (!TryGetObjectPlacement(obj, out var placement))
@@ -4127,26 +4134,63 @@ public partial class GameScene : Node2D
 
             var objectId = ReadInt(obj, "object_id", -1);
             var sizeOrType = ReadInt(obj, "size_or_type", 0);
+            var score = ScreenExitPipeObjectScore(objectId, sizeOrType);
+            if (score == null)
+            {
+                continue;
+            }
+
             var tileX = ReadInt(placement, "x_tile", 0);
             var tileY = ReadInt(placement, "y_tile", 0);
-
-            if (objectId == 0x0F && (sizeOrType & 0x0F) != 0)
+            if (best == null || score.Value < best.Value.Score)
             {
-                AddVerticalPipeEntranceFromObject(screen, tileX, tileY);
-                continue;
-            }
-
-            if (objectId == 0x10 && ((sizeOrType >> 4) & 0x0F) != 0)
-            {
-                AddHorizontalPipeEntranceFromObject(screen, tileX, tileY);
-                continue;
-            }
-
-            if (objectId == 0x39)
-            {
-                AddDiagonalPipeEntrance(screen);
+                best = new PipeEntranceCandidate(score.Value, objectId, screen, tileX, tileY);
             }
         }
+
+        if (best == null)
+        {
+            return;
+        }
+
+        if (best.Value.ObjectId == 0x0F)
+        {
+            AddVerticalPipeEntranceFromObject(best.Value.Screen, best.Value.TileX, best.Value.TileY);
+            return;
+        }
+
+        if (best.Value.ObjectId == 0x10)
+        {
+            AddHorizontalPipeEntranceFromObject(best.Value.Screen, best.Value.TileX, best.Value.TileY);
+            return;
+        }
+
+        if (best.Value.ObjectId == 0x39)
+        {
+            AddDiagonalPipeEntranceFromObject(best.Value.Screen, best.Value.TileX, best.Value.TileY);
+        }
+    }
+
+    private static int? ScreenExitPipeObjectScore(int objectId, int sizeOrType)
+    {
+        if (objectId == 0x0F)
+        {
+            var type = sizeOrType & 0x0F;
+            if (type == 0)
+            {
+                return null;
+            }
+
+            return type == 1 ? 0 : 2;
+        }
+
+        if (objectId == 0x10)
+        {
+            var type = (sizeOrType >> 4) & 0x0F;
+            return type == 0 ? null : 3;
+        }
+
+        return objectId == 0x39 ? 4 : null;
     }
 
     private bool IsBlockedExitPipeCap(PlacedMap16Tile pipeTopLeft)
@@ -4202,6 +4246,22 @@ public partial class GameScene : Node2D
         return preferredSource;
     }
 
+    private void AddDiagonalPipeEntranceFromObject(int screen, int tileX, int tileY)
+    {
+        var topLeft = TileToWorld(tileX, tileY);
+        var rect = new Rect2(
+            topLeft,
+            new Vector2(Map16TileSize * 3.0f, Map16TileSize * 3.0f));
+        _pipeEntrances.Add(new PipeEntrance(
+            rect,
+            screen,
+            Horizontal: false,
+            Kind: "diagonal",
+            tileX,
+            tileY,
+            PipeSourceAt(tileX, tileY, "right_diagonal_pipe")));
+    }
+
     private static bool TryGetObjectPlacement(
         Godot.Collections.Dictionary obj,
         out Godot.Collections.Dictionary placement)
@@ -4228,106 +4288,6 @@ public partial class GameScene : Node2D
                 IsSpinJumpBreakableTurnBlock(leftCap)) ||
             (_map16TilesByCoord.TryGetValue((pipeTopLeftX + 1, pipeTopLeftY - 2), out var rightCap) &&
                 IsSpinJumpBreakableTurnBlock(rightCap));
-    }
-
-    private void AddDiagonalPipeEntrance(int screen)
-    {
-        var diagonalTiles = new HashSet<(int X, int Y)>();
-        foreach (var tile in _placedTiles)
-        {
-            if (tile.Source == "right_diagonal_pipe")
-            {
-                diagonalTiles.Add((tile.X, tile.Y));
-            }
-        }
-
-        if (diagonalTiles.Count == 0)
-        {
-            return;
-        }
-
-        var visited = new HashSet<(int X, int Y)>();
-        List<(int X, int Y)>? bestCluster = null;
-        foreach (var tile in diagonalTiles)
-        {
-            if (visited.Contains(tile))
-            {
-                continue;
-            }
-
-            var cluster = FloodDiagonalPipeCluster(tile, diagonalTiles, visited);
-            if (!cluster.Exists(cell => cell.X / 16 == screen))
-            {
-                continue;
-            }
-
-            if (bestCluster == null || MaxTileX(cluster) > MaxTileX(bestCluster))
-            {
-                bestCluster = cluster;
-            }
-        }
-
-        if (bestCluster == null)
-        {
-            return;
-        }
-
-        var maxX = bestCluster.Max(cell => cell.X);
-        var minY = bestCluster.Min(cell => cell.Y);
-        var topLeft = TileToWorld(maxX - 2, minY);
-        var rect = new Rect2(
-            topLeft,
-            new Vector2(Map16TileSize * 3.0f, Map16TileSize * 3.0f));
-        _pipeEntrances.Add(new PipeEntrance(
-            rect,
-            screen,
-            Horizontal: false,
-            Kind: "diagonal",
-            maxX,
-            minY,
-            "right_diagonal_pipe"));
-    }
-
-    private static List<(int X, int Y)> FloodDiagonalPipeCluster(
-        (int X, int Y) start,
-        HashSet<(int X, int Y)> diagonalTiles,
-        HashSet<(int X, int Y)> visited)
-    {
-        var cluster = new List<(int X, int Y)>();
-        var queue = new Queue<(int X, int Y)>();
-        queue.Enqueue(start);
-        visited.Add(start);
-
-        while (queue.Count > 0)
-        {
-            var tile = queue.Dequeue();
-            cluster.Add(tile);
-            for (var dy = -1; dy <= 1; dy++)
-            {
-                for (var dx = -1; dx <= 1; dx++)
-                {
-                    if (dx == 0 && dy == 0)
-                    {
-                        continue;
-                    }
-
-                    var next = (tile.X + dx, tile.Y + dy);
-                    if (!diagonalTiles.Contains(next) || !visited.Add(next))
-                    {
-                        continue;
-                    }
-
-                    queue.Enqueue(next);
-                }
-            }
-        }
-
-        return cluster;
-    }
-
-    private static int MaxTileX(List<(int X, int Y)> cluster)
-    {
-        return cluster.Max(cell => cell.X);
     }
 
     private void AddScreenLine(int index)
