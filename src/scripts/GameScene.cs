@@ -86,12 +86,14 @@ public partial class GameScene : Node2D
     private const int NativeNormalCoinPickupCooldownFrames = 17;
     private const int NativeUpperCoinPickupCooldownFrames = 7;
     private const float NativeUnderworldRightWallAirContactX = 370.4375f;
-    private const int JumpingPiranhaCycleFrames = 192;
-    private const int JumpingPiranhaHiddenFrames = 48;
-    private const int JumpingPiranhaRiseFrames = 24;
-    private const int JumpingPiranhaExtendedFrames = 48;
-    private const int JumpingPiranhaFallFrames = 24;
-    private const float JumpingPiranhaTravelPixels = 32.0f;
+    private const int JumpingPiranhaHiddenWaitFrames = 64;
+    private const float JumpingPiranhaWakeLeftPixels = 27.0f;
+    private const float JumpingPiranhaWakeRightPixels = 28.0f;
+    private const float JumpingPiranhaInitialYSpeed = -4.0f;
+    private const float JumpingPiranhaRiseGravity = 0.125f;
+    private const float JumpingPiranhaRiseEndYSpeed = -1.0f;
+    private const float JumpingPiranhaFallGravity = 0.0625f;
+    private const float JumpingPiranhaMaxFallSpeed = 0.5f;
     private const int WingedQuestionBlockCycleFrames = 64;
     private const float SolidBlockActorSideProbeDepth = 4.0f;
     private const float SolidBlockActorSideSnapInset = 1.5625f;
@@ -2476,11 +2478,12 @@ public partial class GameScene : Node2D
     {
         var color = SpriteActorColor(spawn.SpriteId);
         var behavior = SpriteActorBehaviorFor(spawn.SpriteId);
+        var actorX = spawn.X + SpriteActorSpawnXOffsetFor(spawn.SpriteId);
         var actorY = spawn.Y + SpriteActorSpawnYOffsetFor(spawn.SpriteId);
         var node = new Node2D
         {
             Name = $"Sprite_{spawn.SpriteId:X2}_{spawn.Offset:X2}",
-            Position = new Vector2(spawn.X, actorY),
+            Position = new Vector2(actorX, actorY),
             ZIndex = 6,
             Visible = _debugActorVisualsEnabled,
         };
@@ -2510,9 +2513,9 @@ public partial class GameScene : Node2D
             Node = node,
             Body = body,
             SpriteId = spawn.SpriteId,
-            X = spawn.X,
+            X = actorX,
             Y = actorY,
-            PreviousX = spawn.X,
+            PreviousX = actorX,
             PreviousY = actorY,
             HomeY = actorY,
             XSpeed = behavior.InitialXSpeed,
@@ -2525,13 +2528,22 @@ public partial class GameScene : Node2D
         };
     }
 
+    private static int SpriteActorSpawnXOffsetFor(int spriteId)
+    {
+        return spriteId switch
+        {
+            0x4F or 0x50 => 8,
+            _ => 0,
+        };
+    }
+
     private static int SpriteActorSpawnYOffsetFor(int spriteId)
     {
         return spriteId switch
         {
             // These level 105 enemies use OAM and clipping data relative to the native sprite
             // origin, not to the top of their rendered sprite.
-            0x9F or 0xAB => 0,
+            0x4F or 0x50 or 0x9F or 0xAB => 0,
             _ => -SpriteActorVisualHeightFor(spriteId),
         };
     }
@@ -2547,10 +2559,6 @@ public partial class GameScene : Node2D
 
     private static int InitialSpriteMotionFrame(SpriteSpawn spawn)
     {
-        if (IsJumpingPiranhaSprite(spawn.SpriteId))
-        {
-            return (spawn.Offset * 7) % JumpingPiranhaCycleFrames;
-        }
         if (spawn.SpriteId == 0x83)
         {
             return (spawn.Offset * 5) % WingedQuestionBlockCycleFrames;
@@ -5637,44 +5645,65 @@ public partial class GameScene : Node2D
         actor.State = PowerupItemActiveState;
     }
 
-    private static void UpdateJumpingPiranhaMotion(RuntimeSpriteActor actor)
+    private void UpdateJumpingPiranhaMotion(RuntimeSpriteActor actor)
     {
-        var frame = actor.MotionFrame % JumpingPiranhaCycleFrames;
-        actor.MotionFrame = (actor.MotionFrame + 1) % JumpingPiranhaCycleFrames;
-
-        var riseStart = JumpingPiranhaHiddenFrames;
-        var extendedStart = riseStart + JumpingPiranhaRiseFrames;
-        var fallStart = extendedStart + JumpingPiranhaExtendedFrames;
-        var hiddenReturnStart = fallStart + JumpingPiranhaFallFrames;
-        var hiddenY = actor.HomeY + JumpingPiranhaTravelPixels;
-
-        if (frame < riseStart || frame >= hiddenReturnStart)
+        if (actor.State == 0)
         {
-            actor.State = 0;
-            actor.Y = hiddenY;
-            actor.Node.Visible = false;
-            return;
-        }
-
-        actor.Node.Visible = true;
-        if (frame < extendedStart)
-        {
-            actor.State = 1;
-            var t = (frame - riseStart + 1) / (float)JumpingPiranhaRiseFrames;
-            actor.Y = Mathf.Lerp(hiddenY, actor.HomeY, Math.Clamp(t, 0.0f, 1.0f));
-            return;
-        }
-
-        if (frame < fallStart)
-        {
-            actor.State = 2;
             actor.Y = actor.HomeY;
+            actor.YSpeed = 0.0f;
+            actor.Node.Visible = false;
+            if (actor.MotionFrame > 0)
+            {
+                actor.MotionFrame--;
+                return;
+            }
+
+            var playerX = _state.XFloat;
+            if (playerX >= actor.X - JumpingPiranhaWakeLeftPixels &&
+                playerX < actor.X + JumpingPiranhaWakeRightPixels)
+            {
+                return;
+            }
+
+            actor.State = 1;
+            actor.YSpeed = JumpingPiranhaInitialYSpeed;
+            actor.Node.Visible = _debugActorVisualsEnabled;
             return;
         }
 
-        actor.State = 3;
-        var fallT = (frame - fallStart + 1) / (float)JumpingPiranhaFallFrames;
-        actor.Y = Mathf.Lerp(actor.HomeY, hiddenY, Math.Clamp(fallT, 0.0f, 1.0f));
+        actor.Node.Visible = _debugActorVisualsEnabled;
+        if (actor.State == 1)
+        {
+            actor.Y += actor.YSpeed;
+            if (actor.YSpeed <= 3.9375f)
+            {
+                actor.YSpeed += JumpingPiranhaRiseGravity;
+            }
+            actor.MotionFrame++;
+            if (actor.YSpeed >= JumpingPiranhaRiseEndYSpeed)
+            {
+                actor.State = 2;
+                actor.MotionFrame = 80;
+            }
+            return;
+        }
+
+        if (actor.MotionFrame > 0)
+        {
+            actor.MotionFrame--;
+        }
+        if ((_debugFrameCounter & 0x03) == 0 && actor.YSpeed < JumpingPiranhaMaxFallSpeed)
+        {
+            actor.YSpeed += JumpingPiranhaFallGravity;
+        }
+        actor.Y += actor.YSpeed;
+        if (actor.Y >= actor.HomeY)
+        {
+            actor.Y = actor.HomeY;
+            actor.YSpeed = 0.0f;
+            actor.State = 0;
+            actor.MotionFrame = JumpingPiranhaHiddenWaitFrames;
+        }
     }
 
     private void UpdateGoalTapes()
