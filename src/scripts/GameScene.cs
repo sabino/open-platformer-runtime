@@ -69,7 +69,7 @@ public partial class GameScene : Node2D
     private const int NativePlayerPostPowerdownInvulnerabilityFrames = 0x7F;
     private const int NativePlayerHurtBlinkFrameShift = 2;
     private const int NativeSpinTurnBlockBreakYSpeed = -42;
-    private const int NativeSpinTurnBlockBreakYOffset = 1;
+    private const int NativeSpinTurnBlockBreakYOffset = 2;
     private const int NativeSpinTurnBlockSideFallbackMinYSpeed = 0x30;
     private const int NativeSpinTurnBlockSideFallbackXOffset = 1;
     private const float NativePostSpinPipeCornerRestInset = 2.625f;
@@ -3229,7 +3229,13 @@ public partial class GameScene : Node2D
             return false;
         }
 
+        var preserveAirborneHorizontalSpeed = !previousState.OnGround && previousState.YSpeed >= 0;
         BreakMap16Tile(tile);
+        if (preserveAirborneHorizontalSpeed)
+        {
+            _state.XSpeed = previousState.XSpeed;
+            _state.SubXSpeed = previousState.SubXSpeed;
+        }
         if (sideFallbackBreak)
         {
             _state.X += NativeSpinTurnBlockSideFallbackXOffset;
