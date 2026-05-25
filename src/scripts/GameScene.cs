@@ -72,7 +72,9 @@ public partial class GameScene : Node2D
     private const int NativeSpinTurnBlockBreakYOffset = 2;
     private const int NativeSpinTurnBlockSideFallbackMinYSpeed = 0x30;
     private const int NativeSpinTurnBlockSideFallbackXOffset = 1;
-    private const float NativePostSpinPipeCornerRestInset = 2.625f;
+    private const float NativePostSpinPipeCornerRestInset = 2.5625f;
+    private const float NativePostSpinPipeCornerRestartInset = 2.625f;
+    private const float NativePostSpinPipeCornerLeftWallInset = 2.25f;
     private const int NativePipeTransitionDelayFrames = 33;
     private const int NativeVerticalPipeExitHoldFrames = 30;
     private const int NativePipeExitPassThroughFrames = 24;
@@ -579,7 +581,7 @@ public partial class GameScene : Node2D
             ResolveDiagonalPipeTileContacts(previousState);
             TryBreakSpinJumpTurnBlocks(previousState);
             TryHitStaticBlockFromBelow(previousState);
-            ClampPostSpinPipeCornerContact();
+            ClampPostSpinPipeCornerContact(previousState, frameInput);
             if (TryHandlePlayerFallDeath())
             {
                 previousStateForActors = _state;
@@ -3289,7 +3291,7 @@ public partial class GameScene : Node2D
         return tile.Source == "std_generic_08" || tile.Map16 == 0x011E;
     }
 
-    private void ClampPostSpinPipeCornerContact()
+    private void ClampPostSpinPipeCornerContact(SmwPhysics.PlayerState previousState, SmwPhysics.FrameInput frameInput)
     {
         if (!_state.OnGround ||
             _state.PostLandingAirDragFrames is <= 0 or > 45 ||
@@ -3311,10 +3313,38 @@ public partial class GameScene : Node2D
         if (_state.XSpeed <= -8)
         {
             _state.X += 1;
-            _state.SubX = 0xA0;
+            _state.SubX = 0x90;
             _state.XSpeed = -2;
             _state.SubXSpeed = 0x80;
             _suppressNextPipeCornerLeft = true;
+            return;
+        }
+
+        if (frameInput.Left &&
+            !frameInput.Right &&
+            previousState.XSpeed == 0 &&
+            previousState.SubXSpeed == 0 &&
+            _state.XSpeed < 0)
+        {
+            SetPlayerXFloat(footX * Map16TileSize - NativePostSpinPipeCornerRestartInset);
+            _state.XSpeed = -2;
+            _state.SubXSpeed = 0x80;
+            return;
+        }
+
+        if (frameInput.Left &&
+            !frameInput.Right &&
+            previousState.XSpeed <= -5 &&
+            _state.XSpeed <= -5)
+        {
+            SetPlayerXFloat(footX * Map16TileSize - NativePostSpinPipeCornerLeftWallInset);
+            _state.XSpeed = -1;
+            _state.SubXSpeed = 0;
+            return;
+        }
+
+        if (frameInput.Left || frameInput.Right)
+        {
             return;
         }
 
