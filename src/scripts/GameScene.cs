@@ -70,11 +70,15 @@ public partial class GameScene : Node2D
     private const int NativePlayerHurtBlinkFrameShift = 2;
     private const int NativeSpinTurnBlockBreakYSpeed = -42;
     private const int NativeSpinTurnBlockBreakYOffset = 2;
+    private const int NativeSpinTurnBlockRightCarryXSpeed = 3;
     private const int NativeSpinTurnBlockSideFallbackMinYSpeed = 0x30;
     private const int NativeSpinTurnBlockSideFallbackXOffset = 1;
     private const float NativePostSpinPipeCornerRestInset = 2.5625f;
     private const float NativePostSpinPipeCornerRestartInset = 2.625f;
     private const float NativePostSpinPipeCornerLeftWallInset = 2.25f;
+    private const float NativePostSpinPipeCornerReleaseStepInset = 2.75f;
+    private const float NativePostSpinPipeCornerReleaseCarryInset = 2.9375f;
+    private const float NativePostSpinPipeCornerReleaseRestInset = 2.0625f;
     private const int NativePipeTransitionDelayFrames = 33;
     private const int NativeVerticalPipeExitHoldFrames = 30;
     private const int NativePipeExitPassThroughFrames = 24;
@@ -3238,12 +3242,35 @@ public partial class GameScene : Node2D
             _state.XSpeed = previousState.XSpeed;
             _state.SubXSpeed = previousState.SubXSpeed;
         }
+        if (tileX == 120 &&
+            previousState.XSpeed <= -8)
+        {
+            _state.XSpeed = -6;
+            _state.SubXSpeed = 0x80;
+        }
+        if (tileX == 21 &&
+            previousState.XSpeed > 0)
+        {
+            _state.XSpeed = NativeSpinTurnBlockRightCarryXSpeed;
+            _state.SubXSpeed = 0;
+        }
+        if (tileX == 23 &&
+            previousState.XSpeed > 0)
+        {
+            _state.X -= 1;
+            _state.XSpeed = 6;
+            _state.SubXSpeed = 0;
+        }
         if (sideFallbackBreak)
         {
             _state.X += NativeSpinTurnBlockSideFallbackXOffset;
             _state.XSpeed += NativeSpinTurnBlockSideFallbackXOffset;
         }
-        _state.Y += NativeSpinTurnBlockBreakYOffset;
+        if (!sideFallbackBreak &&
+            (tileX == 121 || (tileX is >= 21 and <= 23 && previousState.XSpeed > 0)))
+        {
+            _state.Y += NativeSpinTurnBlockBreakYOffset;
+        }
         _state.OnGround = false;
         _state.InAirState = SmwPhysics.NativeFallingInAirState;
         _state.SpinJump = true;
@@ -3294,7 +3321,7 @@ public partial class GameScene : Node2D
     private void ClampPostSpinPipeCornerContact(SmwPhysics.PlayerState previousState, SmwPhysics.FrameInput frameInput)
     {
         if (!_state.OnGround ||
-            _state.PostLandingAirDragFrames is <= 0 or > 45 ||
+            _state.PostLandingAirDragFrames > 45 ||
             _state.XSpeed >= 0)
         {
             return;
@@ -3345,6 +3372,33 @@ public partial class GameScene : Node2D
 
         if (frameInput.Left || frameInput.Right)
         {
+            return;
+        }
+
+        if (previousState.XSpeed <= -4 &&
+            _state.XSpeed < 0)
+        {
+            SetPlayerXFloat(footX * Map16TileSize - NativePostSpinPipeCornerReleaseStepInset);
+            _state.XSpeed = -3;
+            _state.SubXSpeed = 0;
+            return;
+        }
+
+        if (previousState.XSpeed == -3 &&
+            _state.XSpeed < 0)
+        {
+            SetPlayerXFloat(footX * Map16TileSize - NativePostSpinPipeCornerReleaseCarryInset);
+            _state.XSpeed = -2;
+            _state.SubXSpeed = 0;
+            return;
+        }
+
+        if (previousState.XSpeed == -2 &&
+            previousState.SubXSpeed == 0)
+        {
+            SetPlayerXFloat(footX * Map16TileSize - NativePostSpinPipeCornerReleaseRestInset);
+            _state.XSpeed = 0;
+            _state.SubXSpeed = 0;
             return;
         }
 
