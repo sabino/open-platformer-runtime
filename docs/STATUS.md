@@ -96,7 +96,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 ## Roadmap
 
 1. Public-source cleanup
-   - Choose a license.
+   - Keep MIT license metadata present and accurate.
    - Keep project naming and README framing generic.
    - Run history scans for generated assets, ROMs, screenshots, local paths, and accidental binary data.
    - Add CI for source-only build/lint checks.
