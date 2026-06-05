@@ -47,7 +47,7 @@ More setup, import, and run commands live in [docs/GETTING-STARTED.md](docs/GETT
 Try the browser loader on GitHub Pages:
 
 ```text
-https://sabino.github.io/open-platformer-runtime/
+https://sabino.pro/open-platformer-runtime/
 ```
 
 The web page currently validates a local ROM selection in browser memory and exports a small browser manifest. Gameplay is still local Godot-only until the web runtime bridge is implemented.

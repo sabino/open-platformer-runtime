@@ -9,7 +9,7 @@ The playable browser runtime is not connected yet. The current Godot project is 
 The public deployment is GitHub Pages:
 
 ```text
-https://sabino.github.io/open-platformer-runtime/
+https://sabino.pro/open-platformer-runtime/
 ```
 
 Run the static loader locally:
