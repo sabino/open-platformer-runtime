@@ -5,11 +5,10 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenPlatformerRuntime.SmwAssets;
 
 internal static class Program
 {
-    private const string SmwUsSha1 = "6B47BB75D16514B6A476AA0C73A683A2A4C18765";
-    private const int SmwUsRomSize = 0x80000;
     private const int BgPaletteAddress = 0x00B0B0;
     private const int FgPaletteAddress = 0x00B190;
     private const int ObjectPaletteAddress = 0x00B250;
@@ -91,6 +90,7 @@ internal static class Program
                 "verify-entrance-tables" when args.Length == 3 => VerifyEntranceTables(args[1], args[2]),
                 "extract-palettes" when args.Length == 3 => ExtractPalettes(args[1], args[2]),
                 "verify-palettes" when args.Length == 3 => VerifyPalettes(args[1], args[2]),
+                "inspect-rom" when args.Length == 2 => InspectRom(args[1]),
                 _ => UsageError(args),
             };
         }
@@ -134,6 +134,15 @@ internal static class Program
 
         Console.WriteLine($"smw-asset-tool: verified {manifest.Assets.Count} core generated assets from {Path.GetFileName(rom.Path)}");
         return 0;
+    }
+
+    private static int InspectRom(string romPath)
+    {
+        var fullPath = Path.GetFullPath(romPath);
+        Check(File.Exists(fullPath), $"ROM does not exist: {fullPath}");
+        var inspection = SmwRomInspector.Inspect(File.ReadAllBytes(fullPath));
+        WriteJson(Console.OpenStandardOutput(), inspection.ToSerializable());
+        return inspection.IsSupported ? 0 : 1;
     }
 
     private static int ExtractLevels(string romPath, string outDir)
@@ -1247,6 +1256,14 @@ internal static class Program
         File.WriteAllText(path, JsonSerializer.Serialize(value, JsonOptions) + "\n");
     }
 
+    private static void WriteJson(Stream stream, object value)
+    {
+        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = JsonOptions.WriteIndented });
+        JsonSerializer.Serialize(writer, value, JsonOptions);
+        writer.Flush();
+        Console.WriteLine();
+    }
+
     private static int UsageError(string[] args)
     {
         Console.Error.WriteLine($"invalid arguments: {string.Join(" ", args)}");
@@ -1269,6 +1286,7 @@ internal static class Program
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-entrance-tables <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-palettes <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-palettes <rom.sfc> <generated/smw>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-rom <rom.sfc>");
     }
 
     private static void Check(bool condition, string message)
@@ -1800,25 +1818,29 @@ internal static class Program
             var fullPath = System.IO.Path.GetFullPath(path);
             Check(File.Exists(fullPath), $"ROM does not exist: {fullPath}");
             var data = File.ReadAllBytes(fullPath);
-            var sha1 = Convert.ToHexString(SHA1.HashData(data));
+            var inspection = SmwRomInspector.Inspect(data);
 
-            if ((data.Length & 0xFFFFF) == 0x200)
+            if (inspection.HasCopierHeader)
             {
-                throw new InvalidOperationException($"headered ROMs are not supported: size={data.Length} sha1={sha1}");
+                throw new InvalidOperationException($"headered ROMs are not supported: size={inspection.Size} sha1={inspection.Sha1}");
             }
 
-            Check(data.Length == SmwUsRomSize, $"unsupported ROM size={data.Length}; expected {SmwUsRomSize}");
-            Check(string.Equals(sha1, SmwUsSha1, StringComparison.OrdinalIgnoreCase),
-                $"unsupported ROM sha1={sha1}; expected unheadered SMW USA {SmwUsSha1}");
-            return new Rom(fullPath, data, sha1);
+            Check(inspection.IsExpectedSize, $"unsupported ROM size={inspection.Size}; expected {SmwRomInspector.ExpectedUnheaderedRomSize}");
+            Check(inspection.IsExpectedSha1,
+                $"unsupported ROM sha1={inspection.Sha1}; expected {SmwRomInspector.ExpectedRomLabel} {SmwRomInspector.ExpectedUnheaderedSha1}");
+            return new Rom(fullPath, data, inspection.Sha1);
         }
 
         public int LoRomIndex(int address)
         {
-            Check((address & 0x8000) != 0, $"LoROM address must have bit 0x8000 set: 0x{address:X6}");
-            var index = ((address >> 16) & 0x7F) * 0x8000 + (address & 0x7FFF);
-            Check(index >= 0 && index < Data.Length, $"LoROM address out of range: 0x{address:X6}");
-            return index;
+            try
+            {
+                return SmwRomInspector.LoRomIndex(address, Data.Length);
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                throw new InvalidOperationException(ex.Message, ex);
+            }
         }
 
         public int GetByte(int address)

@@ -22,6 +22,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 - The course selector lists imported levels, supports type-ahead search by id or title, and can launch a selected level.
 - A level can return to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or after the current course-clear walkout.
 - Runtime toggles exist for debug gizmos, actor simulation, and actor visuals. Audio remains intentionally opt-in and greyed out in the selector.
+- A GitHub Pages browser loader exists under `web/`. It lets a user pick a local ROM file, validates it in browser memory, probes importer table ranges, and exports a browser manifest.
 - Level rendering covers the current partial Map16/object projection, generated palettes, level previews, layer backgrounds for covered cases, and generated player/sprite atlases.
 - The main verified playability slice is still the first-level route plus its direct pipe target. Other imported levels may boot and render, but playability varies widely.
 - The runtime includes a first-pass fixed-step player physics core, basic HUD, timer/death/game-over paths, coin and dragon-coin pickups, first block interactions, first pipe transitions, a temporary goal/course-clear path, and a small actor layer.
@@ -39,6 +40,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 
 - Generated assets are local artifacts and are not part of the repository.
 - The broad importer is still Python-based; the C# asset tool only covers focused extraction/verification slices.
+- The browser loader does not yet generate the full runtime asset pack. `src/SmwAssets` is the starting point for moving filesystem-free importer logic into reusable C#.
 - The level object expander is partial and does not implement every native object routine.
 - Lunar Magic/custom-ROM behavior is only partially understood; vanilla-compatible ROM data is the current target.
 - Some generated preview files are inspection aids, not authoritative runtime data.
@@ -89,6 +91,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 ### Tooling and Testing
 
 - The strongest automated checks are focused on the current first-level slice and importer contracts.
+- GitHub Pages deployment exists for the browser loader, but public CI for the full source-only test suite still needs to be added.
 - Full regression coverage across all imported levels does not exist.
 - Frame-level comparison tooling exists, but many systems still need native trace anchors and golden tests.
 - The public release should add CI for source-only checks that do not require a proprietary ROM.
@@ -103,41 +106,48 @@ The runtime is useful today for technical playtesting, importer validation, and 
 
 2. Runtime/importer contract hardening
    - Keep moving extraction and validation into C# tooling.
+   - Move browser-safe manifest generation into `src/SmwAssets`.
    - Make manifest schemas explicit and versioned.
    - Keep generated asset contracts machine-checkable.
    - Separate inspection previews from authoritative runtime data.
 
-3. Exact Map16 and collision core
+3. Browser runtime
+   - Keep the GitHub Pages loader source-only and ROM-free.
+   - Generate a complete in-memory browser asset pack from a user-selected ROM.
+   - Add a runtime asset provider so gameplay code can consume browser-generated assets instead of `res://generated/smw/`.
+   - Revisit direct Godot web hosting only if the current Godot 4 .NET web-export limitation changes.
+
+4. Exact Map16 and collision core
    - Port native Map16 act-as lookup and block-code dispatch.
    - Replace temporary geometric slope/pipe bridges with native-backed terrain semantics.
    - Add golden tests for edge, corner, ceiling, slope, pipe, and block-contact cases.
 
-4. First-level fidelity milestone
+5. First-level fidelity milestone
    - Make the first-level route and direct pipe target stable with actors on.
    - Preserve deterministic input and trace comparison for every physics or sprite change.
    - Drive mismatches down with frame-level native trace evidence.
 
-5. Player state completeness
+6. Player state completeness
    - Finish player OAM mapping.
    - Port cape, swimming, climbing, carrying, Yoshi, damage, power-up transitions, and special movement states.
    - Replace temporary state bridges with table-driven/native-backed code.
 
-6. Sprite and item framework
+7. Sprite and item framework
    - Implement native sprite slot lifecycle, loading, despawn, sprite memory, generators, and processing order.
    - Port common enemies and carryable items before expanding to bosses and rare sprites.
    - Add actor-specific tests for contact, stomp, hurt, carry, fireball, offscreen, and score behavior.
 
-7. Level systems
+8. Level systems
    - Expand object projection and runtime semantics beyond the first-level slice.
    - Add layer 2/3 modes, autoscroll, water/tides, vertical levels, castles, ghost houses, switch palaces, bonus rooms, and boss rooms.
    - Add a compatibility matrix per level rather than implying that all imported levels are playable.
 
-8. Audio and presentation
+9. Audio and presentation
    - Implement the full music/SFX sequencing path.
    - Port status-bar, message, layer-3, fade, score-sprite, and transition presentation.
    - Replace development UI pieces only after the runtime behavior is stable.
 
-9. Overworld and persistence
+10. Overworld and persistence
    - Add overworld map/runtime progression, course completion events, save data, lives/coins persistence, switch flags, midway points, and return-to-map behavior.
 
 ## Suggested Public Issue Labels

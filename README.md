@@ -12,6 +12,7 @@ This project is still early. The current runtime has a focused playable slice, a
 - [Current runtime features](docs/FEATURES.md)
 - [Getting started](docs/GETTING-STARTED.md)
 - [Asset pipeline](docs/ASSET-PIPELINE.md)
+- [Web runtime](docs/WEB-RUNTIME.md)
 - [Debugging and verification](docs/DEBUGGING.md)
 - [Reference notes](docs/REFERENCE.md)
 - [Physics notes](docs/PHYSICS.md)
@@ -43,9 +44,19 @@ tools/check-dotnet.sh
 
 More setup, import, and run commands live in [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md).
 
+Try the browser loader on GitHub Pages:
+
+```text
+https://sabino.github.io/open-platformer-runtime/
+```
+
+The web page currently validates a local ROM selection in browser memory and exports a small browser manifest. Gameplay is still local Godot-only until the web runtime bridge is implemented.
+
 ## Current Scope
 
 The current runtime can boot a SNES-sized `256x224` Godot viewport, generate local assets from a user-provided ROM, show a searchable imported-level selector, launch selected imported levels, and return from a level to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or the current course-clear path.
+
+The repository also includes a GitHub Pages browser loader under `web/`. It uses the browser's native file picker and local Web Crypto validation, but it is not yet wired to the playable Godot runtime.
 
 The strongest verified gameplay slice is still the first-level route and its direct pipe target. Other imported levels may boot or render, but broad level compatibility is not guaranteed. Many systems are partial or missing, including exact collision, complete Map16 semantics, most blocks, most enemies, exact sprite loading/despawn, overworld progression, save data, complete audio, and many player states.
 

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Open Platformer Runtime Web</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="runtime" aria-label="Open Platformer Runtime web loader">
+        <div class="screen" role="img" aria-label="Runtime preview screen">
+          <div class="screen-grid" aria-hidden="true"></div>
+          <div class="screen-content">
+            <p class="kicker">Open Platformer Runtime</p>
+            <h1>Browser Loader</h1>
+            <p id="status" class="status">Waiting for a local ROM file.</p>
+            <dl id="details" class="details">
+              <div>
+                <dt>ROM</dt>
+                <dd>Not selected</dd>
+              </div>
+              <div>
+                <dt>Import</dt>
+                <dd>Idle</dd>
+              </div>
+              <div>
+                <dt>Runtime</dt>
+                <dd>Pending</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+
+        <div class="controls" aria-label="ROM controls">
+          <label class="file-button">
+            <input id="romFile" type="file" accept=".sfc,.smc,.bin,application/octet-stream">
+            Select ROM
+          </label>
+          <button id="manifestButton" type="button" disabled>Manifest</button>
+          <button id="playButton" type="button" disabled title="The current Godot 4 .NET runtime is not connected to the browser loader yet.">Play</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

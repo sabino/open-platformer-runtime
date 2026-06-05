@@ -4,8 +4,13 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <DefaultItemExcludes>$(DefaultItemExcludes);.godot/**;.godot_local/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove=".godot/**/*.cs" />
+    <Compile Remove=".godot_local/**/*.cs" />
     <Compile Remove="tests/**/*.cs" />
     <Compile Remove="tools/**/*.cs" />
   </ItemGroup>

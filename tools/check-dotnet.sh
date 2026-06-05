@@ -3,6 +3,10 @@ set -euo pipefail
 
 dotnet restore SmwGodotNative.csproj
 dotnet build SmwGodotNative.csproj --no-restore
+dotnet restore src/SmwAssets/SmwAssets.csproj
+dotnet build src/SmwAssets/SmwAssets.csproj --no-restore
+dotnet restore tools/SmwAssetTool/SmwAssetTool.csproj
+dotnet build tools/SmwAssetTool/SmwAssetTool.csproj --no-restore
 dotnet run --project tests/SmwPhysicsSmoke/SmwPhysicsSmoke.csproj
 
 if [[ -f generated/smw/manifest.json ]]; then
