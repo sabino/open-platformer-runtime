@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROM_PATH="${1:-${SMW_ROM_PATH:-/path/to/compatible-rom.sfc}}"
+ROM_PATH="${1:-${SMW_ROM_PATH:-}}"
 OUT_DIR="${2:-generated/smw}"
+
+if [[ -z "$ROM_PATH" ]]; then
+  echo "usage: tools/check-importer.sh /path/to/compatible-rom.sfc [out-dir]" >&2
+  echo "or set SMW_ROM_PATH" >&2
+  exit 2
+fi
 
 tools/import-smw.sh "$ROM_PATH" "$OUT_DIR"
 

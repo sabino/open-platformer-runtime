@@ -1,25 +1,27 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
 config_version=5
 
 [application]
 
 config/name="Open Platformer Runtime"
 run/main_scene="res://src/scenes/Main.tscn"
+config/features=PackedStringArray("4.6", "C#")
 run/max_fps=60
-config/features=PackedStringArray("4.6")
 config/icon="res://icon.svg"
 
 [display]
 
 window/size/viewport_width=256
 window/size/viewport_height=224
-window/per_pixel_transparency/allowed=false
-window/per_pixel_transparency/enabled=false
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
-
-[physics]
-
-common/physics_ticks_per_second=60
+window/per_pixel_transparency/enabled=false
 
 [dotnet]
 

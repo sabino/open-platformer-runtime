@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SMW_ROOT="${SMW_NATIVE_ROOT:-/path/to/native-reference}"
+SMW_ROOT="${SMW_NATIVE_ROOT:-}"
 NATIVE_RUNNER="$SMW_ROOT/tools/run-wayland.sh"
 NATIVE_BINARY="${SMW_NATIVE_BINARY:-$SMW_ROOT/build/smw_native}"
 NATIVE_ASSET_BUNDLE="${SMW_NATIVE_ASSET_BUNDLE:-$SMW_ROOT/smw_assets.dat}"
-GODOT_BIN="${GODOT_BIN:-godot4-mono}"
+GODOT_BIN="${GODOT_BIN:-$(command -v godot4-mono || command -v godot-mono || command -v godot4 || command -v godot || true)}"
 INPUT_SCRIPT="${SMW_RECORDING_INPUT:-$ROOT/generated/smw/recordings/latest-native-full.input}"
 GODOT_INPUT=""
 OUT_DIR="${SMW_TRACE_OUT_DIR:-$ROOT/generated/smw/traces}"
@@ -109,6 +109,11 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+if [[ -z "$SMW_ROOT" ]]; then
+  echo "run-recording-trace-compare: set SMW_NATIVE_ROOT to the native reference checkout" >&2
+  exit 2
+fi
 
 if [[ "$HEADLESS" == "1" ]]; then
   if [[ ! -x "$NATIVE_BINARY" ]]; then

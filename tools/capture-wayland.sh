@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GODOT_BIN="${GODOT_BIN:-godot4-mono}"
+GODOT_BIN="${GODOT_BIN:-$(command -v godot4-mono || command -v godot-mono || command -v godot4 || command -v godot || true)}"
 CAPTURE_PATH="${1:-generated/smw/captures/level_105_viewport.png}"
 LEVEL_ID="${2:-105}"
 SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}"

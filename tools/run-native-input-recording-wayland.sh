@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SMW_ROOT="${SMW_NATIVE_ROOT:-/path/to/native-reference}"
+SMW_ROOT="${SMW_NATIVE_ROOT:-}"
 NATIVE_RUNNER="$SMW_ROOT/tools/run-wayland.sh"
 OUT_DIR="${SMW_RECORDING_OUT_DIR:-$ROOT/generated/smw/recordings}"
 timestamp="$(date +%Y%m%d-%H%M%S)"
@@ -13,6 +13,10 @@ LATEST_FULL_INPUT="$OUT_DIR/latest-native-full.input"
 LATEST_LEVEL_INPUT="$OUT_DIR/latest-level-start.input"
 LATEST_LEVEL_FRAME_FILE="$OUT_DIR/latest-level-start.frame"
 
+if [[ -z "$SMW_ROOT" ]]; then
+  echo "run-native-input-recording-wayland: set SMW_NATIVE_ROOT to the native reference checkout" >&2
+  exit 2
+fi
 if [[ ! -x "$NATIVE_RUNNER" ]]; then
   echo "run-native-input-recording-wayland: missing native runner: $NATIVE_RUNNER" >&2
   exit 2

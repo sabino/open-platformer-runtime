@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SMW_ROOT="${SMW_NATIVE_ROOT:-/path/to/native-reference}"
+SMW_ROOT="${SMW_NATIVE_ROOT:-}"
 NATIVE_RUNNER="$SMW_ROOT/tools/run-wayland.sh"
 NATIVE_FRAMES="${SMW_COMPARE_NATIVE_FRAMES:-9000}"
 GODOT_FRAMES="${SMW_COMPARE_GODOT_FRAMES:-7200}"
@@ -70,6 +70,11 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+if [[ -z "$SMW_ROOT" ]]; then
+  echo "run-tas-compare-wayland: set SMW_NATIVE_ROOT to the native reference checkout" >&2
+  exit 2
+fi
 
 if [[ ! -x "$NATIVE_RUNNER" ]]; then
   echo "run-tas-compare-wayland: missing native Wayland runner: $NATIVE_RUNNER" >&2

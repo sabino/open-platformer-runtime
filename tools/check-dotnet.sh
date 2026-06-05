@@ -11,8 +11,8 @@ else
   echo "smw-godot C# asset contract: skipped (generated/smw/manifest.json missing)"
 fi
 
-ROM_PATH="${SMW_ROM_PATH:-/path/to/compatible-rom.sfc}"
-if [[ -f "$ROM_PATH" && -f generated/smw/manifest.json ]]; then
+ROM_PATH="${SMW_ROM_PATH:-}"
+if [[ -n "$ROM_PATH" && -f "$ROM_PATH" && -f generated/smw/manifest.json ]]; then
   dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-core "$ROM_PATH" generated/smw
   dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-levels "$ROM_PATH" generated/smw
   dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-audio-previews "$ROM_PATH" generated/smw
@@ -20,5 +20,5 @@ if [[ -f "$ROM_PATH" && -f generated/smw/manifest.json ]]; then
   dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-entrance-tables "$ROM_PATH" generated/smw
   dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-palettes "$ROM_PATH" generated/smw
 else
-  echo "smw-asset-tool: skipped native ROM verification (ROM or generated assets missing)"
+  echo "smw-asset-tool: skipped native ROM verification (set SMW_ROM_PATH and generate assets to enable)"
 fi

@@ -171,4 +171,4 @@ tools/run-wayland.sh
 
 ## Legal Asset Boundary
 
-`generated/` is ignored by git. Do not commit ROMs, generated the original rights holder asset data, saves, or captures derived from proprietary content.
+`generated/` is ignored by git. Do not commit ROMs, generated proprietary asset data, saves, or captures derived from proprietary content. See `docs/RELEASE-HYGIENE.md` before publishing.

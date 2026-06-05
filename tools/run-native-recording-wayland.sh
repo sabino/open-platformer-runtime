@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SMW_ROOT="${SMW_NATIVE_ROOT:-/path/to/native-reference}"
+SMW_ROOT="${SMW_NATIVE_ROOT:-}"
 NATIVE_RUNNER="$SMW_ROOT/tools/run-wayland.sh"
 SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}"
 SAVE_DIR="${SMW_NATIVE_SAVE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/snesrev/smw_native}"
@@ -14,7 +14,7 @@ usage() {
   cat <<'EOF'
 Usage: tools/run-native-recording-wayland.sh [--output FILE] [--save-dir DIR] [--] [native args...]
 
-Launches /path/to/native-reference visibly on Wayland, then converts the newest
+Launches the native reference checkout visibly on Wayland, then converts the newest
 manual or playthrough snapshot into a Godot input script after the window exits.
 
 During the native run:
@@ -53,6 +53,10 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+if [[ -z "$SMW_ROOT" ]]; then
+  echo "run-native-recording-wayland: set SMW_NATIVE_ROOT to the native reference checkout" >&2
+  exit 2
+fi
 if [[ ! -x "$NATIVE_RUNNER" ]]; then
   echo "run-native-recording-wayland: missing native runner: $NATIVE_RUNNER" >&2
   exit 2

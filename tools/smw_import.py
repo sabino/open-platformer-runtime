@@ -2695,10 +2695,10 @@ def import_rom(args: argparse.Namespace) -> dict[str, Any]:
             "asset_boundary": "generated data is local-only and must not be committed",
         },
         "rom": {
-            "path": str(rom.path),
+            "file_name": rom.path.name,
             "sha1": sha1_bytes(rom.data),
             "size": len(rom.data),
-            "title": "compatible USA ROM",
+            "title": "compatible unheadered USA ROM",
             "headered": False,
         },
         "assets": assets,
