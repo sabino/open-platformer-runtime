@@ -52,6 +52,8 @@ https://sabino.pro/open-platformer-runtime/
 
 The web page currently validates a local ROM selection in browser memory and exports a small browser manifest. Gameplay is still local Godot-only until the web runtime bridge is implemented.
 
+There is also an experimental custom-Godot path for the upstream Web .NET prototype work. It requires a Godot build from `godotengine/godot#106125`; see [docs/WEB-DOTNET-PROTOTYPE.md](docs/WEB-DOTNET-PROTOTYPE.md).
+
 ## Current Scope
 
 The current runtime can boot a SNES-sized `256x224` Godot viewport, generate local assets from a user-provided ROM, show a searchable imported-level selector, launch selected imported levels, and return from a level to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or the current course-clear path.

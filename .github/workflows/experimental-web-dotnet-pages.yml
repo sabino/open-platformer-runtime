@@ -1,0 +1,116 @@
+name: Deploy Experimental Godot .NET Web Export
+
+on:
+  workflow_dispatch:
+    inputs:
+      godot_archive_url:
+        description: "URL of a Linux custom Godot archive built from godotengine/godot#106125"
+        required: true
+        type: string
+      godot_binary_path:
+        description: "Optional path to the Godot binary inside the extracted archive"
+        required: false
+        type: string
+      web_release_template_url:
+        description: "Optional URL for the matching custom Web release template zip"
+        required: false
+        type: string
+      web_debug_template_url:
+        description: "Optional URL for the matching custom Web debug template zip"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Install WebAssembly workload
+        run: dotnet workload install wasm-tools
+
+      - name: Download custom Godot
+        env:
+          GODOT_ARCHIVE_URL: ${{ inputs.godot_archive_url }}
+          GODOT_BINARY_PATH: ${{ inputs.godot_binary_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/godot-web-dotnet
+          curl -L "$GODOT_ARCHIVE_URL" -o /tmp/godot-web-dotnet-archive
+          if unzip -t /tmp/godot-web-dotnet-archive >/dev/null 2>&1; then
+            unzip -q /tmp/godot-web-dotnet-archive -d .cache/godot-web-dotnet
+          else
+            tar -xf /tmp/godot-web-dotnet-archive -C .cache/godot-web-dotnet
+          fi
+
+          if [[ -n "$GODOT_BINARY_PATH" ]]; then
+            GODOT_BIN=".cache/godot-web-dotnet/$GODOT_BINARY_PATH"
+          else
+            GODOT_BIN="$(find .cache/godot-web-dotnet -type f -iname 'godot*' -perm -111 | head -n 1)"
+          fi
+
+          [[ -n "$GODOT_BIN" && -x "$GODOT_BIN" ]] || { echo "Could not find executable Godot binary" >&2; exit 1; }
+          echo "GODOT_WEB_DOTNET_BIN=$GODOT_BIN" >> "$GITHUB_ENV"
+
+      - name: Download custom Web templates
+        env:
+          WEB_RELEASE_TEMPLATE_URL: ${{ inputs.web_release_template_url }}
+          WEB_DEBUG_TEMPLATE_URL: ${{ inputs.web_debug_template_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p web-export/templates
+          CONFIG_ARGS=()
+          if [[ -n "$WEB_RELEASE_TEMPLATE_URL" ]]; then
+            curl -L "$WEB_RELEASE_TEMPLATE_URL" -o web-export/templates/web_release.zip
+            CONFIG_ARGS+=(--release "$PWD/web-export/templates/web_release.zip")
+          fi
+          if [[ -n "$WEB_DEBUG_TEMPLATE_URL" ]]; then
+            curl -L "$WEB_DEBUG_TEMPLATE_URL" -o web-export/templates/web_debug.zip
+            CONFIG_ARGS+=(--debug "$PWD/web-export/templates/web_debug.zip")
+          fi
+          if [[ "${#CONFIG_ARGS[@]}" -gt 0 ]]; then
+            python3 tools/configure-web-export-templates.py "${CONFIG_ARGS[@]}"
+          fi
+
+      - name: Export Godot .NET Web prototype
+        run: tools/export-web-dotnet-prototype.sh web-export/out
+
+      - name: Prepare Pages artifact
+        run: |
+          set -euo pipefail
+          mkdir -p public/experimental-godot
+          cp -R web/. public/
+          cp -R web-export/out/. public/experimental-godot/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

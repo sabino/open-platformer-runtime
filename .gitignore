@@ -4,6 +4,7 @@
 .codex/
 generated/
 logs/
+web-export/out/
 local-rom.cfg
 *.sfc
 *.smc

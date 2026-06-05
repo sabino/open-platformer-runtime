@@ -23,6 +23,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 - A level can return to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or after the current course-clear walkout.
 - Runtime toggles exist for debug gizmos, actor simulation, and actor visuals. Audio remains intentionally opt-in and greyed out in the selector.
 - A GitHub Pages browser loader exists under `web/`. It lets a user pick a local ROM file, validates it in browser memory, probes importer table ranges, and exports a browser manifest.
+- An experimental Godot .NET Web export track exists for custom builds based on `godotengine/godot#106125`; it is not part of the stock Godot 4.6.3 path.
 - Level rendering covers the current partial Map16/object projection, generated palettes, level previews, layer backgrounds for covered cases, and generated player/sprite atlases.
 - The main verified playability slice is still the first-level route plus its direct pipe target. Other imported levels may boot and render, but playability varies widely.
 - The runtime includes a first-pass fixed-step player physics core, basic HUD, timer/death/game-over paths, coin and dragon-coin pickups, first block interactions, first pipe transitions, a temporary goal/course-clear path, and a small actor layer.
@@ -41,6 +42,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 - Generated assets are local artifacts and are not part of the repository.
 - The broad importer is still Python-based; the C# asset tool only covers focused extraction/verification slices.
 - The browser loader does not yet generate the full runtime asset pack. `src/SmwAssets` is the starting point for moving filesystem-free importer logic into reusable C#.
+- The direct Godot .NET Web path depends on an unmerged upstream PR and custom export templates. It should be treated as experimental and may need COOP/COEP headers from the deployment host.
 - The level object expander is partial and does not implement every native object routine.
 - Lunar Magic/custom-ROM behavior is only partially understood; vanilla-compatible ROM data is the current target.
 - Some generated preview files are inspection aids, not authoritative runtime data.
@@ -114,6 +116,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 3. Browser runtime
    - Keep the GitHub Pages loader source-only and ROM-free.
    - Generate a complete in-memory browser asset pack from a user-selected ROM.
+   - Test the custom `godotengine/godot#106125` export path separately from stock Godot.
    - Add a runtime asset provider so gameplay code can consume browser-generated assets instead of `res://generated/smw/`.
    - Revisit direct Godot web hosting only if the current Godot 4 .NET web-export limitation changes.
 

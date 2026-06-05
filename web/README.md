@@ -6,6 +6,8 @@ The page lets a user choose a local ROM file with the browser's native file pick
 
 The playable browser runtime is not connected yet. The current Godot project is a Godot 4 .NET/C# runtime that loads generated files from `res://generated/smw/`; the browser path needs a web-safe importer plus a runtime asset provider before it can actually launch gameplay from the uploaded file.
 
+There is a separate experimental custom-Godot export track documented in `docs/WEB-DOTNET-PROTOTYPE.md`. That path requires a Godot build from `godotengine/godot#106125`.
+
 The public deployment is GitHub Pages:
 
 ```text

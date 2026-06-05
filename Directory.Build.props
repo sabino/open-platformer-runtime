@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'SmwGodotNative' and '$(GodotWebDotNetPrototype)' == 'true'">
+    <BaseIntermediateOutputPath>.godot/mono/temp/web_obj/</BaseIntermediateOutputPath>
+    <BaseOutputPath>.godot/mono/temp/web_bin/</BaseOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

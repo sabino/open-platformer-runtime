@@ -4,6 +4,7 @@
 - [Current runtime features](FEATURES.md) summarizes the currently implemented runtime slice.
 - [Asset pipeline](ASSET-PIPELINE.md) explains local generated assets and importer/tooling boundaries.
 - [Web runtime](WEB-RUNTIME.md) covers the GitHub Pages browser loader and the path toward in-browser ROM import/play.
+- [Experimental Godot .NET Web export](WEB-DOTNET-PROTOTYPE.md) covers the custom `godotengine/godot#106125` export track.
 - [Debugging and verification](DEBUGGING.md) covers headless checks, RCON, deterministic input, recording, and trace tools.
 - [Current status and roadmap](STATUS.md) describes the current public-release position, known missing systems, and roadmap.
 - [Release hygiene](RELEASE-HYGIENE.md) lists source-only publishing checks and history-cleanup rules.

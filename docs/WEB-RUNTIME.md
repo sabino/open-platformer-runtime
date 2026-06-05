@@ -16,6 +16,8 @@ It is not a playable web runtime yet. The current game is a Godot 4 .NET/C# proj
 
 Godot's own 4.x documentation also marks C# projects as unavailable for Web export, so this repository should not promise a direct Godot export path until that upstream constraint changes.
 
+An experimental direct-Godot path now exists in this repository for custom builds based on `godotengine/godot#106125`. See [WEB-DOTNET-PROTOTYPE.md](WEB-DOTNET-PROTOTYPE.md). That path is intentionally separate from the stock Godot 4.6.3 workflow.
+
 ## Local Smoke Test
 
 ```bash
