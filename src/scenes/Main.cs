@@ -2,25 +2,52 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.Json;
 
 public partial class Main : Node2D
 {
-    private static readonly Vector2I DefaultWindowSize = new(768, 672);
-    private const string MenuLevelPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
+    private static readonly Vector2I LogicalViewportSize = new(256, 224);
+    private static readonly Vector2I DefaultWindowSize = new(LogicalViewportSize.X * 3, LogicalViewportSize.Y * 3);
+    private const string DefaultLevelId = "105";
+    private const string ManifestPath = "res://generated/smw/manifest.json";
+    private const string DefaultMenuLevelPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
     private const string MenuPlayerPreviewPath = "res://generated/smw/player/gfx32_player_palette0.png";
 
     private Control? _menu;
     private GameScene? _game;
     private SmwAudio? _audio;
     private ColorRect? _gameBackground;
+    private TextureRect? _menuLevelPreview;
+    private TextureRect? _selectedLevelPreview;
+    private Label? _selectedLevelLabel;
+    private Label? _selectedLevelTitle;
+    private Label? _levelSearchStatus;
+    private Button? _startButton;
+    private OptionButton? _levelSelect;
+    private LineEdit? _levelSearch;
+    private ItemList? _levelList;
     private CheckBox? _audioToggle;
     private CheckBox? _debugToggle;
     private CheckBox? _actorsToggle;
     private CheckBox? _actorVisualsToggle;
+    private readonly List<ImportedLevelEntry> _importedLevels = [];
+    private readonly List<ImportedLevelEntry> _visibleLevels = [];
+    private string _selectedLevelId = DefaultLevelId;
+    private string _menuLevelPreviewPath = DefaultMenuLevelPreviewPath;
     private bool _debugOverlays;
     private bool _audioEnabled;
     private bool _actorsEnabled = true;
     private bool _actorVisualsEnabled = true;
+
+    private sealed record ImportedLevelEntry(
+        string Id,
+        string Name,
+        string DisplayName,
+        string TitleSource,
+        string? PreviewPath,
+        int ObjectCount,
+        int SpriteCount,
+        int ScreenExitCount);
 
     public override void _Ready()
     {
@@ -34,8 +61,10 @@ public partial class Main : Node2D
         }
 
         SetupInputMap();
+        LoadImportedLevelList();
         _audioEnabled = ShouldEnableAudio();
         ApplyInitialMenuArgs();
+        ApplyInitialLevelArg();
         if (_audioEnabled)
         {
             _audio = new SmwAudio { Name = "SmwAudio" };
@@ -90,7 +119,8 @@ public partial class Main : Node2D
             }
             else if (arg.StartsWith("--smw-test-level=", StringComparison.Ordinal))
             {
-                testLevel = arg["--smw-test-level=".Length..].ToUpperInvariant();
+                testLevel = NormalizeLevelId(arg["--smw-test-level=".Length..]);
+                SelectMenuLevel(testLevel, updateUi: false);
             }
             else if (arg.StartsWith("--smw-capture=", StringComparison.Ordinal))
             {
@@ -155,10 +185,6 @@ public partial class Main : Node2D
         if (titleStart && !autostart && testLevel == null && capturePath == null)
         {
             CallDeferred(nameof(StartGameFromTitleStartProbe));
-        }
-        if (testLevel != null)
-        {
-            _game?.DebugEnterLevel(testLevel);
         }
         if (testPowerup != null)
         {
@@ -256,11 +282,185 @@ public partial class Main : Node2D
         };
     }
 
+    private void LoadImportedLevelList()
+    {
+        _importedLevels.Clear();
+        if (!FileAccess.FileExists(ManifestPath))
+        {
+            return;
+        }
+
+        using var file = FileAccess.Open(ManifestPath, FileAccess.ModeFlags.Read);
+        if (file == null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(file.GetAsText());
+            if (!document.RootElement.TryGetProperty("levels", out var levels) ||
+                levels.ValueKind != JsonValueKind.Object)
+            {
+                return;
+            }
+
+            foreach (var property in levels.EnumerateObject())
+            {
+                var level = property.Value;
+                var id = NormalizeLevelId(property.Name);
+                string? previewPath = null;
+                if (level.TryGetProperty("layout_preview", out var layoutPreview) &&
+                    layoutPreview.ValueKind == JsonValueKind.Object &&
+                    layoutPreview.TryGetProperty("preview_png", out var previewPng) &&
+                    previewPng.ValueKind == JsonValueKind.String)
+                {
+                    var relativePath = previewPng.GetString();
+                    if (!string.IsNullOrWhiteSpace(relativePath))
+                    {
+                        previewPath = $"res://generated/smw/{relativePath}";
+                    }
+                }
+
+                var screenExitCount = 0;
+                if (level.TryGetProperty("screen_exits", out var screenExits) &&
+                    screenExits.ValueKind == JsonValueKind.Array)
+                {
+                    screenExitCount = screenExits.GetArrayLength();
+                }
+
+                _importedLevels.Add(new ImportedLevelEntry(
+                    id,
+                    GetStringProperty(level, "name"),
+                    GetStringProperty(level, "display_name"),
+                    GetStringProperty(level, "title_source"),
+                    previewPath,
+                    GetIntProperty(level, "object_count"),
+                    GetIntProperty(level, "sprite_count"),
+                    screenExitCount));
+            }
+        }
+        catch (Exception exc) when (exc is JsonException || exc is InvalidOperationException)
+        {
+            GD.PrintErr($"smw-menu: manifest parse failed path={ManifestPath} error={exc.Message}");
+            _importedLevels.Clear();
+        }
+
+        _importedLevels.Sort((left, right) => LevelSortKey(left.Id).CompareTo(LevelSortKey(right.Id)));
+        if (_importedLevels.Count > 0)
+        {
+            SelectMenuLevel(FindImportedLevel(DefaultLevelId)?.Id ?? _importedLevels[0].Id, updateUi: false);
+        }
+    }
+
+    private static int GetIntProperty(JsonElement element, string key)
+    {
+        return element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetInt32()
+            : 0;
+    }
+
+    private static string GetStringProperty(JsonElement element, string key)
+    {
+        return element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
+    }
+
+    private static int LevelSortKey(string levelId)
+    {
+        var normalized = NormalizeLevelId(levelId);
+        return int.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : int.MaxValue;
+    }
+
+    private ImportedLevelEntry? FindImportedLevel(string levelId)
+    {
+        var normalized = NormalizeLevelId(levelId);
+        foreach (var level in _importedLevels)
+        {
+            if (level.Id == normalized)
+            {
+                return level;
+            }
+        }
+
+        return null;
+    }
+
+    private void SelectMenuLevel(string levelId, bool updateUi = true)
+    {
+        var normalized = NormalizeLevelId(levelId);
+        var level = FindImportedLevel(normalized);
+        _selectedLevelId = level?.Id ?? normalized;
+        _menuLevelPreviewPath = level?.PreviewPath ?? DefaultMenuLevelPreviewPath;
+
+        if (!updateUi)
+        {
+            return;
+        }
+
+        if (_menuLevelPreview != null)
+        {
+            SetTextureAndDispose(_menuLevelPreview, LoadTexture(_menuLevelPreviewPath));
+        }
+        if (_selectedLevelPreview != null)
+        {
+            SetTextureAndDispose(_selectedLevelPreview, LoadTexture(_menuLevelPreviewPath));
+        }
+        if (_selectedLevelLabel != null)
+        {
+            _selectedLevelLabel.Text = level != null
+                ? $"Objects {level.ObjectCount}    Sprites {level.SpriteCount}    Exits {level.ScreenExitCount}"
+                : $"Level {_selectedLevelId} is not in the generated manifest";
+        }
+        if (_selectedLevelTitle != null)
+        {
+            _selectedLevelTitle.Text = level != null
+                ? $"{level.Id} {ShortenMenuText(LevelDisplayName(level), 18)}"
+                : $"Level {_selectedLevelId}";
+        }
+        if (_startButton != null)
+        {
+            _startButton.Text = level != null
+                ? $"Start {level.Id}"
+                : $"Start Level {_selectedLevelId}";
+        }
+        SelectVisibleLevelRow(_selectedLevelId);
+    }
+
+    private static string NormalizeLevelId(string levelId)
+    {
+        var trimmed = levelId.Trim();
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[2..];
+        }
+
+        return int.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var parsed) &&
+            parsed >= 0 &&
+            parsed < 0x200
+            ? parsed.ToString("X3", CultureInfo.InvariantCulture)
+            : trimmed.ToUpperInvariant();
+    }
+
     private void ApplyInitialMenuArgs()
     {
         foreach (var arg in OS.GetCmdlineArgs())
         {
             ApplyStartupToggleArg(arg);
+        }
+    }
+
+    private void ApplyInitialLevelArg()
+    {
+        foreach (var arg in OS.GetCmdlineArgs())
+        {
+            if (arg.StartsWith("--smw-test-level=", StringComparison.Ordinal))
+            {
+                SelectMenuLevel(NormalizeLevelId(arg["--smw-test-level=".Length..]), updateUi: false);
+            }
         }
     }
 
@@ -323,6 +523,7 @@ public partial class Main : Node2D
         AddKeyAction("smw_spin", Key.X);
         AddKeyAction("smw_run", Key.Shift, Key.C);
         AddKeyAction("smw_start", Key.Enter);
+        AddKeyAction("smw_back", Key.Escape, Key.Backspace);
         AddKeyAction("ui_accept", Key.Enter);
 
         AddJoyButtonAction("smw_left", JoyButton.DpadLeft);
@@ -337,6 +538,7 @@ public partial class Main : Node2D
         AddJoyButtonAction("smw_spin", JoyButton.B);
         AddJoyButtonAction("smw_run", JoyButton.X, JoyButton.RightShoulder);
         AddJoyButtonAction("smw_start", JoyButton.Start);
+        AddJoyButtonAction("smw_back", JoyButton.Back, JoyButton.Guide);
         AddJoyButtonAction("ui_accept", JoyButton.A, JoyButton.Start);
         GD.Print("smw-input-map: keyboard=1 gamepad=1 buttons=11 axes=4");
     }
@@ -429,7 +631,7 @@ public partial class Main : Node2D
 
         var background = new ColorRect
         {
-            Color = new Color(0.00f, 0.25f, 0.46f, 1.0f),
+            Color = new Color(0.04f, 0.18f, 0.30f, 1.0f),
         };
         background.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _menu.AddChild(background);
@@ -438,26 +640,53 @@ public partial class Main : Node2D
 
         var shade = new ColorRect
         {
-            Color = new Color(0.0f, 0.0f, 0.0f, 0.42f),
+            Color = new Color(0.0f, 0.0f, 0.0f, 0.34f),
         };
         shade.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _menu.AddChild(shade);
 
-        var root = new HBoxContainer
+        var root = new MarginContainer
         {
-            Position = new Vector2(22, 22),
-            CustomMinimumSize = new Vector2(724, 604),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
+        root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        root.OffsetLeft = 5;
+        root.OffsetTop = 5;
+        root.OffsetRight = -5;
+        root.OffsetBottom = -5;
+        root.AddThemeConstantOverride("margin_left", 5);
+        root.AddThemeConstantOverride("margin_top", 5);
+        root.AddThemeConstantOverride("margin_right", 5);
+        root.AddThemeConstantOverride("margin_bottom", 5);
         _menu.AddChild(root);
+
+        var layout = new HBoxContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+        };
+        layout.AddThemeConstantOverride("separation", 5);
+        root.AddChild(layout);
+
+        var browserFrame = new PanelContainer
+        {
+            CustomMinimumSize = new Vector2(124, 0),
+            SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+        };
+        browserFrame.AddThemeStyleboxOverride("panel", MakePanelStyle(new Color(0.02f, 0.10f, 0.18f, 0.88f), new Color(0.78f, 0.93f, 1.0f, 0.85f), 1, 3));
+        layout.AddChild(browserFrame);
 
         var panel = new VBoxContainer
         {
-            CustomMinimumSize = new Vector2(300, 0),
+            CustomMinimumSize = new Vector2(114, 0),
         };
-        root.AddChild(panel);
+        panel.AddThemeConstantOverride("separation", 2);
+        browserFrame.AddChild(MarginWrap(panel, 4));
 
-        var title = new Label { Text = "Open Platformer Runtime" };
-        title.AddThemeFontSizeOverride("font_size", 22);
+        var title = new Label { Text = "Course Select" };
+        title.AddThemeFontSizeOverride("font_size", 9);
         title.AddThemeColorOverride("font_color", new Color(1.0f, 0.95f, 0.62f, 1.0f));
         title.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 1.0f));
         title.AddThemeConstantOverride("shadow_offset_x", 2);
@@ -466,94 +695,133 @@ public partial class Main : Node2D
 
         var status = new Label { Text = AssetStatusText() };
         status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        status.CustomMinimumSize = new Vector2(280, 34);
-        status.AddThemeFontSizeOverride("font_size", 10);
+        status.CustomMinimumSize = new Vector2(112, 10);
+        status.AddThemeFontSizeOverride("font_size", 5);
         status.AddThemeColorOverride("font_color", new Color(0.88f, 0.96f, 1.0f, 1.0f));
         panel.AddChild(status);
 
-        AddMenuToggles(panel);
+        AddMenuLevelSelect(panel);
 
-        var start = new Button
+        PrintMenuAudioProbeStatus();
+
+        var previewFrame = new PanelContainer
         {
-            Text = "Start Yoshi Island 1",
-            CustomMinimumSize = new Vector2(240, 34),
+            CustomMinimumSize = new Vector2(116, 0),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
-        start.Pressed += StartGame;
-        panel.AddChild(start);
-        start.GrabFocus();
+        previewFrame.AddThemeStyleboxOverride("panel", MakePanelStyle(new Color(0.06f, 0.18f, 0.15f, 0.78f), new Color(1.0f, 0.95f, 0.62f, 0.78f), 1, 3));
+        layout.AddChild(previewFrame);
 
-        AddAudioTester(panel);
-
-        var previewPanel = new VBoxContainer
-        {
-            CustomMinimumSize = new Vector2(390, 0),
-        };
-        root.AddChild(previewPanel);
-        AddMenuPlayerPreview(previewPanel);
-        GD.Print($"smw-menu: assets={(HasGeneratedAssetPack() ? 1 : 0)} audio={(_audioEnabled ? 1 : 0)} actors={(_actorsEnabled ? 1 : 0)} actor_visuals={(_actorVisualsEnabled ? 1 : 0)} level_preview={(FileAccess.FileExists(MenuLevelPreviewPath) ? 1 : 0)} player_preview={(FileAccess.FileExists(MenuPlayerPreviewPath) ? 1 : 0)}");
+        var previewPanel = new VBoxContainer();
+        previewPanel.AddThemeConstantOverride("separation", 3);
+        previewFrame.AddChild(MarginWrap(previewPanel, 4));
+        AddMenuSelectedPreview(previewPanel);
+        AddMenuToggles(previewPanel);
+        _levelSearch?.GrabFocus();
+        GD.Print($"smw-menu: assets={(HasGeneratedAssetPack() ? 1 : 0)} audio={(_audioEnabled ? 1 : 0)} actors={(_actorsEnabled ? 1 : 0)} actor_visuals={(_actorVisualsEnabled ? 1 : 0)} levels={_importedLevels.Count} selected_level={_selectedLevelId} level_preview={(FileAccess.FileExists(_menuLevelPreviewPath) ? 1 : 0)} player_preview={(FileAccess.FileExists(MenuPlayerPreviewPath) ? 1 : 0)}");
     }
 
     private static bool HasGeneratedAssetPack()
     {
-        return FileAccess.FileExists("res://generated/smw/manifest.json");
+        return FileAccess.FileExists(ManifestPath);
     }
 
     private static string AssetStatusText()
     {
         return HasGeneratedAssetPack()
-            ? "Generated SMW asset pack found."
+            ? "Generated asset pack found."
             : "No generated asset pack found. The playable slice will use a placeholder level.";
+    }
+
+    private static MarginContainer MarginWrap(Control child, int margin)
+    {
+        var wrapper = new MarginContainer();
+        wrapper.AddThemeConstantOverride("margin_left", margin);
+        wrapper.AddThemeConstantOverride("margin_top", margin);
+        wrapper.AddThemeConstantOverride("margin_right", margin);
+        wrapper.AddThemeConstantOverride("margin_bottom", margin);
+        wrapper.AddChild(child);
+        return wrapper;
+    }
+
+    private static StyleBoxFlat MakePanelStyle(Color fill, Color border, int borderWidth, int cornerRadius)
+    {
+        var style = new StyleBoxFlat
+        {
+            BgColor = fill,
+            BorderColor = border,
+            BorderWidthLeft = borderWidth,
+            BorderWidthTop = borderWidth,
+            BorderWidthRight = borderWidth,
+            BorderWidthBottom = borderWidth,
+            CornerRadiusTopLeft = cornerRadius,
+            CornerRadiusTopRight = cornerRadius,
+            CornerRadiusBottomLeft = cornerRadius,
+            CornerRadiusBottomRight = cornerRadius,
+        };
+        style.SetContentMarginAll(0);
+        return style;
     }
 
     private void AddMenuLevelPreview(Control menu)
     {
-        var texture = LoadTexture(MenuLevelPreviewPath);
+        var texture = LoadTexture(_menuLevelPreviewPath);
         if (texture == null)
         {
             return;
         }
 
-        var preview = new TextureRect
+        _menuLevelPreview = new TextureRect
         {
             Name = "MenuLevelPreview",
-            Texture = texture,
             Position = Vector2.Zero,
-            Size = new Vector2(DefaultWindowSize.X, DefaultWindowSize.Y),
+            Size = new Vector2(LogicalViewportSize.X, LogicalViewportSize.Y),
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
         };
-        menu.AddChild(preview);
+        SetTextureAndDispose(_menuLevelPreview, texture);
+        menu.AddChild(_menuLevelPreview);
     }
 
-    private void AddMenuPlayerPreview(VBoxContainer panel)
+    private void AddMenuSelectedPreview(VBoxContainer panel)
     {
-        var title = new Label { Text = "Yoshi Island 1" };
-        title.AddThemeFontSizeOverride("font_size", 14);
-        title.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
-        title.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 1.0f));
-        title.AddThemeConstantOverride("shadow_offset_x", 1);
-        title.AddThemeConstantOverride("shadow_offset_y", 1);
-        panel.AddChild(title);
+        var previewTitle = new Label { Text = "Preview" };
+        previewTitle.AddThemeFontSizeOverride("font_size", 7);
+        previewTitle.AddThemeColorOverride("font_color", new Color(1.0f, 0.95f, 0.62f, 1.0f));
+        previewTitle.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 1.0f));
+        previewTitle.AddThemeConstantOverride("shadow_offset_x", 1);
+        previewTitle.AddThemeConstantOverride("shadow_offset_y", 1);
+        panel.AddChild(previewTitle);
 
-        var texture = LoadTexture(MenuPlayerPreviewPath);
+        var texture = LoadTexture(_menuLevelPreviewPath);
         if (texture == null)
         {
+            SelectMenuLevel(_selectedLevelId);
             return;
         }
 
+        var playerCard = new PanelContainer();
+        playerCard.ClipContents = true;
+        playerCard.AddThemeStyleboxOverride("panel", MakePanelStyle(new Color(0.0f, 0.0f, 0.0f, 0.24f), new Color(1.0f, 1.0f, 1.0f, 0.30f), 1, 3));
+        panel.AddChild(playerCard);
+
         var frame = new TextureRect
         {
-            Name = "MenuPlayerPreview",
-            Texture = texture,
-            CustomMinimumSize = new Vector2(192, 192),
+            Name = "SelectedLevelPreview",
+            Size = new Vector2(108, 88),
+            CustomMinimumSize = new Vector2(108, 88),
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
         };
-        panel.AddChild(frame);
+        _selectedLevelPreview = frame;
+        SetTextureAndDispose(frame, texture);
+        playerCard.AddChild(frame);
+        SelectMenuLevel(_selectedLevelId);
     }
 
     private void AddMenuToggles(VBoxContainer panel)
@@ -565,7 +833,11 @@ public partial class Main : Node2D
         {
             Text = "Audio",
             ButtonPressed = _audioEnabled,
+            Disabled = true,
+            TooltipText = "Audio is intentionally disabled from the selector for now.",
         };
+        _audioToggle.AddThemeFontSizeOverride("font_size", 5);
+        _audioToggle.AddThemeColorOverride("font_disabled_color", new Color(0.62f, 0.68f, 0.70f, 1.0f));
         _audioToggle.Toggled += SetAudioEnabled;
         row.AddChild(_audioToggle);
 
@@ -574,6 +846,7 @@ public partial class Main : Node2D
             Text = "Gizmos",
             ButtonPressed = _debugOverlays,
         };
+        _debugToggle.AddThemeFontSizeOverride("font_size", 5);
         _debugToggle.Toggled += enabled => _debugOverlays = enabled;
         row.AddChild(_debugToggle);
 
@@ -585,6 +858,7 @@ public partial class Main : Node2D
             Text = "Actors",
             ButtonPressed = _actorsEnabled,
         };
+        _actorsToggle.AddThemeFontSizeOverride("font_size", 5);
         _actorsToggle.Toggled += enabled => _actorsEnabled = enabled;
         actorRow.AddChild(_actorsToggle);
 
@@ -593,6 +867,7 @@ public partial class Main : Node2D
             Text = "Sprites",
             ButtonPressed = _actorVisualsEnabled,
         };
+        _actorVisualsToggle.AddThemeFontSizeOverride("font_size", 5);
         _actorVisualsToggle.Toggled += enabled => _actorVisualsEnabled = enabled;
         actorRow.AddChild(_actorVisualsToggle);
     }
@@ -605,9 +880,225 @@ public partial class Main : Node2D
         }
 
         var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(path));
-        return image == null || image.IsEmpty()
-            ? null
-            : ImageTexture.CreateFromImage(image);
+        if (image == null || image.IsEmpty())
+        {
+            image?.Dispose();
+            return null;
+        }
+
+        var texture = ImageTexture.CreateFromImage(image);
+        image.Dispose();
+        return texture;
+    }
+
+    private static void SetTextureAndDispose(TextureRect rect, Texture2D? texture)
+    {
+        rect.Texture = texture;
+        texture?.Dispose();
+    }
+
+    private void AddMenuLevelSelect(VBoxContainer panel)
+    {
+        _selectedLevelTitle = new Label { Text = $"Level {_selectedLevelId}" };
+        _selectedLevelTitle.AddThemeFontSizeOverride("font_size", 7);
+        _selectedLevelTitle.AddThemeColorOverride("font_color", new Color(1.0f, 0.95f, 0.62f, 1.0f));
+        _selectedLevelTitle.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 1.0f));
+        _selectedLevelTitle.AddThemeConstantOverride("shadow_offset_x", 1);
+        _selectedLevelTitle.AddThemeConstantOverride("shadow_offset_y", 1);
+        _selectedLevelTitle.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        panel.AddChild(_selectedLevelTitle);
+
+        _selectedLevelLabel = new Label();
+        _selectedLevelLabel.AddThemeFontSizeOverride("font_size", 5);
+        _selectedLevelLabel.AddThemeColorOverride("font_color", new Color(0.86f, 0.96f, 1.0f, 1.0f));
+        panel.AddChild(_selectedLevelLabel);
+
+        _startButton = new Button
+        {
+            Text = $"Start {_selectedLevelId}",
+            CustomMinimumSize = new Vector2(112, 16),
+        };
+        _startButton.AddThemeFontSizeOverride("font_size", 6);
+        _startButton.AddThemeColorOverride("font_color", new Color(1.0f, 0.95f, 0.62f, 1.0f));
+        _startButton.AddThemeColorOverride("font_focus_color", new Color(1.0f, 0.95f, 0.62f, 1.0f));
+        _startButton.AddThemeColorOverride("font_hover_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
+        _startButton.AddThemeColorOverride("font_pressed_color", new Color(0.18f, 0.12f, 0.04f, 1.0f));
+        _startButton.AddThemeStyleboxOverride("normal", MakePanelStyle(new Color(0.40f, 0.16f, 0.07f, 0.95f), new Color(1.0f, 0.95f, 0.62f, 1.0f), 1, 3));
+        _startButton.AddThemeStyleboxOverride("hover", MakePanelStyle(new Color(0.56f, 0.23f, 0.08f, 0.95f), new Color(1.0f, 0.98f, 0.70f, 1.0f), 1, 3));
+        _startButton.AddThemeStyleboxOverride("pressed", MakePanelStyle(new Color(1.0f, 0.78f, 0.24f, 0.95f), new Color(1.0f, 0.98f, 0.70f, 1.0f), 1, 3));
+        _startButton.AddThemeStyleboxOverride("focus", MakePanelStyle(new Color(0.40f, 0.16f, 0.07f, 0.95f), new Color(1.0f, 0.98f, 0.70f, 1.0f), 1, 3));
+        _startButton.Pressed += StartGame;
+        panel.AddChild(_startButton);
+
+        _levelSearch = new LineEdit
+        {
+            PlaceholderText = "Search",
+            CustomMinimumSize = new Vector2(112, 16),
+        };
+        _levelSearch.AddThemeFontSizeOverride("font_size", 6);
+        _levelSearch.TextChanged += FilterMenuLevels;
+        panel.AddChild(_levelSearch);
+
+        _levelSearchStatus = new Label();
+        _levelSearchStatus.AddThemeFontSizeOverride("font_size", 5);
+        _levelSearchStatus.AddThemeColorOverride("font_color", new Color(0.82f, 0.94f, 1.0f, 1.0f));
+        panel.AddChild(_levelSearchStatus);
+
+        _levelList = new ItemList
+        {
+            CustomMinimumSize = new Vector2(112, 106),
+            AutoHeight = false,
+            FixedColumnWidth = 112,
+            MaxTextLines = 1,
+            SameColumnWidth = true,
+            SelectMode = ItemList.SelectModeEnum.Single,
+        };
+        _levelList.AddThemeFontSizeOverride("font_size", 5);
+        _levelList.ItemSelected += index =>
+        {
+            if (index >= 0 && index < _visibleLevels.Count)
+            {
+                SelectMenuLevel(_visibleLevels[(int)index].Id);
+            }
+        };
+        _levelList.ItemActivated += index =>
+        {
+            if (index >= 0 && index < _visibleLevels.Count)
+            {
+                SelectMenuLevel(_visibleLevels[(int)index].Id);
+                StartGame();
+            }
+        };
+        panel.AddChild(_levelList);
+        FilterMenuLevels(string.Empty);
+    }
+
+    private void FilterMenuLevels(string query)
+    {
+        if (_levelList == null)
+        {
+            return;
+        }
+
+        _levelList.Clear();
+        _visibleLevels.Clear();
+        foreach (var level in _importedLevels)
+        {
+            if (!LevelMatchesSearch(level, query))
+            {
+                continue;
+            }
+            _visibleLevels.Add(level);
+            _levelList.AddItem(MenuLevelRowText(level));
+        }
+
+        if (_levelSearchStatus != null)
+        {
+            _levelSearchStatus.Text = _visibleLevels.Count == _importedLevels.Count
+                ? $"{_importedLevels.Count} imported levels"
+                : $"{_visibleLevels.Count} of {_importedLevels.Count} levels";
+        }
+
+        if (_visibleLevels.Count == 0)
+        {
+            if (_selectedLevelLabel != null)
+            {
+                _selectedLevelLabel.Text = "No matching imported levels";
+            }
+            return;
+        }
+
+        if (FindVisibleLevel(_selectedLevelId) == null)
+        {
+            SelectMenuLevel(_visibleLevels[0].Id);
+        }
+        else
+        {
+            SelectVisibleLevelRow(_selectedLevelId);
+        }
+    }
+
+    private static bool LevelMatchesSearch(ImportedLevelEntry level, string query)
+    {
+        var normalized = query.Trim().ToUpperInvariant();
+        if (normalized.Length == 0)
+        {
+            return true;
+        }
+        if (normalized.StartsWith("0X", StringComparison.Ordinal))
+        {
+            normalized = normalized[2..];
+        }
+        var haystack = $"{level.Id} {level.Name} {level.DisplayName}".ToUpperInvariant();
+        foreach (var token in normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!haystack.Contains(token, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private ImportedLevelEntry? FindVisibleLevel(string levelId)
+    {
+        var normalized = NormalizeLevelId(levelId);
+        foreach (var level in _visibleLevels)
+        {
+            if (level.Id == normalized)
+            {
+                return level;
+            }
+        }
+        return null;
+    }
+
+    private void SelectVisibleLevelRow(string levelId)
+    {
+        if (_levelList == null || _visibleLevels.Count == 0)
+        {
+            return;
+        }
+
+        var normalized = NormalizeLevelId(levelId);
+        for (var index = 0; index < _visibleLevels.Count; index++)
+        {
+            if (_visibleLevels[index].Id == normalized)
+            {
+                _levelList.Select(index);
+                return;
+            }
+        }
+    }
+
+    private static string LevelDisplayName(ImportedLevelEntry level)
+    {
+        if (!string.IsNullOrWhiteSpace(level.DisplayName) && level.DisplayName != $"Level {level.Id}")
+        {
+            return level.DisplayName;
+        }
+        if (!string.IsNullOrWhiteSpace(level.Name))
+        {
+            return level.Name;
+        }
+        return $"Level {level.Id}";
+    }
+
+    private static string MenuLevelRowText(ImportedLevelEntry level)
+    {
+        var name = LevelDisplayName(level);
+        return name == $"Level {level.Id}"
+            ? $"{level.Id}"
+            : $"{level.Id} {ShortenMenuText(name, 18)}";
+    }
+
+    private static string ShortenMenuText(string text, int maxChars)
+    {
+        if (text.Length <= maxChars)
+        {
+            return text;
+        }
+        return text[..Math.Max(0, maxChars - 1)] + ".";
     }
 
     private void SetAudioEnabled(bool enabled)
@@ -682,6 +1173,11 @@ public partial class Main : Node2D
         musicButtons.AddChild(stop);
     }
 
+    private void PrintMenuAudioProbeStatus()
+    {
+        GD.Print($"smw-menu-audio: samples={(_audio?.LoadedProbeSampleCount ?? 0)} buttons={SmwAudio.ProbeSampleIds.Length} sfx_buttons=6 music_buttons=4");
+    }
+
     private void AddSampleButton(HBoxContainer parent, int sampleId, string label)
     {
         var button = new Button
@@ -737,13 +1233,52 @@ public partial class Main : Node2D
         _game = new GameScene
         {
             Name = "GameScene",
+            InitialLevelId = _selectedLevelId,
             DebugOverlays = _debugOverlays,
             ActorsEnabled = _actorsEnabled,
             ActorVisualsEnabled = _actorVisualsEnabled,
             Audio = _audio,
             AudioEnabled = _audioEnabled,
         };
+        _game.CourseSelectRequested += ReturnToCourseSelect;
         AddChild(_game);
+    }
+
+    private void ReturnToCourseSelect()
+    {
+        if (_game == null)
+        {
+            return;
+        }
+
+        GD.Print($"smw-menu: return level={_selectedLevelId}");
+        _game.CourseSelectRequested -= ReturnToCourseSelect;
+        _game.QueueFree();
+        _game = null;
+        _gameBackground?.QueueFree();
+        _gameBackground = null;
+        _audio?.StopMusicPreview();
+        ClearMenuReferences();
+        ShowMenu();
+    }
+
+    private void ClearMenuReferences()
+    {
+        _menu = null;
+        _menuLevelPreview = null;
+        _selectedLevelPreview = null;
+        _selectedLevelLabel = null;
+        _selectedLevelTitle = null;
+        _levelSearchStatus = null;
+        _startButton = null;
+        _levelSelect = null;
+        _levelSearch = null;
+        _levelList = null;
+        _audioToggle = null;
+        _debugToggle = null;
+        _actorsToggle = null;
+        _actorVisualsToggle = null;
+        _visibleLevels.Clear();
     }
 
     private void StartGameFromTitleStartProbe()

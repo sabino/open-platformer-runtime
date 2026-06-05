@@ -4,12 +4,14 @@ This repository is a Godot 4 .NET desktop port scaffold for a native classic-pla
 
 The long-term bar is a 100% physics and gameplay semantics match with the original game. The first slices should therefore be table-driven from SMW reference constants and covered by regression tests, even when a subsystem starts incomplete.
 
+For public-release expectations, current limitations, and the implementation roadmap, read `docs/STATUS.md`. For source-only publishing checks, read `docs/RELEASE-HYGIENE.md`. The short version: this is an early MIT-licensed source-only runtime clone with a focused playable slice, not a complete game. Many collision, block, sprite, level, audio, overworld, and persistence systems are missing or incomplete.
+
 The current first slice covers:
 
 - ROM validation and deterministic extraction for level `105` by default. Native C# extractor slices now directly extract and verify core ROM assets used by the runtime, including GFX32/GFX33, raw SPC upload banks, global Map16, global/per-level palette assets, level `105`/`1CB` headers, object stream lengths/raw bytes, sprite stream positions, layer-2 background source metadata, the level `105` screen-07 pipe route into `1CB`, vanilla main/secondary entrance tables, BRR-decoded audio preview WAVs, and Mario OAM/palette metadata.
 - Layer 1/layer 2 raw object streams, Layer 2 RLE background previews, decoded placement metadata, screen exits, sprite stream, Map16, global palettes, per-level full CGRAM palettes, GFX32/GFX33, player PNG atlases, level tileset GFX atlases, sprite GFX VRAM atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables.
 - Raw SPC upload banks plus a few decoded BRR preview WAVs used only as importer verification artifacts while the full SPC/DSP sequencer is still pending.
-- A Godot .NET C# menu and minimal playable scene; the initial menu uses generated Yoshi Island 1 preview art, exposes audio/debug-gizmo toggles, includes internal sound/music test buttons, and starts the playable first-level slice.
+- A Godot .NET C# menu and minimal playable scene; the initial menu uses generated level preview art as a full-screen backdrop, exposes a searchable imported-level selector by id or ROM-derived title, includes audio/debug-gizmo toggles and internal sound/music test buttons, and starts the selected playable slice.
 - A SNES-sized `256x224` logical viewport that opens as a 3x Wayland window for normal graphical runs.
 - Runtime audio playback through a C# internal APU probe that streams decoded BRR samples from imported SPC engine/sample banks; named SFX probes now decode native SPC RAM command streams before falling back to hand-authored notes, and the Godot runtime no longer depends on WAV/MP3 playback for these probes. Audio is currently opt-in while visual fidelity work continues.
 - A menu audio panel for internal port-1 SFX command probes, named gameplay SFX probes, decoded BRR sample probes, and imported music bank previews while the full SPC/DSP command sequencer is still pending.
@@ -26,7 +28,7 @@ The current first slice covers:
 - Runtime camera scrolling uses SMW-style horizontal and vertical screen-space thresholds instead of center-follow, clamped to generated tile bounds so Yoshi Island 1's lower routes can be inspected during drops.
 - A runtime Mario sprite composite built from generated GFX32 PNG data and the ROM-derived `PlayerGFXRt` head/body tile pointer tables. This replaces the placeholder hitbox rectangle, but final frame/state correctness still depends on porting the direct OAM assembly tables.
 - Partial object expansion for the Yoshi Island 1 direct pipe target `1CB`, including horizontal pipes and underground ceiling ledges/edges in the generated Map16 tilemap.
-- Manifest-driven runtime asset selection for the current level's tilemap, preview, and tileset atlases, rather than hardcoded generated filenames.
+- Manifest-driven runtime asset selection for the current level's tilemap, preview, tileset atlases, and decoded overworld title, rather than hardcoded generated filenames.
 - Runtime world rebuild scaffolding for loading imported level targets; headless checks currently verify both startup level `105` and direct pipe target `1CB`.
 - Runtime pipe debug triggers derived from imported screen exits and placed pipe tiles instead of a hardcoded screen position, including vertical, horizontal, and right-diagonal pipe clusters. Downward pipe triggers now latch only after a grounded player overlaps the imported entrance rectangle, avoiding accidental warps from held-down setup frames or nearby pipe/block-top probes.
 - Runtime loading and debug rendering of imported sprite spawn records using the native `yyyyEESY / XXXXssss / id` coordinate layout, including 34 Yoshi Island 1 sprite spawns; the current direct target `1CB` has no sprite spawns.
@@ -50,6 +52,30 @@ Import assets from the local ROM:
 
 ```bash
 tools/import-smw.sh "/path/to/compatible-rom.sfc"
+```
+
+Import a specific level or a small requested set into the local ignored asset pack:
+
+```bash
+SMW_ROM_PATH=/path/to/compatible-rom.sfc tools/import-smw.sh --level 106 --clean
+SMW_ROM_PATH=/path/to/compatible-rom.sfc tools/import-smw.sh --levels 105,106,1CB --clean
+SMW_ROM_PATH=/path/to/compatible-rom.sfc tools/import-smw.sh --all-levels --clean
+```
+
+The importer accepts repeated `--level` values, follows direct screen-exit targets by default, decodes available overworld level titles from the provided ROM's level-name tables, and writes a fresh `generated/smw/manifest.json` for the selected levels. Use `--no-exit-targets` to import only the requested IDs, `--exit-depth N` to follow more than direct exits, or `--all-levels` to attempt the full `000..1FF` level ID range. The runtime menu lists imported manifest levels with type-ahead search by id or decoded title, and automated runs can start one directly with `--smw-test-level=<id>`.
+
+Import and run one level in a single command:
+
+```bash
+SMW_ROM_PATH=/path/to/compatible-rom.sfc tools/run-level.sh 106
+tools/run-level.sh 1CB --no-import --headless -- --quit-after 2
+```
+
+Import and headlessly boot every generated manifest level:
+
+```bash
+SMW_ROM_PATH=/path/to/compatible-rom.sfc tools/check-level-smoke.sh --all-levels
+tools/check-level-smoke.sh --no-import
 ```
 
 Validate importer transition data:
@@ -120,7 +146,9 @@ Audio is silent by default for now. Pass `--smw-audio`, `--smw-audio=on`, or set
 
 Pass `--smw-debug-overlays` to a Godot run when you want collision rectangles/outlines, slope lines, player hitbox/feet, camera bounds, pipe/goal triggers, sprite hitboxes, screen lines, object/sprite/coin/block markers, the debug HUD, the foot-tile Map16 probe, and the imported asset preview panel. Normal playable runs hide those overlays.
 
-The start menu also exposes `Actors` and `Sprites` toggles. For deterministic launches, pass `--smw-actors=off` or `--smw-actor-visuals=off` to disable runtime sprite logic or only hide their visuals before the level scene builds.
+The start menu also exposes compact `Gizmos`, `Actors`, and `Sprites` toggles. The `Audio` toggle is visible but disabled while audio stays opt-in by command line. For deterministic launches, pass `--smw-actors=off` or `--smw-actor-visuals=off` to disable runtime sprite logic or only hide their visuals before the level scene builds.
+
+During a level, press `Esc` or `Backspace` to drop back to the course selector; gamepad Back/Guide is mapped to the same action. Course clear also returns to the selector after the short walkout display.
 Use `--smw-title-start` when you need a headless/automated probe that opens the menu first and then starts gameplay through the normal title-start path instead of bypassing the menu with `--smw-test-autostart`.
 
 Build the C# project:

@@ -12,6 +12,7 @@ using IoPath = System.IO.Path;
 
 public partial class GameScene : Node2D
 {
+    private const int CourseClearReturnToSelectFrames = 120;
     private const float LevelVisualYOffset = -64.0f;
     private const int Map16TileSize = 16;
     private const int Map16AtlasColumns = 16;
@@ -424,6 +425,7 @@ public partial class GameScene : Node2D
     private bool _debugActorsEnabled = true;
     private bool _debugActorVisualsEnabled = true;
     private bool _debugInvincible;
+    private bool _courseSelectRequestSent;
     private TcpListener? _debugRconListener;
     private readonly List<TcpClient> _debugRconClients = [];
     private readonly Dictionary<TcpClient, StringBuilder> _debugRconBuffers = [];
@@ -434,11 +436,14 @@ public partial class GameScene : Node2D
     public bool ActorVisualsEnabled { get; set; } = true;
     public SmwAudio? Audio { get; set; }
     public bool AudioEnabled { get; set; } = true;
+    public string InitialLevelId { get; set; } = "105";
+    public event Action? CourseSelectRequested;
 
     public override void _Ready()
     {
         GetViewport().TransparentBg = false;
         RenderingServer.SetDefaultClearColor(new Color(0.0f, 0.39f, 0.74f, 1.0f));
+        _currentLevelId = NormalizeLevelId(InitialLevelId);
         _debugActorsEnabled = ActorsEnabled;
         _debugActorVisualsEnabled = ActorVisualsEnabled;
         _audio = Audio;
@@ -462,7 +467,18 @@ public partial class GameScene : Node2D
     public override void _PhysicsProcess(double delta)
     {
         PollDebugCommands();
+        if (_courseSelectRequestSent)
+        {
+            return;
+        }
+
         PollDebugRcon();
+        if (Input.IsActionJustPressed("smw_back"))
+        {
+            RequestCourseSelect("input");
+            return;
+        }
+
         var isDebugStep = _debugStepFrames > 0;
         if (_gameOver)
         {
@@ -634,6 +650,7 @@ public partial class GameScene : Node2D
             CheckPipeDebug(frameInput);
         }
         PrintQueuedDebugTrace(frameInput);
+        MaybeReturnToCourseSelectAfterCourseClear();
 
         _debugFrameCounter++;
         if (isDebugStep)
@@ -2167,9 +2184,7 @@ public partial class GameScene : Node2D
         _diagonalPipeCeilingCells.Clear();
         _cameraGizmo?.QueueFree();
         _cameraGizmo = null;
-        _spriteTexture = null;
-        Array.Clear(_spritePaletteTextures);
-        _map16Texture = null;
+        DisposeRuntimeTextures();
         _map16Layer = null;
         StartWorldRoot();
         AddWorldBackground();
@@ -2341,11 +2356,7 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelSpriteAtlasPath));
-        if (image != null && !image.IsEmpty())
-        {
-            _spriteTexture = ImageTexture.CreateFromImage(image);
-        }
+        _spriteTexture = LoadTextureFromImageFile(_levelSpriteAtlasPath);
 
         GD.Print(
             $"smw-runtime: sprite_palettes={paletteTextureCount} source={(paletteTextureCount > 0 ? "vram" : "preview")} atlas={_levelSpriteAtlasPath}");
@@ -2414,6 +2425,7 @@ public partial class GameScene : Node2D
             }
 
             _spritePaletteTextures[oamPalette] = ImageTexture.CreateFromImage(image);
+            image.Dispose();
             built++;
         }
 
@@ -2974,8 +2986,8 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelLayer2BackgroundPath));
-        if (image == null || image.IsEmpty())
+        var texture = LoadTextureFromImageFile(_levelLayer2BackgroundPath);
+        if (texture == null)
         {
             return;
         }
@@ -2983,13 +2995,14 @@ public partial class GameScene : Node2D
         var sprite = new Sprite2D
         {
             Name = "Layer2BackgroundPreview",
-            Texture = ImageTexture.CreateFromImage(image),
+            Texture = texture,
             Position = new Vector2(0, LevelVisualYOffset),
             Centered = false,
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             ZIndex = -30,
         };
         AddWorldChild(sprite);
+        texture.Dispose();
     }
 
     private void AddWorldBackground()
@@ -3013,13 +3026,12 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelMap16AtlasPath));
-        if (image == null || image.IsEmpty())
+        var texture = LoadTextureFromImageFile(_levelMap16AtlasPath);
+        if (texture == null)
         {
             return false;
         }
 
-        var texture = ImageTexture.CreateFromImage(image);
         _map16Texture = texture;
         var layerTiles = new List<PlacedMap16Tile>();
         foreach (var tile in _placedTiles)
@@ -3030,7 +3042,7 @@ public partial class GameScene : Node2D
             }
 
             var regionY = (tile.Map16 / Map16AtlasColumns) * Map16TileSize;
-            if (regionY + Map16TileSize > image.GetHeight())
+            if (regionY + Map16TileSize > texture.GetHeight())
             {
                 continue;
             }
@@ -4502,8 +4514,8 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(_levelLayoutPreviewPath));
-        if (image == null || image.IsEmpty())
+        var texture = LoadTextureFromImageFile(_levelLayoutPreviewPath);
+        if (texture == null)
         {
             return;
         }
@@ -4511,13 +4523,14 @@ public partial class GameScene : Node2D
         var sprite = new Sprite2D
         {
             Name = "GeneratedLevelLayoutPreview",
-            Texture = ImageTexture.CreateFromImage(image),
+            Texture = texture,
             Position = Vector2.Zero,
             Centered = false,
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             ZIndex = -10,
         };
         AddWorldChild(sprite);
+        texture.Dispose();
     }
 
     private void AddPipeMarkers()
@@ -7091,6 +7104,28 @@ public partial class GameScene : Node2D
         _courseClearExitTransitionFrames++;
     }
 
+    private void MaybeReturnToCourseSelectAfterCourseClear()
+    {
+        if (!_courseClear || _courseClearWalkoutFrames < CourseClearReturnToSelectFrames)
+        {
+            return;
+        }
+
+        RequestCourseSelect("course_clear");
+    }
+
+    private void RequestCourseSelect(string source)
+    {
+        if (_courseSelectRequestSent)
+        {
+            return;
+        }
+
+        _courseSelectRequestSent = true;
+        GD.Print($"smw-runtime: course_select_return level={_currentLevelId} source={source}");
+        CourseSelectRequested?.Invoke();
+    }
+
     private void TickLevelTimer()
     {
         if (_courseClear)
@@ -7229,13 +7264,13 @@ public partial class GameScene : Node2D
                 continue;
             }
 
-            var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(playerAtlasPath));
-            if (image == null || image.IsEmpty())
+            var texture = LoadTextureFromImageFile(playerAtlasPath);
+            if (texture == null)
             {
                 continue;
             }
 
-            _playerTextures[paletteIndex] = ImageTexture.CreateFromImage(image);
+            _playerTextures[paletteIndex] = texture;
         }
 
         if (_playerTextures[0] == null)
@@ -8339,21 +8374,59 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(resourcePath));
-        if (image == null || image.IsEmpty())
+        var texture = LoadTextureFromImageFile(resourcePath);
+        if (texture == null)
         {
             return;
         }
 
         var sprite = new Sprite2D
         {
-            Texture = ImageTexture.CreateFromImage(image),
+            Texture = texture,
             Position = position,
             Scale = scale,
             Centered = false,
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
         };
         parent.AddChild(sprite);
+        texture.Dispose();
+    }
+
+    private void DisposeRuntimeTextures()
+    {
+        _spriteTexture?.Dispose();
+        _spriteTexture = null;
+        _map16Texture?.Dispose();
+        _map16Texture = null;
+        for (var i = 0; i < _spritePaletteTextures.Length; i++)
+        {
+            _spritePaletteTextures[i]?.Dispose();
+            _spritePaletteTextures[i] = null;
+        }
+        for (var i = 0; i < _playerTextures.Length; i++)
+        {
+            _playerTextures[i]?.Dispose();
+            _playerTextures[i] = null;
+        }
+    }
+
+    private static ImageTexture? LoadTextureFromImageFile(string resourcePath)
+    {
+        if (!FileAccess.FileExists(resourcePath))
+        {
+            return null;
+        }
+
+        var image = Image.LoadFromFile(ProjectSettings.GlobalizePath(resourcePath));
+        if (image == null || image.IsEmpty())
+        {
+            image?.Dispose();
+            return null;
+        }
+
+        var texture = ImageTexture.CreateFromImage(image);
+        image.Dispose();
+        return texture;
     }
 
     private void UpdateHud()
@@ -8449,7 +8522,22 @@ public partial class GameScene : Node2D
 
     public void DebugEnterLevel(string levelId)
     {
-        EnterLevel(levelId);
+        EnterLevel(NormalizeLevelId(levelId));
+    }
+
+    private static string NormalizeLevelId(string levelId)
+    {
+        var trimmed = levelId.Trim();
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[2..];
+        }
+
+        return int.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var parsed) &&
+            parsed >= 0 &&
+            parsed < 0x200
+            ? parsed.ToString("X3", CultureInfo.InvariantCulture)
+            : trimmed.ToUpperInvariant();
     }
 
     public void DebugRestartCurrentLevel()
@@ -9004,6 +9092,15 @@ public partial class GameScene : Node2D
             case "neutral":
                 ClearDebugHeldInput();
                 return "ok hold input=--------";
+            case "course_clear":
+            case "clear_course":
+                TriggerCourseClear();
+                return BuildDebugState("course_clear");
+            case "course_select":
+            case "exit_level":
+            case "dropout":
+                RequestCourseSelect("debug");
+                return "ok course_select=1";
             case "trace":
                 QueueDebugTrace(parts, includeOam: false, includeSensors: false, overrideInput: true);
                 return $"ok trace_queued={_debugTraceFrames}";
@@ -11619,6 +11716,7 @@ public partial class GameScene : Node2D
 
     public override void _ExitTree()
     {
+        DisposeRuntimeTextures();
         StopDebugRcon();
     }
 

@@ -180,6 +180,21 @@ BACK_AREA_COLOR_ADDR = 0x00B0A0
 ANIMATED_COLOR_ADDR = 0x00B60C
 PALETTE_BLACK = 0x0000
 PALETTE_WHITE = 0x7FDD
+LEVEL_NAMES_ADDR = 0x04A0FC
+LEVEL_NAME_STRINGS_ADDR = 0x049AC5
+LEVEL_NAME_PREFIX_OFFSETS_ADDR = 0x049C91
+LEVEL_NAME_MIDDLE_OFFSETS_ADDR = 0x049CCF
+LEVEL_NAME_SUFFIX_OFFSETS_ADDR = 0x049CED
+LM_LEVEL_NAMES_HOOK_ADDR = 0x048E81
+LM_LEVEL_NAMES_POINTER_ADDR = 0x03BB57
+OVERWORLD_LEVEL_NAME_COUNT = 0x100
+EDITOR_LEVEL_TITLE_COUNT = 0x200
+LEVEL_NAME_STRING_BYTES = 460
+LEVEL_NAME_PREFIX_COUNT = 31
+LEVEL_NAME_MIDDLE_COUNT = 15
+LEVEL_NAME_SUFFIX_COUNT = 13
+LM_LEVEL_NAME_CHARACTER_COUNT = 19
+LM_LEVEL_NAMES_PATCH_BYTES = OVERWORLD_LEVEL_NAME_COUNT * LM_LEVEL_NAME_CHARACTER_COUNT
 
 
 class ImportErrorWithExit(Exception):
@@ -2359,6 +2374,164 @@ def parse_level_id(text: str) -> int:
     return int(text, 16)
 
 
+def level_name_glyph(code: int) -> str:
+    if 0 <= code <= 25:
+        return chr(ord("A") + code)
+    if code == 0x1C:
+        return "-"
+    if code == 0x1F:
+        return " "
+    if code == 0x5A:
+        return "#"
+    if code == 0x5D:
+        return "'"
+    if code == 0x62:
+        return "."
+    if 0x64 <= code <= 0x69:
+        return chr(ord("1") + (code - 0x64))
+    if code == 0x32:
+        return "I"
+    if code == 0x33:
+        return "L"
+    if code == 0x34:
+        return "L"
+    if code == 0x35:
+        return "U"
+    if code == 0x36:
+        return "S"
+    if code == 0x37:
+        return "I"
+    if code == 0x38:
+        return "Y"
+    if code == 0x39:
+        return "E"
+    if code == 0x3A:
+        return "L"
+    if code == 0x3B:
+        return "L"
+    if code == 0x3C:
+        return "OW"
+    return ""
+
+
+def normalize_level_title(title: str) -> str:
+    words = title.upper().strip().split()
+    return " ".join(words)
+
+
+def append_level_name_segment(strings: bytes, offset: int) -> str:
+    if offset >= len(strings):
+        return ""
+    out: list[str] = []
+    for raw in strings[offset:]:
+        out.append(level_name_glyph(raw & 0x7F))
+        if raw & 0x80:
+            break
+    return "".join(out)
+
+
+def decode_title_word(
+    word: int,
+    strings: bytes,
+    prefix_offsets: list[int],
+    middle_offsets: list[int],
+    suffix_offsets: list[int],
+) -> str:
+    out = ""
+    prefix_index = (word >> 8) & 0x7F
+    if prefix_index < len(prefix_offsets):
+        offset = prefix_offsets[prefix_index]
+        if offset < len(strings) and (strings[offset] & 0x80) == 0:
+            out += append_level_name_segment(strings, offset)
+
+    middle_index = (word & 0x00F0) >> 4
+    if middle_index < len(middle_offsets):
+        offset = middle_offsets[middle_index]
+        if offset < len(strings) and strings[offset] != 0x9F:
+            out += append_level_name_segment(strings, offset)
+
+    suffix_index = word & 0x000F
+    if suffix_index < len(suffix_offsets):
+        out += append_level_name_segment(strings, suffix_offsets[suffix_index])
+
+    out = normalize_level_title(out)
+    if out == "YELLOW SWITCH PALACE 3":
+        out = "YELLOW SWITCH PALACE"
+    return out
+
+
+def editor_level_id_for_overworld_level(overworld_level: int) -> int:
+    if overworld_level >= 0x25:
+        return 0x100 + (overworld_level - 0x24)
+    return overworld_level
+
+
+def rats_tag_total_size(data: bytes, offset: int) -> int | None:
+    if offset < 0 or offset + 8 > len(data) or data[offset:offset + 4] != b"STAR":
+        return None
+    size = data[offset + 4] | (data[offset + 5] << 8)
+    complement = data[offset + 6] | (data[offset + 7] << 8)
+    if (size ^ complement) != 0xFFFF:
+        return None
+    return size + 1 + 8
+
+
+def lm_level_names_payload_pc(rom: Rom) -> int | None:
+    if rom.get_byte(LM_LEVEL_NAMES_HOOK_ADDR) != 0x22:
+        return None
+    payload_addr = rom.get_24(LM_LEVEL_NAMES_POINTER_ADDR)
+    if payload_addr in (0, 0xFFFFFF):
+        raise ImportErrorWithExit(
+            "Lunar Magic level-name patch hook is present but its payload pointer is empty"
+        )
+    payload_pc = rom.lorom_index(payload_addr)
+    if payload_pc > len(rom.data) or LM_LEVEL_NAMES_PATCH_BYTES > len(rom.data) - payload_pc:
+        raise ImportErrorWithExit("Lunar Magic level-name patch payload points past the ROM size")
+    rats_size = rats_tag_total_size(rom.data, payload_pc - 8)
+    if rats_size is None or rats_size < LM_LEVEL_NAMES_PATCH_BYTES + 8:
+        raise ImportErrorWithExit("Lunar Magic level-name patch payload is not protected by a valid RATS tag")
+    return payload_pc
+
+
+def decode_lm_patch_title(raw: bytes) -> str:
+    return normalize_level_title("".join(level_name_glyph(byte & 0x7F) for byte in raw))
+
+
+def load_overworld_level_titles(rom: Rom) -> tuple[dict[int, str], str]:
+    lm_payload = lm_level_names_payload_pc(rom)
+    titles: dict[int, str] = {}
+    if lm_payload is not None:
+        for overworld_level in range(1, OVERWORLD_LEVEL_NAME_COUNT):
+            editor_level_id = editor_level_id_for_overworld_level(overworld_level)
+            if editor_level_id >= EDITOR_LEVEL_TITLE_COUNT:
+                continue
+            offset = lm_payload + overworld_level * LM_LEVEL_NAME_CHARACTER_COUNT
+            title = decode_lm_patch_title(rom.data[offset:offset + LM_LEVEL_NAME_CHARACTER_COUNT])
+            if title:
+                titles[editor_level_id] = title
+        return titles, "lunar_magic_expanded_level_name_patch"
+
+    strings = rom.get_bytes(LEVEL_NAME_STRINGS_ADDR, LEVEL_NAME_STRING_BYTES)
+    level_words = rom.get_words(LEVEL_NAMES_ADDR, OVERWORLD_LEVEL_NAME_COUNT)
+    prefix_offsets = rom.get_words(LEVEL_NAME_PREFIX_OFFSETS_ADDR, LEVEL_NAME_PREFIX_COUNT)
+    middle_offsets = rom.get_words(LEVEL_NAME_MIDDLE_OFFSETS_ADDR, LEVEL_NAME_MIDDLE_COUNT)
+    suffix_offsets = rom.get_words(LEVEL_NAME_SUFFIX_OFFSETS_ADDR, LEVEL_NAME_SUFFIX_COUNT)
+    for overworld_level in range(1, len(level_words)):
+        editor_level_id = editor_level_id_for_overworld_level(overworld_level)
+        if editor_level_id >= EDITOR_LEVEL_TITLE_COUNT:
+            continue
+        title = decode_title_word(
+            level_words[overworld_level],
+            strings,
+            prefix_offsets,
+            middle_offsets,
+            suffix_offsets,
+        )
+        if title:
+            titles[editor_level_id] = title
+    return titles, "vanilla_overworld_level_name_tables"
+
+
 def extract_level(rom: Rom, out_dir: Path, level_id: int) -> dict[str, Any]:
     layer1_addr = rom.get_24(0x05E000 + level_id * 3)
     layer1_len = calc_level_len(rom, layer1_addr)
@@ -2662,6 +2835,15 @@ def import_rom(args: argparse.Namespace) -> dict[str, Any]:
     out_dir = Path(args.out).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    try:
+        level_titles, level_title_source = load_overworld_level_titles(rom)
+        level_title_error = None
+    except ImportErrorWithExit as exc:
+        level_titles = {}
+        level_title_source = "unavailable"
+        level_title_error = str(exc)
+        print(f"smw-import: warning: level titles unavailable: {exc}", file=sys.stderr)
+
     level_queue = [parse_level_id(level) for level in args.level]
     if len(level_queue) != len(set(level_queue)):
         level_queue = list(dict.fromkeys(level_queue))
@@ -2675,6 +2857,10 @@ def import_rom(args: argparse.Namespace) -> dict[str, Any]:
         if level_id < 0 or level_id >= 0x200:
             raise ImportErrorWithExit(f"Level id out of range: 0x{level_id:X}")
         level_info = extract_level(rom, out_dir, level_id)
+        level_name = level_titles.get(level_id, "")
+        level_info["name"] = level_name
+        level_info["display_name"] = level_name or f"Level {level_id:03X}"
+        level_info["title_source"] = level_title_source if level_name else "none"
         levels[f"{level_id:03X}"] = level_info
 
         if not args.include_exit_targets:
@@ -2702,6 +2888,13 @@ def import_rom(args: argparse.Namespace) -> dict[str, Any]:
             "headered": False,
         },
         "assets": assets,
+        "level_titles": {
+            "source": level_title_source,
+            "status": "ok" if level_title_error is None else "unavailable",
+            "error": level_title_error,
+            "count": len(level_titles),
+            "titles": {f"{level_id:03X}": title for level_id, title in sorted(level_titles.items())},
+        },
         "levels": levels,
     }
     manifest_path = out_dir / "manifest.json"

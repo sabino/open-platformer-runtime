@@ -48,8 +48,7 @@ public static class AssetContractCheck
         }
 
         var levels = Required(manifest, "levels");
-        Check(levels.TryGetProperty("105", out _), "manifest missing level 105");
-        Check(levels.TryGetProperty("1CB", out _), "manifest missing direct pipe target level 1CB");
+        Check(levels.EnumerateObject().Any(), "manifest contains no imported levels");
         foreach (var level in levels.EnumerateObject())
         {
             CheckAssetFiles(generatedRoot, level.Value, $"levels.{level.Name}");
@@ -101,9 +100,22 @@ public static class AssetContractCheck
     private static void CheckLevels(string generatedRoot, JsonElement manifest)
     {
         var levels = Required(manifest, "levels");
-        var level105File = Required(Required(levels, "105"), "file").GetString() ?? "";
-        var level1CbFile = Required(Required(levels, "1CB"), "file").GetString() ?? "";
+        Check(levels.EnumerateObject().Any(), "manifest contains no imported levels");
+        foreach (var manifestLevel in levels.EnumerateObject())
+        {
+            var levelFile = Required(manifestLevel.Value, "file").GetString() ?? "";
+            using var level = LoadJson(Path.Combine(generatedRoot, levelFile));
+            CheckBasicLevel(generatedRoot, manifestLevel.Name, level.RootElement);
+        }
 
+        if (!levels.TryGetProperty("105", out var level105Manifest) ||
+            !levels.TryGetProperty("1CB", out var level1CbManifest))
+        {
+            return;
+        }
+
+        var level105File = Required(level105Manifest, "file").GetString() ?? "";
+        var level1CbFile = Required(level1CbManifest, "file").GetString() ?? "";
         using var level105 = LoadJson(Path.Combine(generatedRoot, level105File));
         using var level1Cb = LoadJson(Path.Combine(generatedRoot, level1CbFile));
         CheckLevelHeader(level105.RootElement, "105", expectedTileset: 7, expectedSpriteGraphics: 8, expectedScreens: 20);
@@ -128,6 +140,33 @@ public static class AssetContractCheck
         Check(spriteCounts.GetValueOrDefault(0xAB) == 18, "level 105 expected 18 Rex sprite records");
 
         CheckTilemap(generatedRoot, "levels/level_105_partial_tilemap.json");
+    }
+
+    private static void CheckBasicLevel(string generatedRoot, string manifestLevelId, JsonElement level)
+    {
+        var normalizedId = int.TryParse(manifestLevelId, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var id)
+            ? id.ToString("X3", CultureInfo.InvariantCulture)
+            : manifestLevelId.ToUpperInvariant();
+        Check((Required(level, "level_id").GetString() ?? "") == normalizedId, $"level id mismatch for {manifestLevelId}");
+
+        var header = Required(level, "header");
+        Check(Required(header, "tileset").GetInt32() >= 0, $"level {normalizedId} tileset missing");
+        Check(Required(header, "sprite_graphics").GetInt32() >= 0, $"level {normalizedId} sprite graphics missing");
+        Check(Required(header, "screens").GetInt32() > 0, $"level {normalizedId} screen count invalid");
+
+        var layout = Required(level, "layout");
+        Check(Required(layout, "width_tiles").GetInt32() > 0, $"level {normalizedId} width invalid");
+        Check(Required(layout, "height_tiles").GetInt32() > 0, $"level {normalizedId} height invalid");
+
+        foreach (var sprite in RequiredArray(Required(level, "sprite_layer"), "sprites"))
+        {
+            Check((Required(sprite, "format").GetString() ?? "") == "yyyyEESY_XXXXssss_NNNNNNNN",
+                $"level {normalizedId} sprite format mismatch");
+        }
+
+        var layoutPreview = Required(level, "layout_preview");
+        var tilemap = Required(layoutPreview, "file").GetString() ?? "";
+        CheckTilemap(generatedRoot, tilemap);
     }
 
     private static void CheckEntranceTables(string generatedRoot)
@@ -175,12 +214,19 @@ public static class AssetContractCheck
     {
         using var tilemap = LoadJson(Path.Combine(generatedRoot, relativePath));
         var root = tilemap.RootElement;
-        Check((Required(root, "status").GetString() ?? "") == "partial", "level 105 tilemap status mismatch");
-        Check(Required(root, "placed_tile_count").GetInt32() == ExpectedYoshiIslandTileCount, "level 105 placed tile count mismatch");
-        Check(Required(root, "unsupported_object_counts").EnumerateObject().Any() == false, "level 105 has unsupported object records");
+        Check((Required(root, "status").GetString() ?? "") == "partial", $"{relativePath} tilemap status mismatch");
+        var placedTileCount = Required(root, "placed_tile_count").GetInt32();
+        Check(placedTileCount >= 0, $"{relativePath} placed tile count invalid");
 
         var placedTiles = RequiredArray(root, "placed_tiles").ToList();
-        Check(placedTiles.Count == ExpectedYoshiIslandTileCount, "level 105 placed tile array length mismatch");
+        Check(placedTiles.Count == placedTileCount, $"{relativePath} placed tile array length mismatch");
+        if (!relativePath.Equals("levels/level_105_partial_tilemap.json", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Check(placedTileCount == ExpectedYoshiIslandTileCount, "level 105 placed tile count mismatch");
+        Check(Required(root, "unsupported_object_counts").EnumerateObject().Any() == false, "level 105 has unsupported object records");
 
         var sources = placedTiles.Select(tile => Required(tile, "source").GetString() ?? "").ToHashSet(StringComparer.Ordinal);
         foreach (var expectedSource in new[]
@@ -262,20 +308,54 @@ public static class AssetContractCheck
 
     private static void CheckTilesets(string generatedRoot)
     {
-        using var tileset = LoadJson(Path.Combine(generatedRoot, "tilesets/level_105_tileset7.json"));
-        var root = tileset.RootElement;
-        Check((Required(root, "status").GetString() ?? "") == "preview", "level 105 tileset status mismatch");
-        Check((Required(Required(root, "atlas_png"), "file").GetString() ?? "") == "tilesets/level_105_tileset7_8x8.png", "level 105 tileset atlas mismatch");
-        Check(Required(Required(root, "vram"), "tile_count").GetInt32() == 512, "level 105 BG VRAM tile count mismatch");
-        var uploadIds = RequiredArray(root, "uploads").Select(upload => Required(upload, "gfx_id").GetString() ?? "").ToArray();
-        Check(uploadIds.SequenceEqual(["15", "1B", "17", "14"]), "level 105 BG GFX upload IDs mismatch");
+        var tilesetFiles = Directory.Exists(Path.Combine(generatedRoot, "tilesets"))
+            ? Directory.EnumerateFiles(Path.Combine(generatedRoot, "tilesets"), "level_*_tileset*.json").ToArray()
+            : [];
+        Check(tilesetFiles.Length > 0, "no level tileset manifests generated");
+        foreach (var tilesetPath in tilesetFiles)
+        {
+            using var tileset = LoadJson(tilesetPath);
+            var root = tileset.RootElement;
+            Check((Required(root, "status").GetString() ?? "") == "preview", $"{tilesetPath} tileset status mismatch");
+            Check(Required(Required(root, "vram"), "tile_count").GetInt32() == 512, $"{tilesetPath} BG VRAM tile count mismatch");
+            Check(RequiredArray(root, "uploads").Any(), $"{tilesetPath} has no GFX uploads");
+        }
 
-        using var spriteSet = LoadJson(Path.Combine(generatedRoot, "spritesets/level_105_spritegfx8.json"));
-        var spriteRoot = spriteSet.RootElement;
-        Check(Required(spriteRoot, "sprite_graphics").GetInt32() == 8, "level 105 sprite graphics set mismatch");
-        var spriteUploads = RequiredArray(spriteRoot, "uploads").Select(upload => Required(upload, "gfx_id").GetString() ?? "").ToArray();
-        Check(spriteUploads.SequenceEqual(["20", "13", "01", "00"]), "level 105 sprite GFX upload IDs mismatch");
-        Check((Required(Required(spriteRoot, "vram"), "format").GetString() ?? "") == "snes_4bpp_tiles_in_sprite_vram_order_0x6000_to_0x7fff", "sprite VRAM format mismatch");
+        var spriteSetFiles = Directory.Exists(Path.Combine(generatedRoot, "spritesets"))
+            ? Directory.EnumerateFiles(Path.Combine(generatedRoot, "spritesets"), "level_*_spritegfx*.json").ToArray()
+            : [];
+        Check(spriteSetFiles.Length > 0, "no level sprite tileset manifests generated");
+        foreach (var spriteSetPath in spriteSetFiles)
+        {
+            using var spriteSet = LoadJson(spriteSetPath);
+            var spriteRoot = spriteSet.RootElement;
+            Check(Required(spriteRoot, "sprite_graphics").GetInt32() >= 0, $"{spriteSetPath} sprite graphics set missing");
+            Check(RequiredArray(spriteRoot, "uploads").Any(), $"{spriteSetPath} has no sprite GFX uploads");
+            Check((Required(Required(spriteRoot, "vram"), "format").GetString() ?? "") == "snes_4bpp_tiles_in_sprite_vram_order_0x6000_to_0x7fff", "sprite VRAM format mismatch");
+        }
+
+        var yoshiTileset = Path.Combine(generatedRoot, "tilesets/level_105_tileset7.json");
+        var yoshiSpriteSet = Path.Combine(generatedRoot, "spritesets/level_105_spritegfx8.json");
+        if (!File.Exists(yoshiTileset) || !File.Exists(yoshiSpriteSet))
+        {
+            return;
+        }
+
+        using (var tileset = LoadJson(yoshiTileset))
+        {
+            var root = tileset.RootElement;
+            Check((Required(Required(root, "atlas_png"), "file").GetString() ?? "") == "tilesets/level_105_tileset7_8x8.png", "level 105 tileset atlas mismatch");
+            var uploadIds = RequiredArray(root, "uploads").Select(upload => Required(upload, "gfx_id").GetString() ?? "").ToArray();
+            Check(uploadIds.SequenceEqual(["15", "1B", "17", "14"]), "level 105 BG GFX upload IDs mismatch");
+        }
+
+        using (var spriteSet = LoadJson(yoshiSpriteSet))
+        {
+            var spriteRoot = spriteSet.RootElement;
+            Check(Required(spriteRoot, "sprite_graphics").GetInt32() == 8, "level 105 sprite graphics set mismatch");
+            var spriteUploads = RequiredArray(spriteRoot, "uploads").Select(upload => Required(upload, "gfx_id").GetString() ?? "").ToArray();
+            Check(spriteUploads.SequenceEqual(["20", "13", "01", "00"]), "level 105 sprite GFX upload IDs mismatch");
+        }
     }
 
     private static void CheckPalettes(string generatedRoot)
@@ -291,14 +371,17 @@ public static class AssetContractCheck
             Check(playerPrefix.SequenceEqual([0x635F, 0x581D, 0x000A, 0x391F, 0x44C4, 0x4E08, 0x6770, 0x30B6]), "global player palette prefix mismatch");
         }
 
-        foreach (var relative in new[] { "palettes/level_105_palette.json", "palettes/level_1CB_palette.json" })
+        var levelPaletteFiles = Directory.Exists(Path.Combine(generatedRoot, "palettes"))
+            ? Directory.EnumerateFiles(Path.Combine(generatedRoot, "palettes"), "level_*_palette.json")
+            : [];
+        foreach (var palettePath in levelPaletteFiles)
         {
-            using var palette = LoadJson(Path.Combine(generatedRoot, relative));
+            using var palette = LoadJson(palettePath);
             var root = palette.RootElement;
-            Check((Required(root, "status").GetString() ?? "") == "preview", $"{relative} status mismatch");
-            Check((Required(root, "source").GetString() ?? "") == "vanilla_header_tables", $"{relative} source mismatch");
-            Check(RequiredArray(root, "snes_bgr555").Count() == 256, $"{relative} SNES palette length mismatch");
-            Check(RequiredArray(root, "rgb888").Count() == 256, $"{relative} RGB palette length mismatch");
+            Check((Required(root, "status").GetString() ?? "") == "preview", $"{palettePath} status mismatch");
+            Check((Required(root, "source").GetString() ?? "") == "vanilla_header_tables", $"{palettePath} source mismatch");
+            Check(RequiredArray(root, "snes_bgr555").Count() == 256, $"{palettePath} SNES palette length mismatch");
+            Check(RequiredArray(root, "rgb888").Count() == 256, $"{palettePath} RGB palette length mismatch");
         }
     }
 

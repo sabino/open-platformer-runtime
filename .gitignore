@@ -1,6 +1,9 @@
 .godot/
 .godot_local/
+.agents/
+.codex/
 generated/
+logs/
 local-rom.cfg
 *.sfc
 *.smc
