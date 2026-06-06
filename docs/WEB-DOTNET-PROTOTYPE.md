@@ -68,12 +68,16 @@ The server sends:
 
 The normal Pages workflow deploys the source-only browser ROM loader from `web/`.
 
-The experimental workflow, `.github/workflows/experimental-web-dotnet-pages.yml`, can deploy an actual custom Godot .NET Web export when manually dispatched with:
+The experimental workflow, `.github/workflows/experimental-web-dotnet-pages.yml`, deploys an actual custom Godot .NET Web export by downloading the pinned experimental Godot release:
 
-- `godot_archive_url`: archive containing a Linux Godot binary built from `godotengine/godot#106125`
-- `godot_binary_path`: optional path to the binary inside that archive
-- `web_release_template_url`: optional matching custom Web release template zip
-- `web_debug_template_url`: optional matching custom Web debug template zip
+```text
+sabino/godot@web-dotnet-experimental-open-platform-runtime
+```
+
+That Godot release is expected to contain:
+
+- `godot-web-dotnet-linux-x86_64.tar.gz`, with a Linux x86_64 .NET-enabled editor
+- `godot-web-dotnet-template-release-nothreads.zip`, with the matching Web release template
 
 The workflow publishes:
 
