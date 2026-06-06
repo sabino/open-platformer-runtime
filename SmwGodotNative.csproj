@@ -7,7 +7,11 @@
     <LangVersion>12</LangVersion>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <GodotDisabledSourceGenerators>ScriptPathAttribute</GodotDisabledSourceGenerators>
     <DefaultItemExcludes>$(DefaultItemExcludes);.godot/**;.godot_local/**</DefaultItemExcludes>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(GodotWebDotNetPrototype)' == 'true'">
+    <DefineConstants>$(DefineConstants);GODOT_WEB</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove=".godot/**/*.cs" />

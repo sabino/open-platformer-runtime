@@ -1,12 +1,10 @@
 # Browser Loader
 
-This directory contains the first browser-facing entrypoint for the runtime.
+This directory contains the browser-facing entrypoint for the runtime.
 
-The page lets a user choose a local ROM file with the browser's native file picker, validates the file entirely in browser memory, probes the ROM tables needed by the importer, and can save a small browser manifest. It does not upload the ROM and it does not write generated assets into the repository.
+The page lets a user choose a local ROM file with the browser's native file picker, validates the file entirely in browser memory, reads the available level index and names from the ROM, and streams generated assets into the experimental Godot Web runtime. Level search and selection happen inside the running Godot course selector, not in the surrounding HTML page. It does not upload the ROM and it does not write generated assets into the repository.
 
-The playable browser runtime is not connected yet. The current Godot project is a Godot 4 .NET/C# runtime that loads generated files from `res://generated/smw/`; the browser path needs a web-safe importer plus a runtime asset provider before it can actually launch gameplay from the uploaded file.
-
-There is a separate experimental custom-Godot export track documented in `docs/WEB-DOTNET-PROTOTYPE.md`. That path requires a Godot build from `godotengine/godot#106125`.
+The playable browser runtime uses a custom experimental Godot 4 .NET/Web build documented in `docs/WEB-DOTNET-PROTOTYPE.md`.
 
 The public deployment is GitHub Pages:
 

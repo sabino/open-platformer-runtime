@@ -1,12 +1,6 @@
 name: Deploy Web Loader
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/pages.yml"
-      - "web/**"
   workflow_dispatch:
 
 permissions:
@@ -34,10 +28,17 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Prepare Pages artifact
+        run: |
+          set -euo pipefail
+          mkdir -p public/import
+          cp -R web/. public/
+          cp tools/smw_import.py public/import/smw_import.py
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web
+          path: public
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -51,9 +51,9 @@ dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-rom "$SMW
 
 ## Browser Loader
 
-`web/` contains the GitHub Pages browser loader. It uses the browser's native file picker, validates the selected ROM locally, probes importer table ranges through LoROM addressing, and can download a small browser manifest.
+`web/` contains the GitHub Pages browser loader. It uses the browser's native file picker, validates the selected ROM locally, probes importer table ranges through LoROM addressing, can download a small browser manifest, feeds a ROM-derived level index into the in-game selector, and can generate focused level asset packs in browser memory for the experimental Godot .NET Web runtime.
 
-The loader does not yet produce the full Godot asset pack or launch gameplay. That requires moving the manifest/importer path into `src/SmwAssets` and adding a runtime asset provider that is not tied to `res://generated/smw/`.
+The browser path currently runs the Python importer through Pyodide. Moving more importer logic into `src/SmwAssets` is still the preferred long-term direction so the browser can use shared C# extraction code instead of a Python bridge.
 
 ## Asset Boundary
 

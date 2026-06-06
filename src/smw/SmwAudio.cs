@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 
+namespace OpenPlatformerRuntime;
+
 public partial class SmwAudio : Node
 {
     private const int SampleRate = 32000;
@@ -367,8 +369,8 @@ public partial class SmwAudio : Node
 
     private void LoadSpcSamples()
     {
-        LoadSpcUploadIntoRam("res://generated/smw/audio/spc_engine.bin", _spcRam);
-        LoadSpcUploadIntoRam("res://generated/smw/audio/spc_samples.bin", _spcRam);
+        LoadSpcUploadIntoRam(SmwAssetPaths.Path("audio/spc_engine.bin"), _spcRam);
+        LoadSpcUploadIntoRam(SmwAssetPaths.Path("audio/spc_samples.bin"), _spcRam);
         foreach (var sampleId in new[] { 7, 8, 9, 14, 16 })
         {
             var decoded = DecodeSampleFromDirectory(_spcRam, sampleId);

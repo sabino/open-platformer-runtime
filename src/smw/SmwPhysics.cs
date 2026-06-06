@@ -2,6 +2,8 @@ using Godot;
 using System;
 using System.Collections.Generic;
 
+namespace OpenPlatformerRuntime;
+
 public sealed class SmwPhysics
 {
     private static readonly bool DebugCollisionTrace =

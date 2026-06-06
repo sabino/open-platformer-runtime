@@ -4,7 +4,12 @@ This project can be prepared for the same experimental path used by Raul Santos'
 
 This is not the stock Godot 4.6.3 Mono export path. It requires a custom Godot editor and matching Web export templates built from `godotengine/godot#106125`, plus .NET SDK 9.0 and the `wasm-tools` workload.
 
-This path only solves the "can the existing Godot C# runtime be exported to WebAssembly?" part. It does not yet solve browser-side ROM import. The current runtime still expects generated assets under `res://generated/smw/`; the ROM upload/import work remains the separate browser/importer track described in [WEB-RUNTIME.md](WEB-RUNTIME.md).
+This path now covers the first playable browser slice when paired with the `web/` loader: the browser validates a local ROM, Pyodide generates a focused level asset pack, and the custom Godot .NET Web export consumes those files through the web bridge. It is still experimental and does not replace the normal local Godot workflow.
+
+The local Godot fork also carries Web .NET marshalling fixes needed by this project:
+
+- typed `Array<T>` reads copy a native `Variant` before converting it to managed C# instead of reading directly from native array memory
+- object `Variant` conversion resolves the object pointer directly from the native `Variant` instead of round-tripping only through the object id
 
 ## Local Requirements
 
@@ -41,13 +46,13 @@ That directory is ignored by git. Do not commit exported builds unless a release
 
 ## Serve Locally
 
-The prototype may need cross-origin isolation for WebAssembly threading. Use the checked-in server so the required headers are present:
+Use the checked-in server so the preview has the same headers as the Pages/CDN path:
 
 ```bash
 tools/serve-web-dotnet-prototype.sh
 ```
 
-Then open:
+Then open the prepared public root, for example:
 
 ```text
 http://127.0.0.1:8060
@@ -77,7 +82,7 @@ https://sabino.pro/open-platformer-runtime/
 https://sabino.pro/open-platformer-runtime/experimental-godot/
 ```
 
-Plain GitHub Pages does not let this repository set arbitrary HTTP response headers. If the exported runtime requires `SharedArrayBuffer`, the custom domain/CDN in front of Pages must inject COOP/COEP headers for `/open-platformer-runtime/experimental-godot/*`.
+Plain GitHub Pages does not let this repository set arbitrary HTTP response headers. The checked-in loader/export path is currently built without pthreads, but the custom domain/CDN should still preserve COOP/COEP headers for `/open-platformer-runtime/experimental-godot/*` if future templates require `SharedArrayBuffer`.
 
 ## Project-Side Changes
 

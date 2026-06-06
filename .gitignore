@@ -5,6 +5,7 @@
 generated/
 logs/
 web-export/out/
+web-export/out-no-patch/
 local-rom.cfg
 *.sfc
 *.smc
@@ -12,6 +13,7 @@ local-rom.cfg
 *.srm
 *.log
 *.tmp
+*.old.*
 __pycache__/
 *.pyc
 bin/

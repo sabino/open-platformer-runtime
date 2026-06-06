@@ -3,12 +3,18 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+#if !GODOT_WEB
 using System.Net;
 using System.Net.Sockets;
+#endif
 using System.Text;
+#if !GODOT_WEB
 using System.Text.Json;
+#endif
 using IoFile = System.IO.File;
 using IoPath = System.IO.Path;
+
+namespace OpenPlatformerRuntime;
 
 public partial class GameScene : Node2D
 {
@@ -274,11 +280,13 @@ public partial class GameScene : Node2D
     private readonly HashSet<(int X, int Y)> _diagonalPipeBodyCells = [];
     private readonly HashSet<(int X, int Y)> _diagonalPipeCeilingCells = [];
     private readonly Dictionary<string, DebugCheckpointData> _debugCheckpoints = new(StringComparer.OrdinalIgnoreCase);
+#if !GODOT_WEB
     private static readonly JsonSerializerOptions DebugCheckpointJsonOptions = new()
     {
         IncludeFields = true,
         WriteIndented = true,
     };
+#endif
 
     private SmwPhysics.PlayerState _state;
     private Node2D? _player;
@@ -309,14 +317,14 @@ public partial class GameScene : Node2D
     private Map16TileLayer? _map16Layer;
     private Godot.Collections.Dictionary? _entranceTables;
     private string _currentLevelId = "105";
-    private string _levelGfxAtlasPath = "res://generated/smw/tilesets/level_105_tileset7_8x8.png";
-    private string _levelMap16AtlasPath = "res://generated/smw/tilesets/level_105_tileset7_map16_preview.png";
-    private string _levelSpriteAtlasPath = "res://generated/smw/spritesets/level_105_spritegfx8_8x8.png";
-    private string _levelSpriteVramPath = "res://generated/smw/spritesets/level_105_spritegfx8_vram.bin";
-    private string _levelPalettePath = "res://generated/smw/palettes/level_105_palette.json";
-    private string _levelLayoutPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
-    private string _levelTilemapPath = "res://generated/smw/levels/level_105_partial_tilemap.json";
-    private string _levelLayer2BackgroundPath = "res://generated/smw/levels/level_105_layer2_background.png";
+    private string _levelGfxAtlasPath = SmwAssetPaths.Path("tilesets/level_105_tileset7_8x8.png");
+    private string _levelMap16AtlasPath = SmwAssetPaths.Path("tilesets/level_105_tileset7_map16_preview.png");
+    private string _levelSpriteAtlasPath = SmwAssetPaths.Path("spritesets/level_105_spritegfx8_8x8.png");
+    private string _levelSpriteVramPath = SmwAssetPaths.Path("spritesets/level_105_spritegfx8_vram.bin");
+    private string _levelPalettePath = SmwAssetPaths.Path("palettes/level_105_palette.json");
+    private string _levelLayoutPreviewPath = SmwAssetPaths.Path("levels/level_105_partial_layout.png");
+    private string _levelTilemapPath = SmwAssetPaths.Path("levels/level_105_partial_tilemap.json");
+    private string _levelLayer2BackgroundPath = SmwAssetPaths.Path("levels/level_105_layer2_background.png");
     private int _currentLevelTileset = 7;
     private int _currentLevelMusicIndex;
     private string _currentLevelMusicPreview = "Level";
@@ -426,10 +434,12 @@ public partial class GameScene : Node2D
     private bool _debugActorVisualsEnabled = true;
     private bool _debugInvincible;
     private bool _courseSelectRequestSent;
+#if !GODOT_WEB
     private TcpListener? _debugRconListener;
     private readonly List<TcpClient> _debugRconClients = [];
     private readonly Dictionary<TcpClient, StringBuilder> _debugRconBuffers = [];
     private readonly byte[] _debugRconReadBuffer = new byte[4096];
+#endif
 
     public bool DebugOverlays { get; set; }
     public bool ActorsEnabled { get; set; } = true;
@@ -472,7 +482,9 @@ public partial class GameScene : Node2D
             return;
         }
 
+#if !GODOT_WEB
         PollDebugRcon();
+#endif
         if (Input.IsActionJustPressed("smw_back"))
         {
             RequestCourseSelect("input");
@@ -1649,18 +1661,18 @@ public partial class GameScene : Node2D
         _placedTiles.Clear();
         _rawPlacedTiles.Clear();
 
-        if (!FileAccess.FileExists("res://generated/smw/manifest.json"))
+        if (!FileAccess.FileExists(SmwAssetPaths.ManifestPath))
         {
             return false;
         }
 
-        using var file = FileAccess.Open("res://generated/smw/manifest.json", FileAccess.ModeFlags.Read);
+        using var file = FileAccess.Open(SmwAssetPaths.ManifestPath, FileAccess.ModeFlags.Read);
         if (file == null)
         {
             return false;
         }
 
-        var parsed = Json.ParseString(file.GetAsText());
+        var parsed = Json.ParseString(file.GetAsText(false));
         if (parsed.VariantType != Variant.Type.Dictionary)
         {
             return false;
@@ -1698,7 +1710,7 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var levelPath = $"res://generated/smw/{fileVariant.AsString()}";
+        var levelPath = SmwAssetPaths.Path(fileVariant.AsString());
         if (!FileAccess.FileExists(levelPath))
         {
             return false;
@@ -1710,7 +1722,7 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var levelParsed = Json.ParseString(levelFile.GetAsText());
+        var levelParsed = Json.ParseString(levelFile.GetAsText(false));
         if (levelParsed.VariantType != Variant.Type.Dictionary)
         {
             return false;
@@ -1851,12 +1863,12 @@ public partial class GameScene : Node2D
             if (tileset.TryGetValue("atlas_png", out var atlasVariant) &&
                 TryReadAssetFile(atlasVariant, out var atlasFile))
             {
-                _levelGfxAtlasPath = $"res://generated/smw/{atlasFile}";
+                _levelGfxAtlasPath = SmwAssetPaths.Path(atlasFile);
             }
             if (tileset.TryGetValue("map16_preview_png", out var map16Variant) &&
                 TryReadAssetFile(map16Variant, out var map16File))
             {
-                _levelMap16AtlasPath = $"res://generated/smw/{map16File}";
+                _levelMap16AtlasPath = SmwAssetPaths.Path(map16File);
             }
         }
 
@@ -1867,17 +1879,17 @@ public partial class GameScene : Node2D
             if (spriteTileset.TryGetValue("atlas_png", out var atlasVariant) &&
                 TryReadAssetFile(atlasVariant, out var atlasFile))
             {
-                _levelSpriteAtlasPath = $"res://generated/smw/{atlasFile}";
+                _levelSpriteAtlasPath = SmwAssetPaths.Path(atlasFile);
             }
             if (spriteTileset.TryGetValue("vram", out var vramVariant) &&
                 TryReadAssetFile(vramVariant, out var vramFile))
             {
-                _levelSpriteVramPath = $"res://generated/smw/{vramFile}";
+                _levelSpriteVramPath = SmwAssetPaths.Path(vramFile);
             }
             if (spriteTileset.TryGetValue("palette_assets", out var spritePaletteVariant) &&
                 TryReadAssetFile(spritePaletteVariant, out var spritePaletteFile))
             {
-                _levelPalettePath = $"res://generated/smw/{spritePaletteFile}";
+                _levelPalettePath = SmwAssetPaths.Path(spritePaletteFile);
             }
 
             ApplySpriteUploadTileStarts(spriteTileset);
@@ -1886,7 +1898,7 @@ public partial class GameScene : Node2D
         if (level.TryGetValue("palette_assets", out var paletteVariant) &&
             TryReadAssetFile(paletteVariant, out var paletteFile))
         {
-            _levelPalettePath = $"res://generated/smw/{paletteFile}";
+            _levelPalettePath = SmwAssetPaths.Path(paletteFile);
         }
 
         if (level.TryGetValue("layout_preview", out var layoutVariant) && layoutVariant.VariantType == Variant.Type.Dictionary)
@@ -1895,12 +1907,12 @@ public partial class GameScene : Node2D
             if (layout.TryGetValue("file", out var tilemapVariant) &&
                 TryReadAssetFile(tilemapVariant, out var tilemapFile))
             {
-                _levelTilemapPath = $"res://generated/smw/{tilemapFile}";
+                _levelTilemapPath = SmwAssetPaths.Path(tilemapFile);
             }
             if (layout.TryGetValue("preview_png", out var previewVariant) &&
                 TryReadAssetFile(previewVariant, out var previewFile))
             {
-                _levelLayoutPreviewPath = $"res://generated/smw/{previewFile}";
+                _levelLayoutPreviewPath = SmwAssetPaths.Path(previewFile);
             }
         }
 
@@ -1911,7 +1923,7 @@ public partial class GameScene : Node2D
             if (layer2.TryGetValue("preview_png", out var previewVariant) &&
                 TryReadAssetFile(previewVariant, out var previewFile))
             {
-                _levelLayer2BackgroundPath = $"res://generated/smw/{previewFile}";
+                _levelLayer2BackgroundPath = SmwAssetPaths.Path(previewFile);
             }
         }
     }
@@ -1985,7 +1997,7 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var tilemapParsed = Json.ParseString(tilemapFile.GetAsText());
+        var tilemapParsed = Json.ParseString(tilemapFile.GetAsText(false));
         if (tilemapParsed.VariantType != Variant.Type.Dictionary)
         {
             return;
@@ -2066,7 +2078,7 @@ public partial class GameScene : Node2D
 
     private void LoadPlayerGraphicsMetadata()
     {
-        const string playerGraphicsPath = "res://generated/smw/player/player_graphics.json";
+        var playerGraphicsPath = SmwAssetPaths.Path("player/player_graphics.json");
         if (!FileAccess.FileExists(playerGraphicsPath))
         {
             return;
@@ -2078,7 +2090,7 @@ public partial class GameScene : Node2D
             return;
         }
 
-        var parsed = Json.ParseString(file.GetAsText());
+        var parsed = Json.ParseString(file.GetAsText(false));
         if (parsed.VariantType != Variant.Type.Dictionary)
         {
             return;
@@ -2446,7 +2458,7 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var parsed = Json.ParseString(file.GetAsText());
+        var parsed = Json.ParseString(file.GetAsText(false));
         if (parsed.VariantType != Variant.Type.Dictionary)
         {
             return false;
@@ -7258,7 +7270,7 @@ public partial class GameScene : Node2D
 
         for (var paletteIndex = 0; paletteIndex < _playerTextures.Length; paletteIndex++)
         {
-            var playerAtlasPath = $"res://generated/smw/player/gfx32_player_palette{paletteIndex}.png";
+            var playerAtlasPath = SmwAssetPaths.Path($"player/gfx32_player_palette{paletteIndex}.png");
             if (!FileAccess.FileExists(playerAtlasPath))
             {
                 continue;
@@ -8087,7 +8099,7 @@ public partial class GameScene : Node2D
             return true;
         }
 
-        const string tablesPath = "res://generated/smw/levels/secondary_tables.json";
+        var tablesPath = SmwAssetPaths.Path("levels/secondary_tables.json");
         if (!FileAccess.FileExists(tablesPath))
         {
             return false;
@@ -8099,7 +8111,7 @@ public partial class GameScene : Node2D
             return false;
         }
 
-        var parsed = Json.ParseString(file.GetAsText());
+        var parsed = Json.ParseString(file.GetAsText(false));
         if (parsed.VariantType != Variant.Type.Dictionary)
         {
             return false;
@@ -8873,13 +8885,18 @@ public partial class GameScene : Node2D
 
     public void DebugStartRcon(int port)
     {
+#if GODOT_WEB
+        GD.Print($"smw-rcon: unavailable=web requested_port={port}");
+#else
         StopDebugRcon();
         _debugRconListener = new TcpListener(IPAddress.Loopback, port);
         _debugRconListener.Start();
         var boundPort = ((IPEndPoint)_debugRconListener.LocalEndpoint).Port;
         GD.Print($"smw-rcon: listening=127.0.0.1:{boundPort}");
+#endif
     }
 
+#if !GODOT_WEB
     private void StopDebugRcon()
     {
         foreach (var client in _debugRconClients)
@@ -8997,6 +9014,7 @@ public partial class GameScene : Node2D
         var bytes = Encoding.UTF8.GetBytes(text);
         client.GetStream().Write(bytes, 0, bytes.Length);
     }
+#endif
 
     private void PollDebugCommands()
     {
@@ -9689,6 +9707,9 @@ public partial class GameScene : Node2D
 
     private string DebugSaveCheckpointFile(string slot)
     {
+#if GODOT_WEB
+        return $"smw-debug-checkpoint: action=save_file slot={NormalizeCheckpointSlot(slot)} unavailable=web";
+#else
         slot = NormalizeCheckpointSlot(slot);
         var checkpoint = CaptureDebugCheckpoint();
         _debugCheckpoints[slot] = checkpoint;
@@ -9703,10 +9724,14 @@ public partial class GameScene : Node2D
         var line = FormatCheckpointLine("save_file", slot, checkpoint, $"path={path}");
         GD.Print(line);
         return line;
+#endif
     }
 
     private string DebugLoadCheckpointFile(string slot)
     {
+#if GODOT_WEB
+        return $"smw-debug-checkpoint: action=load_file slot={NormalizeCheckpointSlot(slot)} unavailable=web";
+#else
         slot = NormalizeCheckpointSlot(slot);
         var path = CheckpointFilePath(slot);
         if (!IoFile.Exists(path))
@@ -9725,6 +9750,7 @@ public partial class GameScene : Node2D
         var line = FormatCheckpointLine("load_file", slot, checkpoint, $"path={path}");
         GD.Print(line);
         return line;
+#endif
     }
 
     private string PrintDebugCheckpoints()
@@ -9740,6 +9766,11 @@ public partial class GameScene : Node2D
 
     private string PrintDebugCheckpointFiles()
     {
+#if GODOT_WEB
+        const string line = "smw-debug-checkpoint-files: unavailable=web";
+        GD.Print(line);
+        return line;
+#else
         var directory = CheckpointDirectoryPath();
         var files = System.IO.Directory.Exists(directory)
             ? System.IO.Directory.EnumerateFiles(directory, "*.json")
@@ -9750,6 +9781,7 @@ public partial class GameScene : Node2D
         var line = $"smw-debug-checkpoint-files: dir={directory} slots={(string.IsNullOrEmpty(description) ? "none" : description)}";
         GD.Print(line);
         return line;
+#endif
     }
 
     private static string NormalizeCheckpointSlot(string slot)
@@ -11271,7 +11303,7 @@ public partial class GameScene : Node2D
                 throw new System.IO.IOException($"unable to open {path}");
             }
 
-            return file.GetAsText().Replace("\r\n", "\n").Split('\n');
+            return file.GetAsText(false).Replace("\r\n", "\n").Split('\n');
         }
 
         var globalPath = IoPath.IsPathRooted(path) ? path : IoPath.GetFullPath(path);
@@ -11717,7 +11749,9 @@ public partial class GameScene : Node2D
     public override void _ExitTree()
     {
         DisposeRuntimeTextures();
+#if !GODOT_WEB
         StopDebugRcon();
+#endif
     }
 
     private void CheckPipeDebug(SmwPhysics.FrameInput frameInput)

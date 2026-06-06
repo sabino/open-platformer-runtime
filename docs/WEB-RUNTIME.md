@@ -12,9 +12,9 @@ The target browser flow is:
 
 `web/` now provides the first source-only browser entrypoint. It validates a selected ROM locally, detects headered dumps, checks the expected size and SHA-1, probes importer table ranges through LoROM addressing, and can download a small browser manifest.
 
-It is not a playable web runtime yet. The current game is a Godot 4 .NET/C# project, and its runtime loads generated assets from `res://generated/smw/`. That architecture works for local Godot playtesting but does not yet give the browser a way to run the C# Godot scene from an uploaded ROM.
+For the experimental playable path, the page runs the Python importer in Pyodide, writes a focused level asset pack in browser memory, loads the custom Godot .NET Web export in an iframe, and streams the generated files to the runtime with `postMessage`. The ROM is not uploaded.
 
-Godot's own 4.x documentation also marks C# projects as unavailable for Web export, so this repository should not promise a direct Godot export path until that upstream constraint changes.
+Stock Godot 4.x still does not provide this C# Web export flow. The playable browser path depends on a custom Godot build from `godotengine/godot#106125` and local engine fixes for Web .NET marshalling.
 
 An experimental direct-Godot path now exists in this repository for custom builds based on `godotengine/godot#106125`. See [WEB-DOTNET-PROTOTYPE.md](WEB-DOTNET-PROTOTYPE.md). That path is intentionally separate from the stock Godot 4.6.3 workflow.
 
@@ -25,6 +25,12 @@ python3 -m http.server 8765 -d web
 ```
 
 Open `http://localhost:8765`, choose a local ROM dump, and confirm the page reports local validation status. The file stays in browser memory.
+
+For the playable Godot Web export, build the custom template described in [WEB-DOTNET-PROTOTYPE.md](WEB-DOTNET-PROTOTYPE.md), export to `web-export/out/`, then serve the combined preview:
+
+```bash
+tools/serve-web-dotnet-prototype.sh /path/to/prepared/public-root
+```
 
 ## Importer Migration
 
@@ -39,8 +45,8 @@ The C# CLI tool under `tools/SmwAssetTool` references this library now. Future e
 
 ## Roadmap
 
-1. Move manifest generation from `tools/smw_import.py` into `src/SmwAssets`.
-2. Add a browser asset-pack format that can be built from a `byte[]`/`ReadOnlyMemory<byte>` without filesystem writes.
-3. Replace `res://generated/smw/` assumptions with a runtime asset provider interface.
-4. Build either a web-native runtime host or a future Godot web host once Godot 4 .NET can support this project shape.
+1. Move more importer logic from `tools/smw_import.py` into `src/SmwAssets`.
+2. Replace the Pyodide importer bridge with a native C# browser asset-pack builder when Godot Web .NET support can host it cleanly.
+3. Continue replacing `res://generated/smw/` assumptions with a runtime asset provider interface.
+4. Harden the custom Godot Web export path and upstream the required marshalling fixes if possible.
 5. Add source-only CI that checks the web loader, C# asset library, and public documentation without requiring a ROM.

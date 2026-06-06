@@ -25,6 +25,11 @@ if ! dotnet workload list | awk 'NR > 4 {print $1}' | grep -qx 'wasm-tools'; the
   missing=1
 fi
 
+if ! dotnet workload list | awk 'NR > 4 {print $1}' | grep -qx 'wasm-tools-net9'; then
+  echo "The .NET wasm-tools-net9 workload is not installed. Run: dotnet workload install wasm-tools-net9" >&2
+  missing=1
+fi
+
 [[ -f export_presets.cfg ]] || { echo "export_presets.cfg is missing." >&2; exit 1; }
 
 if [[ "$missing" -ne 0 ]]; then

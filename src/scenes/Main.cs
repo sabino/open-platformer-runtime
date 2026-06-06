@@ -2,16 +2,19 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text.Json;
+using IOException = System.IO.IOException;
+using IoPath = System.IO.Path;
+
+namespace OpenPlatformerRuntime;
 
 public partial class Main : Node2D
 {
     private static readonly Vector2I LogicalViewportSize = new(256, 224);
     private static readonly Vector2I DefaultWindowSize = new(LogicalViewportSize.X * 3, LogicalViewportSize.Y * 3);
     private const string DefaultLevelId = "105";
-    private const string ManifestPath = "res://generated/smw/manifest.json";
-    private const string DefaultMenuLevelPreviewPath = "res://generated/smw/levels/level_105_partial_layout.png";
-    private const string MenuPlayerPreviewPath = "res://generated/smw/player/gfx32_player_palette0.png";
+    private static string ManifestPath => SmwAssetPaths.ManifestPath;
+    private static string DefaultMenuLevelPreviewPath => SmwAssetPaths.Path("levels/level_105_partial_layout.png");
+    private static string MenuPlayerPreviewPath => SmwAssetPaths.Path("player/gfx32_player_palette0.png");
 
     private Control? _menu;
     private GameScene? _game;
@@ -22,6 +25,7 @@ public partial class Main : Node2D
     private Label? _selectedLevelLabel;
     private Label? _selectedLevelTitle;
     private Label? _levelSearchStatus;
+    private Label? _assetStatusLabel;
     private Button? _startButton;
     private OptionButton? _levelSelect;
     private LineEdit? _levelSearch;
@@ -32,12 +36,15 @@ public partial class Main : Node2D
     private CheckBox? _actorVisualsToggle;
     private readonly List<ImportedLevelEntry> _importedLevels = [];
     private readonly List<ImportedLevelEntry> _visibleLevels = [];
+    private readonly Dictionary<string, ImportedLevelEntry> _webIndexedLevels = new(StringComparer.Ordinal);
     private string _selectedLevelId = DefaultLevelId;
     private string _menuLevelPreviewPath = DefaultMenuLevelPreviewPath;
-    private bool _debugOverlays;
+    private bool _debugOverlays = true;
     private bool _audioEnabled;
     private bool _actorsEnabled = true;
     private bool _actorVisualsEnabled = true;
+    private JavaScriptObject? _webBridgeCallback;
+    private int _webImportedFileCount;
 
     private sealed record ImportedLevelEntry(
         string Id,
@@ -47,12 +54,15 @@ public partial class Main : Node2D
         string? PreviewPath,
         int ObjectCount,
         int SpriteCount,
-        int ScreenExitCount);
+        int ScreenExitCount,
+        bool IsGenerated);
 
     public override void _Ready()
     {
         Engine.MaxFps = 60;
-        if (!DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
+        var webDisplay = IsWebDisplay();
+        if (!webDisplay &&
+            !DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
         {
             GetWindow().Transparent = false;
             GetViewport().TransparentBg = false;
@@ -61,6 +71,7 @@ public partial class Main : Node2D
         }
 
         SetupInputMap();
+        SetupWebAssetBridge(webDisplay);
         LoadImportedLevelList();
         _audioEnabled = ShouldEnableAudio();
         ApplyInitialMenuArgs();
@@ -287,46 +298,65 @@ public partial class Main : Node2D
         _importedLevels.Clear();
         if (!FileAccess.FileExists(ManifestPath))
         {
+            FinalizeImportedLevelList();
             return;
         }
 
         using var file = FileAccess.Open(ManifestPath, FileAccess.ModeFlags.Read);
         if (file == null)
         {
+            FinalizeImportedLevelList();
             return;
         }
 
         try
         {
-            using var document = JsonDocument.Parse(file.GetAsText());
-            if (!document.RootElement.TryGetProperty("levels", out var levels) ||
-                levels.ValueKind != JsonValueKind.Object)
+            var parsed = Json.ParseString(file.GetAsText(false));
+            if (parsed.VariantType != Variant.Type.Dictionary)
             {
+                FinalizeImportedLevelList();
                 return;
             }
 
-            foreach (var property in levels.EnumerateObject())
+            var manifest = parsed.AsGodotDictionary();
+            if (!manifest.TryGetValue("levels", out var levelsVariant) ||
+                levelsVariant.VariantType != Variant.Type.Dictionary)
             {
-                var level = property.Value;
-                var id = NormalizeLevelId(property.Name);
-                string? previewPath = null;
-                if (level.TryGetProperty("layout_preview", out var layoutPreview) &&
-                    layoutPreview.ValueKind == JsonValueKind.Object &&
-                    layoutPreview.TryGetProperty("preview_png", out var previewPng) &&
-                    previewPng.ValueKind == JsonValueKind.String)
+                FinalizeImportedLevelList();
+                return;
+            }
+
+            var levels = levelsVariant.AsGodotDictionary();
+            foreach (var property in levels)
+            {
+                if (property.Value.VariantType != Variant.Type.Dictionary)
                 {
-                    var relativePath = previewPng.GetString();
-                    if (!string.IsNullOrWhiteSpace(relativePath))
+                    continue;
+                }
+
+                var level = property.Value.AsGodotDictionary();
+                var id = NormalizeLevelId(property.Key.AsString());
+                string? previewPath = null;
+                if (level.TryGetValue("layout_preview", out var layoutPreview) &&
+                    layoutPreview.VariantType == Variant.Type.Dictionary)
+                {
+                    var layout = layoutPreview.AsGodotDictionary();
+                    if (layout.TryGetValue("preview_png", out var previewPng) &&
+                        previewPng.VariantType == Variant.Type.String)
                     {
-                        previewPath = $"res://generated/smw/{relativePath}";
+                        var relativePath = previewPng.AsString();
+                        if (!string.IsNullOrWhiteSpace(relativePath))
+                        {
+                            previewPath = SmwAssetPaths.Path(relativePath);
+                        }
                     }
                 }
 
                 var screenExitCount = 0;
-                if (level.TryGetProperty("screen_exits", out var screenExits) &&
-                    screenExits.ValueKind == JsonValueKind.Array)
+                if (level.TryGetValue("screen_exits", out var screenExits) &&
+                    screenExits.VariantType == Variant.Type.Array)
                 {
-                    screenExitCount = screenExits.GetArrayLength();
+                    screenExitCount = screenExits.AsGodotArray().Count;
                 }
 
                 _importedLevels.Add(new ImportedLevelEntry(
@@ -337,15 +367,22 @@ public partial class Main : Node2D
                     previewPath,
                     GetIntProperty(level, "object_count"),
                     GetIntProperty(level, "sprite_count"),
-                    screenExitCount));
+                    screenExitCount,
+                    IsGenerated: true));
             }
         }
-        catch (Exception exc) when (exc is JsonException || exc is InvalidOperationException)
+        catch (InvalidOperationException exc)
         {
             GD.PrintErr($"smw-menu: manifest parse failed path={ManifestPath} error={exc.Message}");
             _importedLevels.Clear();
         }
 
+        FinalizeImportedLevelList();
+    }
+
+    private void FinalizeImportedLevelList()
+    {
+        MergeWebIndexedLevels();
         _importedLevels.Sort((left, right) => LevelSortKey(left.Id).CompareTo(LevelSortKey(right.Id)));
         if (_importedLevels.Count > 0)
         {
@@ -353,17 +390,40 @@ public partial class Main : Node2D
         }
     }
 
-    private static int GetIntProperty(JsonElement element, string key)
+    private void MergeWebIndexedLevels()
     {
-        return element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number
-            ? value.GetInt32()
+        if (_webIndexedLevels.Count == 0)
+        {
+            return;
+        }
+
+        var generatedIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var level in _importedLevels)
+        {
+            generatedIds.Add(level.Id);
+        }
+
+        foreach (var level in _webIndexedLevels.Values)
+        {
+            if (!generatedIds.Contains(level.Id))
+            {
+                _importedLevels.Add(level);
+            }
+        }
+    }
+
+    private static int GetIntProperty(Godot.Collections.Dictionary element, string key)
+    {
+        return element.TryGetValue(key, out var value) &&
+            (value.VariantType == Variant.Type.Int || value.VariantType == Variant.Type.Float)
+            ? value.AsInt32()
             : 0;
     }
 
-    private static string GetStringProperty(JsonElement element, string key)
+    private static string GetStringProperty(Godot.Collections.Dictionary element, string key)
     {
-        return element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString() ?? string.Empty
+        return element.TryGetValue(key, out var value) && value.VariantType == Variant.Type.String
+            ? value.AsString()
             : string.Empty;
     }
 
@@ -411,9 +471,12 @@ public partial class Main : Node2D
         }
         if (_selectedLevelLabel != null)
         {
-            _selectedLevelLabel.Text = level != null
-                ? $"Objects {level.ObjectCount}    Sprites {level.SpriteCount}    Exits {level.ScreenExitCount}"
-                : $"Level {_selectedLevelId} is not in the generated manifest";
+            _selectedLevelLabel.Text = level switch
+            {
+                { IsGenerated: true } => $"Objects {level.ObjectCount}    Sprites {level.SpriteCount}    Exits {level.ScreenExitCount}",
+                { IsGenerated: false } => "ROM indexed. Press Start to import this level.",
+                _ => $"Level {_selectedLevelId} is not in the generated manifest",
+            };
         }
         if (_selectedLevelTitle != null)
         {
@@ -423,8 +486,10 @@ public partial class Main : Node2D
         }
         if (_startButton != null)
         {
-            _startButton.Text = level != null
-                ? $"Start {level.Id}"
+            _startButton.Text = level != null && !level.IsGenerated
+                ? $"Import {level.Id}"
+                : level != null
+                    ? $"Start {level.Id}"
                 : $"Start Level {_selectedLevelId}";
         }
         SelectVisibleLevelRow(_selectedLevelId);
@@ -507,10 +572,70 @@ public partial class Main : Node2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (_game == null && (@event.IsActionPressed("ui_accept") || @event.IsActionPressed("smw_start")))
+        if (_game != null)
+        {
+            return;
+        }
+
+        if (HandleMenuTypeSearch(@event))
+        {
+            return;
+        }
+
+        if (@event.IsActionPressed("ui_accept") || @event.IsActionPressed("smw_start"))
         {
             StartGame();
         }
+    }
+
+    private bool HandleMenuTypeSearch(InputEvent @event)
+    {
+        if (_levelSearch == null ||
+            @event is not InputEventKey keyEvent ||
+            !keyEvent.Pressed ||
+            keyEvent.Echo)
+        {
+            return false;
+        }
+
+        if (keyEvent.Keycode == Key.Escape)
+        {
+            if (_levelSearch.Text.Length == 0)
+            {
+                return false;
+            }
+            _levelSearch.Text = string.Empty;
+            _levelSearch.CaretColumn = 0;
+            FilterMenuLevels(_levelSearch.Text);
+            GetViewport().SetInputAsHandled();
+            return true;
+        }
+
+        if (keyEvent.Keycode == Key.Backspace)
+        {
+            if (_levelSearch.Text.Length == 0)
+            {
+                return false;
+            }
+            _levelSearch.Text = _levelSearch.Text[..^1];
+            _levelSearch.CaretColumn = _levelSearch.Text.Length;
+            FilterMenuLevels(_levelSearch.Text);
+            GetViewport().SetInputAsHandled();
+            return true;
+        }
+
+        var unicode = keyEvent.Unicode;
+        if (unicode < 0x20 || unicode > 0x7E)
+        {
+            return false;
+        }
+
+        _levelSearch.GrabFocus();
+        _levelSearch.Text += (char)unicode;
+        _levelSearch.CaretColumn = _levelSearch.Text.Length;
+        FilterMenuLevels(_levelSearch.Text);
+        GetViewport().SetInputAsHandled();
+        return true;
     }
 
     private static void SetupInputMap()
@@ -693,12 +818,12 @@ public partial class Main : Node2D
         title.AddThemeConstantOverride("shadow_offset_y", 2);
         panel.AddChild(title);
 
-        var status = new Label { Text = AssetStatusText() };
-        status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        status.CustomMinimumSize = new Vector2(112, 10);
-        status.AddThemeFontSizeOverride("font_size", 5);
-        status.AddThemeColorOverride("font_color", new Color(0.88f, 0.96f, 1.0f, 1.0f));
-        panel.AddChild(status);
+        _assetStatusLabel = new Label { Text = AssetStatusText() };
+        _assetStatusLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _assetStatusLabel.CustomMinimumSize = new Vector2(112, 10);
+        _assetStatusLabel.AddThemeFontSizeOverride("font_size", 5);
+        _assetStatusLabel.AddThemeColorOverride("font_color", new Color(0.88f, 0.96f, 1.0f, 1.0f));
+        panel.AddChild(_assetStatusLabel);
 
         AddMenuLevelSelect(panel);
 
@@ -727,8 +852,13 @@ public partial class Main : Node2D
         return FileAccess.FileExists(ManifestPath);
     }
 
-    private static string AssetStatusText()
+    private string AssetStatusText()
     {
+        if (_webIndexedLevels.Count > 0)
+        {
+            return $"{_webIndexedLevels.Count} ROM levels indexed. Missing assets generate on demand.";
+        }
+
         return HasGeneratedAssetPack()
             ? "Generated asset pack found."
             : "No generated asset pack found. The playable slice will use a placeholder level.";
@@ -994,8 +1124,9 @@ public partial class Main : Node2D
 
         if (_levelSearchStatus != null)
         {
+            var noun = _webIndexedLevels.Count > 0 ? "valid levels" : "imported levels";
             _levelSearchStatus.Text = _visibleLevels.Count == _importedLevels.Count
-                ? $"{_importedLevels.Count} imported levels"
+                ? $"{_importedLevels.Count} {noun}"
                 : $"{_visibleLevels.Count} of {_importedLevels.Count} levels";
         }
 
@@ -1003,7 +1134,9 @@ public partial class Main : Node2D
         {
             if (_selectedLevelLabel != null)
             {
-                _selectedLevelLabel.Text = "No matching imported levels";
+                _selectedLevelLabel.Text = _webIndexedLevels.Count > 0
+                    ? "No matching valid levels"
+                    : "No matching imported levels";
             }
             return;
         }
@@ -1153,7 +1286,7 @@ public partial class Main : Node2D
         panel.AddChild(musicButtons);
         foreach (var name in new[] { "Level", "Overworld", "Credits", "Star" })
         {
-            var bankPath = $"res://generated/smw/audio/spc_{name.ToLowerInvariant()}_music_bank.bin";
+            var bankPath = SmwAssetPaths.Path($"audio/spc_{name.ToLowerInvariant()}_music_bank.bin");
             var button = new Button
             {
                 Text = name,
@@ -1200,9 +1333,9 @@ public partial class Main : Node2D
     {
         var banks = new (string Label, string Path)[]
         {
-            ("Level", "res://generated/smw/audio/spc_level_music_bank.bin"),
-            ("Overworld", "res://generated/smw/audio/spc_overworld_music_bank.bin"),
-            ("Credits", "res://generated/smw/audio/spc_credits_music_bank.bin"),
+            ("Level", SmwAssetPaths.Path("audio/spc_level_music_bank.bin")),
+            ("Overworld", SmwAssetPaths.Path("audio/spc_overworld_music_bank.bin")),
+            ("Credits", SmwAssetPaths.Path("audio/spc_credits_music_bank.bin")),
         };
 
         foreach (var bank in banks)
@@ -1218,9 +1351,294 @@ public partial class Main : Node2D
         }
     }
 
+    private void SetupWebAssetBridge(bool webDisplay)
+    {
+        if (!webDisplay)
+        {
+            return;
+        }
+
+        try
+        {
+            _webBridgeCallback = JavaScriptBridge.CreateCallback(Callable.From<Godot.Collections.Array>(OnWebAssetCommand));
+            var window = JavaScriptBridge.GetInterface("window");
+            window.Set("openPlatformerRuntimeGodotCommand", _webBridgeCallback);
+            JavaScriptBridge.Eval(
+                """
+                window.openPlatformerRuntimeGodotReady = true;
+                window.dispatchEvent(new CustomEvent("open-platformer-runtime-godot-ready"));
+                if (window.parent && window.parent !== window) {
+                  window.parent.postMessage({ type: "open-platformer-runtime-godot-ready" }, "*");
+                }
+                """,
+                useGlobalExecutionContext: true);
+            GD.Print("smw-web: bridge_ready=1");
+        }
+        catch (Exception exc)
+        {
+            GD.PushWarning($"smw-web: bridge unavailable: {exc.Message}");
+        }
+    }
+
+    private static bool IsWebDisplay()
+    {
+        if (OS.HasFeature("web") ||
+            DisplayServer.GetName().Contains("web", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            return JavaScriptBridge.GetInterface("window") != null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void OnWebAssetCommand(Godot.Collections.Array args)
+    {
+        if (args.Count == 0)
+        {
+            return;
+        }
+
+        var command = args[0].AsString();
+        try
+        {
+            switch (command)
+            {
+                case "level_index":
+                    ReceiveWebLevelIndex(args);
+                    break;
+
+                case "begin":
+                    _webImportedFileCount = 0;
+                    SmwAssetPaths.PreferUserAssetPack();
+                    GD.Print("smw-web: import_begin=1");
+                    break;
+
+                case "file":
+                    ReceiveWebAssetFile(args);
+                    break;
+
+                case "complete":
+                    var levelId = args.Count > 1 ? NormalizeLevelId(args[1].AsString()) : DefaultLevelId;
+                    var autoStart = args.Count > 2 && args[2].AsBool();
+                    GD.Print($"smw-web: import_complete=1 files={_webImportedFileCount} level={levelId} autostart={(autoStart ? 1 : 0)}");
+                    CallDeferred(nameof(RefreshAfterWebAssetImport), levelId, autoStart);
+                    break;
+
+                case "status":
+                    GD.Print($"smw-web: status={FormatWebStatus(args)}");
+                    break;
+            }
+        }
+        catch (Exception exc)
+        {
+            GD.PrintErr($"smw-web: command_failed command={command} error={exc.Message}");
+        }
+    }
+
+    private void ReceiveWebLevelIndex(Godot.Collections.Array args)
+    {
+        if (args.Count < 2)
+        {
+            return;
+        }
+
+        var parsed = Json.ParseString(args[1].AsString());
+        if (parsed.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var payload = parsed.AsGodotDictionary();
+        if (!payload.TryGetValue("levels", out var levelsVariant) ||
+            levelsVariant.VariantType != Variant.Type.Array)
+        {
+            return;
+        }
+
+        var preferredLevel = _selectedLevelId;
+        _webIndexedLevels.Clear();
+        foreach (var item in levelsVariant.AsGodotArray())
+        {
+            if (item.VariantType != Variant.Type.Dictionary)
+            {
+                continue;
+            }
+
+            var level = item.AsGodotDictionary();
+            var id = NormalizeLevelId(GetStringProperty(level, "id"));
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            _webIndexedLevels[id] = new ImportedLevelEntry(
+                id,
+                GetStringProperty(level, "name"),
+                GetStringProperty(level, "display_name"),
+                GetStringProperty(level, "title_source"),
+                PreviewPath: null,
+                ObjectCount: 0,
+                SpriteCount: 0,
+                ScreenExitCount: 0,
+                IsGenerated: false);
+        }
+
+        LoadImportedLevelList();
+        if (FindImportedLevel(preferredLevel) != null)
+        {
+            SelectMenuLevel(preferredLevel);
+        }
+        if (_assetStatusLabel != null)
+        {
+            _assetStatusLabel.Text = AssetStatusText();
+        }
+        if (_levelList != null)
+        {
+            FilterMenuLevels(_levelSearch?.Text ?? string.Empty);
+        }
+
+        GD.Print($"smw-web: level_index={_webIndexedLevels.Count}");
+    }
+
+    private void ReceiveWebAssetFile(Godot.Collections.Array args)
+    {
+        if (args.Count < 3)
+        {
+            throw new ArgumentException("file command requires path and buffer");
+        }
+
+        var relativePath = NormalizeWebAssetPath(args[1].AsString());
+        if (args[2].VariantType != Variant.Type.Object ||
+            args[2].AsGodotObject() is not JavaScriptObject jsBuffer ||
+            !JavaScriptBridge.IsJsBuffer(jsBuffer))
+        {
+            throw new ArgumentException($"asset payload is not a JavaScript buffer: {relativePath}");
+        }
+
+        var bytes = JavaScriptBridge.JsBufferToPackedByteArray(jsBuffer);
+        var userPath = SmwAssetPaths.UserPath(relativePath);
+        var absolutePath = ProjectSettings.GlobalizePath(userPath);
+        var directory = IoPath.GetDirectoryName(absolutePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            DirAccess.MakeDirRecursiveAbsolute(directory);
+        }
+
+        using var file = FileAccess.Open(userPath, FileAccess.ModeFlags.Write);
+        if (file == null)
+        {
+            throw new IOException($"failed to open {userPath} for writing");
+        }
+
+        file.StoreBuffer(bytes);
+        _webImportedFileCount++;
+    }
+
+    private static string NormalizeWebAssetPath(string relativePath)
+    {
+        var normalized = relativePath.Replace('\\', '/').TrimStart('/');
+        if (normalized.Length == 0 ||
+            normalized.Contains("..", StringComparison.Ordinal) ||
+            normalized.StartsWith("res://", StringComparison.OrdinalIgnoreCase) ||
+            normalized.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException($"invalid asset path: {relativePath}");
+        }
+
+        return normalized;
+    }
+
+    private static string FormatWebStatus(Godot.Collections.Array args)
+    {
+        return args.Count > 1 ? args[1].AsString() : string.Empty;
+    }
+
+    private bool RequestWebLevelImport(string levelId)
+    {
+        if (!IsWebDisplay())
+        {
+            return false;
+        }
+
+        var normalized = NormalizeLevelId(levelId);
+        if (_startButton != null)
+        {
+            _startButton.Disabled = true;
+            _startButton.Text = $"Importing {normalized}";
+        }
+        if (_levelSearchStatus != null)
+        {
+            _levelSearchStatus.Text = $"Importing level {normalized} from ROM...";
+        }
+
+        try
+        {
+            JavaScriptBridge.Eval(
+                $$"""
+                {
+                  const message = { type: "open-platformer-runtime-import-level", levelId: "{{normalized}}" };
+                  if (window.parent && window.parent !== window) {
+                    window.parent.postMessage(message, "*");
+                  } else {
+                    window.postMessage(message, "*");
+                  }
+                }
+                """,
+                useGlobalExecutionContext: true);
+            GD.Print($"smw-web: request_import level={normalized}");
+            return true;
+        }
+        catch (Exception exc)
+        {
+            GD.PrintErr($"smw-web: request_import_failed level={normalized} error={exc.Message}");
+            if (_startButton != null)
+            {
+                _startButton.Disabled = false;
+                _startButton.Text = $"Import {normalized}";
+            }
+            return false;
+        }
+    }
+
+    private void RefreshAfterWebAssetImport(string levelId, bool autoStart)
+    {
+        if (_game != null)
+        {
+            _game.CourseSelectRequested -= ReturnToCourseSelect;
+            _game.QueueFree();
+            _game = null;
+        }
+
+        _gameBackground?.QueueFree();
+        _gameBackground = null;
+        _menu?.QueueFree();
+        ClearMenuReferences();
+        LoadImportedLevelList();
+        SelectMenuLevel(levelId, updateUi: false);
+        ShowMenu();
+
+        if (autoStart)
+        {
+            StartGame();
+        }
+    }
+
     private void StartGame()
     {
         if (_game != null)
+        {
+            return;
+        }
+
+        var selectedLevel = FindImportedLevel(_selectedLevelId);
+        if (selectedLevel is { IsGenerated: false } && RequestWebLevelImport(selectedLevel.Id))
         {
             return;
         }
@@ -1270,6 +1688,7 @@ public partial class Main : Node2D
         _selectedLevelLabel = null;
         _selectedLevelTitle = null;
         _levelSearchStatus = null;
+        _assetStatusLabel = null;
         _startButton = null;
         _levelSelect = null;
         _levelSearch = null;

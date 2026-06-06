@@ -50,15 +50,15 @@ Try the browser loader on GitHub Pages:
 https://sabino.pro/open-platformer-runtime/
 ```
 
-The web page currently validates a local ROM selection in browser memory and exports a small browser manifest. Gameplay is still local Godot-only until the web runtime bridge is implemented.
+The web page validates a local ROM selection in browser memory, strips a copier header in memory when needed, indexes ROM-derived level names for the in-game selector, and can launch the experimental Godot .NET Web runtime without uploading the ROM.
 
-There is also an experimental custom-Godot path for the upstream Web .NET prototype work. It requires a Godot build from `godotengine/godot#106125`; see [docs/WEB-DOTNET-PROTOTYPE.md](docs/WEB-DOTNET-PROTOTYPE.md).
+The playable browser path is experimental and requires a custom Godot build from `godotengine/godot#106125` plus this project's local web-runtime fixes; see [docs/WEB-DOTNET-PROTOTYPE.md](docs/WEB-DOTNET-PROTOTYPE.md).
 
 ## Current Scope
 
 The current runtime can boot a SNES-sized `256x224` Godot viewport, generate local assets from a user-provided ROM, show a searchable imported-level selector, launch selected imported levels, and return from a level to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or the current course-clear path.
 
-The repository also includes a GitHub Pages browser loader under `web/`. It uses the browser's native file picker and local Web Crypto validation, but it is not yet wired to the playable Godot runtime.
+The repository also includes a GitHub Pages browser loader under `web/`. It uses the browser's native file picker, local Web Crypto validation, Pyodide-backed in-browser importing, and a postMessage bridge that lets the Godot course selector request additional levels.
 
 The strongest verified gameplay slice is still the first-level route and its direct pipe target. Other imported levels may boot or render, but broad level compatibility is not guaranteed. Many systems are partial or missing, including exact collision, complete Map16 semantics, most blocks, most enemies, exact sprite loading/despawn, overworld progression, save data, complete audio, and many player states.
 
