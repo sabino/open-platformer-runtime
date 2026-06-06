@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/experimental-web-dotnet-pages.yml"
+      - "SmwGodotNative.sln"
       - "SmwGodotNative.csproj"
       - "export_presets.cfg"
       - "src/**"
