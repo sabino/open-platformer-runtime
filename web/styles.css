@@ -132,6 +132,47 @@ h1 {
   line-height: 1.25;
 }
 
+.progress-wrap {
+  margin: 0 0 12px;
+}
+
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+  color: var(--accent);
+  font-size: clamp(0.68rem, 2vw, 0.78rem);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+#progressValue {
+  color: var(--ink);
+}
+
+.progress-track {
+  height: 14px;
+  padding: 2px;
+  border: 2px solid #425b4f;
+  background: #101820;
+  box-shadow: inset 0 0 0 2px #17252a;
+}
+
+.progress-bar {
+  width: 0;
+  height: 100%;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      var(--accent),
+      var(--accent) 8px,
+      #ffe487 8px,
+      #ffe487 12px
+    );
+  transition: width 160ms linear;
+}
+
 .details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -190,7 +231,8 @@ button {
   pointer-events: none;
 }
 
-button:disabled {
+button:disabled,
+.file-button.is-disabled {
   background: #5d6a66;
   color: #b8c4a3;
   cursor: not-allowed;
@@ -204,7 +246,7 @@ select:disabled {
 }
 
 button:not(:disabled):hover,
-.file-button:hover {
+.file-button:not(.is-disabled):hover {
   transform: translate(1px, 1px);
   box-shadow: 3px 3px 0 #080d10;
 }

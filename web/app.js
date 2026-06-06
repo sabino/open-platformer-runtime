@@ -20,58 +20,79 @@ const manifestButton = document.getElementById("manifestButton");
 const playButton = document.getElementById("playButton");
 const runtimeFrame = document.getElementById("runtimeFrame");
 const screenEl = document.querySelector(".screen");
+const controlsEl = document.querySelector(".controls");
+const fileButton = document.querySelector(".file-button");
+const progressWrap = document.getElementById("progressWrap");
+const progressLabel = document.getElementById("progressLabel");
+const progressValue = document.getElementById("progressValue");
+const progressBar = document.getElementById("progressBar");
 
 let currentManifest = null;
 let currentRomBytes = null;
 let currentRomIsSupported = false;
 let currentLevelIndex = [];
+let isBusy = false;
 let pyodidePromise = null;
 let importerSourcePromise = null;
 let runtimeImportPromise = null;
 
 romFile.addEventListener("change", async () => {
+  if (isBusy) {
+    return;
+  }
+
   const file = romFile.files?.[0];
   if (!file) {
     resetState();
     return;
   }
 
+  currentManifest = null;
+  currentRomBytes = null;
+  currentRomIsSupported = false;
+  currentLevelIndex = [];
+  screenEl?.classList.remove("is-playing");
+  runtimeFrame.hidden = true;
   setBusy(file.name);
 
   try {
+    await nextFrame();
     const buffer = await file.arrayBuffer();
     const bytes = new Uint8Array(buffer);
+    await progressStep("Checking ROM", 14, "Checking ROM hash...");
     const inspection = await inspectRom(bytes);
+    await progressStep("Validating tables", 24, "Validating ROM tables...");
     currentRomBytes = inspection.importBytes;
     currentRomIsSupported = inspection.isSupported;
     currentManifest = buildBrowserManifest(file, inspection);
     renderInspection(currentManifest);
-    manifestButton.disabled = false;
-    playButton.disabled = true;
 
     if (inspection.isSupported) {
-      statusEl.textContent = "Reading level names from ROM...";
       const levelIndex = await buildLevelIndex(currentRomBytes);
       currentManifest.level_index = levelIndex;
       currentLevelIndex = levelIndex.levels;
-      playButton.disabled = currentLevelIndex.length === 0;
-      statusEl.textContent = currentLevelIndex.length > 0
+      const readyMessage = currentLevelIndex.length > 0
         ? `ROM validated locally. ${currentLevelIndex.length} levels will be searchable inside the game.`
         : "ROM validated, but no valid levels were found.";
+      await progressStep("Ready", 100, readyMessage);
+    } else {
+      showProgress("Unsupported", 100, statusEl.textContent);
     }
   } catch (error) {
     currentManifest = null;
     currentRomBytes = null;
     currentRomIsSupported = false;
     currentLevelIndex = [];
-    manifestButton.disabled = true;
-    playButton.disabled = true;
-    statusEl.textContent = error instanceof Error ? error.message : "ROM processing failed.";
+    const message = error instanceof Error ? error.message : "ROM processing failed.";
+    showProgress("Failed", 100, message);
     detailsEl.innerHTML = detailsMarkup([
       ["ROM", file.name],
       ["Import", "Failed"],
       ["Runtime", "Unavailable"],
     ]);
+  } finally {
+    isBusy = false;
+    refreshControls();
   }
 });
 
@@ -85,7 +106,7 @@ window.addEventListener("message", (event) => {
 });
 
 manifestButton.addEventListener("click", () => {
-  if (!currentManifest) {
+  if (isBusy || !currentManifest) {
     return;
   }
 
@@ -101,45 +122,44 @@ manifestButton.addEventListener("click", () => {
 });
 
 playButton.addEventListener("click", async () => {
-  if (!currentRomBytes || !currentRomIsSupported) {
+  if (isBusy || !currentRomBytes || !currentRomIsSupported) {
     return;
   }
 
   const levelId = initialLevelId();
-  playButton.disabled = true;
-  manifestButton.disabled = true;
+  beginBusy(`Preparing ${levelId}`, 4, `Preparing level ${levelId}...`);
 
   try {
     await importAndSendLevel(levelId, { autoStart: true });
-    playButton.disabled = false;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Browser play failed.";
-    statusEl.textContent = message;
+    showProgress("Failed", 100, message);
     updateDetails("Failed", "Runtime unavailable");
-    playButton.disabled = false;
+  } finally {
+    isBusy = false;
+    refreshControls();
   }
 });
 
 async function handleRuntimeLevelImport(levelId) {
-  if (!currentRomBytes || !currentRomIsSupported || runtimeImportPromise) {
+  if (isBusy || !currentRomBytes || !currentRomIsSupported || runtimeImportPromise) {
     return;
   }
 
   const normalizedLevelId = normalizeLevelId(levelId || "105");
-  playButton.disabled = true;
-  manifestButton.disabled = true;
+  beginBusy(`Preparing ${normalizedLevelId}`, 4, `Preparing level ${normalizedLevelId}...`);
 
   runtimeImportPromise = importAndSendLevel(normalizedLevelId, { autoStart: true })
     .catch((error) => {
       const message = error instanceof Error ? error.message : "Browser import failed.";
-      statusEl.textContent = message;
+      showProgress("Failed", 100, message);
       updateDetails("Failed", `Level ${normalizedLevelId}`);
       throw error;
     })
     .finally(() => {
       runtimeImportPromise = null;
-      playButton.disabled = false;
-      manifestButton.disabled = false;
+      isBusy = false;
+      refreshControls();
     });
 
   try {
@@ -152,19 +172,18 @@ async function handleRuntimeLevelImport(levelId) {
 async function importAndSendLevel(levelId, options = {}) {
   const autoStart = options.autoStart ?? true;
   updateDetails("Importing", "Starting");
-  statusEl.textContent = `Generating level ${levelId} from the local ROM...`;
-  const [assetPack] = await Promise.all([
-    buildAssetPack(currentRomBytes, levelId),
-    ensureRuntimeFrame(),
-  ]);
+  await progressStep("Starting import", 8, `Generating level ${levelId} from the local ROM...`);
+  const runtimeReadyPromise = ensureRuntimeFrame();
+  const assetPack = await buildAssetPack(currentRomBytes, levelId);
+  await progressStep("Loading runtime", 82, "Waiting for the Godot runtime...");
+  await runtimeReadyPromise;
 
   currentManifest = assetPack.manifest;
-  manifestButton.disabled = false;
-  statusEl.textContent = `Streaming ${assetPack.files.length} generated files into the runtime...`;
+  await progressStep("Streaming files", 86, `Streaming ${assetPack.files.length} generated files into the runtime...`);
   await sendAssetPackToGodot(assetPack, levelId, autoStart);
   screenEl?.classList.add("is-playing");
   runtimeFrame.hidden = false;
-  statusEl.textContent = "Runtime started.";
+  showProgress("Runtime ready", 100, "Runtime started.");
   updateDetails("Complete", `Level ${levelId}`);
   return assetPack;
 }
@@ -174,25 +193,86 @@ function resetState() {
   currentRomBytes = null;
   currentRomIsSupported = false;
   currentLevelIndex = [];
-  manifestButton.disabled = true;
-  playButton.disabled = true;
+  isBusy = false;
   screenEl?.classList.remove("is-playing");
   runtimeFrame.hidden = true;
+  resetProgress();
   statusEl.textContent = "Waiting for a local ROM file.";
   detailsEl.innerHTML = detailsMarkup([
     ["ROM", "Not selected"],
     ["Import", "Idle"],
     ["Runtime", "Pending"],
   ]);
+  refreshControls();
 }
 
 function setBusy(fileName) {
-  statusEl.textContent = "Reading local file...";
+  beginBusy("Reading file", 4, "Reading local file...");
   detailsEl.innerHTML = detailsMarkup([
     ["ROM", fileName],
     ["Import", "Reading"],
     ["Runtime", "Pending"],
   ]);
+}
+
+function beginBusy(label, value, status) {
+  isBusy = true;
+  showProgress(label, value, status);
+  refreshControls();
+}
+
+async function progressStep(label, value, status) {
+  showProgress(label, value, status);
+  await nextFrame();
+}
+
+function showProgress(label, value, status) {
+  const clampedValue = Math.max(0, Math.min(100, Math.round(value)));
+  if (status) {
+    statusEl.textContent = status;
+  }
+  if (progressWrap) {
+    progressWrap.hidden = false;
+    progressWrap.setAttribute("aria-valuenow", String(clampedValue));
+  }
+  if (progressLabel) {
+    progressLabel.textContent = label;
+  }
+  if (progressValue) {
+    progressValue.textContent = `${clampedValue}%`;
+  }
+  if (progressBar) {
+    progressBar.style.width = `${clampedValue}%`;
+  }
+}
+
+function resetProgress() {
+  if (progressWrap) {
+    progressWrap.hidden = true;
+    progressWrap.setAttribute("aria-valuenow", "0");
+  }
+  if (progressLabel) {
+    progressLabel.textContent = "Idle";
+  }
+  if (progressValue) {
+    progressValue.textContent = "0%";
+  }
+  if (progressBar) {
+    progressBar.style.width = "0%";
+  }
+}
+
+function refreshControls() {
+  romFile.disabled = isBusy;
+  manifestButton.disabled = isBusy || !currentManifest;
+  playButton.disabled = isBusy || !canPlay();
+  controlsEl?.setAttribute("aria-busy", isBusy ? "true" : "false");
+  fileButton?.classList.toggle("is-disabled", isBusy);
+  fileButton?.setAttribute("aria-disabled", isBusy ? "true" : "false");
+}
+
+function canPlay() {
+  return Boolean(currentRomBytes && currentRomIsSupported && currentLevelIndex.length > 0);
 }
 
 async function inspectRom(bytes) {
@@ -291,9 +371,11 @@ function renderInspection(manifest) {
 }
 
 async function buildAssetPack(bytes, levelId) {
+  await progressStep("Loading Python", 18, "Loading browser Python runtime...");
   const pyodide = await getPyodide();
+  await progressStep("Loading importer", 32, "Loading ROM importer...");
   const importerSource = await getImporterSource();
-  statusEl.textContent = `Generating level ${levelId} from the local ROM...`;
+  await progressStep("Generating assets", 50, `Generating level ${levelId} from the local ROM...`);
   updateDetails("Running", "Pyodide");
 
   pyodide.FS.writeFile("/input.sfc", bytes);
@@ -323,6 +405,7 @@ smw_import.import_rom(argparse.Namespace(
 ))
 `);
   pyodide.globals.delete("opr_level_id");
+  await progressStep("Collecting files", 72, "Collecting generated runtime files...");
 
   const files = collectFiles(pyodide, "/out");
   const manifestFile = files.find((file) => file.path === "manifest.json");
@@ -337,8 +420,11 @@ smw_import.import_rom(argparse.Namespace(
 }
 
 async function buildLevelIndex(bytes) {
+  await progressStep("Loading Python", 38, "Loading browser Python runtime...");
   const pyodide = await getPyodide();
+  await progressStep("Loading importer", 54, "Loading ROM importer...");
   const importerSource = await getImporterSource();
+  await progressStep("Reading level names", 72, "Reading level names from ROM...");
 
   pyodide.FS.writeFile("/input.sfc", bytes);
   pyodide.FS.writeFile("/smw_import.py", importerSource);
@@ -394,6 +480,7 @@ json.dumps({
     "levels": levels,
 })
 `);
+  await progressStep("Preparing levels", 92, "Preparing searchable level list...");
   const parsed = JSON.parse(indexJson);
   parsed.levels.sort((left, right) => levelSortKey(left.id) - levelSortKey(right.id));
   return parsed;
@@ -496,6 +583,8 @@ async function sendAssetPackToGodot(assetPack, levelId, autoStart = true) {
     const file = assetPack.files[index];
     command("file", file.path, file.bytes);
     if (index % 4 === 0 || index + 1 === assetPack.files.length) {
+      const percent = 86 + Math.round(((index + 1) / assetPack.files.length) * 12);
+      showProgress(`Streaming ${index + 1}/${assetPack.files.length}`, percent, `Streaming ${assetPack.files.length} generated files into the runtime...`);
       updateDetails(`${index + 1}/${assetPack.files.length}`, "Streaming");
       await nextFrame();
     }

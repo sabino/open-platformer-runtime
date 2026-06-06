@@ -17,6 +17,15 @@
             <p class="kicker">Open Platformer Runtime</p>
             <h1>Browser Loader</h1>
             <p id="status" class="status">Waiting for a local ROM file.</p>
+            <div id="progressWrap" class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+              <div class="progress-meta">
+                <span id="progressLabel">Idle</span>
+                <span id="progressValue">0%</span>
+              </div>
+              <div class="progress-track" aria-hidden="true">
+                <div id="progressBar" class="progress-bar"></div>
+              </div>
+            </div>
             <dl id="details" class="details">
               <div>
                 <dt>ROM</dt>
