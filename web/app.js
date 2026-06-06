@@ -413,9 +413,23 @@ smw_import.import_rom(argparse.Namespace(
     throw new Error("Importer did not produce a manifest.");
   }
 
+  const manifest = JSON.parse(new TextDecoder().decode(manifestFile.bytes));
+  if (currentLevelIndex.length > 0) {
+    manifest.level_index = {
+      source: "browser_rom_index",
+      count: currentLevelIndex.length,
+      levels: currentLevelIndex,
+    };
+    const manifestIndex = files.findIndex((file) => file.path === "manifest.json");
+    files[manifestIndex] = {
+      ...manifestFile,
+      bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)),
+    };
+  }
+
   return {
     files,
-    manifest: JSON.parse(new TextDecoder().decode(manifestFile.bytes)),
+    manifest,
   };
 }
 

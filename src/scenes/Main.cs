@@ -319,6 +319,7 @@ public partial class Main : Node2D
             }
 
             var manifest = parsed.AsGodotDictionary();
+            MergeManifestLevelIndex(manifest);
             if (!manifest.TryGetValue("levels", out var levelsVariant) ||
                 levelsVariant.VariantType != Variant.Type.Dictionary)
             {
@@ -388,6 +389,25 @@ public partial class Main : Node2D
         {
             SelectMenuLevel(FindImportedLevel(DefaultLevelId)?.Id ?? _importedLevels[0].Id, updateUi: false);
         }
+    }
+
+    private void MergeManifestLevelIndex(Godot.Collections.Dictionary manifest)
+    {
+        if (!manifest.TryGetValue("level_index", out var indexVariant) ||
+            indexVariant.VariantType != Variant.Type.Dictionary)
+        {
+            return;
+        }
+
+        var index = indexVariant.AsGodotDictionary();
+        if (!index.TryGetValue("levels", out var levelsVariant) ||
+            levelsVariant.VariantType != Variant.Type.Array)
+        {
+            return;
+        }
+
+        var count = AddWebIndexedLevels(levelsVariant.AsGodotArray(), clearExisting: false);
+        GD.Print($"smw-menu: manifest_level_index={count}");
     }
 
     private void MergeWebIndexedLevels()
@@ -1463,8 +1483,33 @@ public partial class Main : Node2D
         }
 
         var preferredLevel = _selectedLevelId;
-        _webIndexedLevels.Clear();
-        foreach (var item in levelsVariant.AsGodotArray())
+        var count = AddWebIndexedLevels(levelsVariant.AsGodotArray(), clearExisting: true);
+
+        LoadImportedLevelList();
+        if (FindImportedLevel(preferredLevel) != null)
+        {
+            SelectMenuLevel(preferredLevel);
+        }
+        if (_assetStatusLabel != null)
+        {
+            _assetStatusLabel.Text = AssetStatusText();
+        }
+        if (_levelList != null)
+        {
+            FilterMenuLevels(_levelSearch?.Text ?? string.Empty);
+        }
+
+        GD.Print($"smw-web: level_index={count}");
+    }
+
+    private int AddWebIndexedLevels(Godot.Collections.Array levels, bool clearExisting)
+    {
+        if (clearExisting)
+        {
+            _webIndexedLevels.Clear();
+        }
+
+        foreach (var item in levels)
         {
             if (item.VariantType != Variant.Type.Dictionary)
             {
@@ -1490,21 +1535,7 @@ public partial class Main : Node2D
                 IsGenerated: false);
         }
 
-        LoadImportedLevelList();
-        if (FindImportedLevel(preferredLevel) != null)
-        {
-            SelectMenuLevel(preferredLevel);
-        }
-        if (_assetStatusLabel != null)
-        {
-            _assetStatusLabel.Text = AssetStatusText();
-        }
-        if (_levelList != null)
-        {
-            FilterMenuLevels(_levelSearch?.Text ?? string.Empty);
-        }
-
-        GD.Print($"smw-web: level_index={_webIndexedLevels.Count}");
+        return _webIndexedLevels.Count;
     }
 
     private void ReceiveWebAssetFile(Godot.Collections.Array args)
