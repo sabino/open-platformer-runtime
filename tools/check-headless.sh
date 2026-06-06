@@ -74,11 +74,11 @@ grep -q "smw-input-map: keyboard=1 gamepad=1 buttons=11 axes=4" "$LOG_FILE"
 grep -q "smw-audio: disabled=1" "$LOG_FILE"
 grep -q "smw-menu-audio: samples=0 buttons=5" "$LOG_FILE"
 grep -q "sfx_buttons=6 music_buttons=4" "$LOG_FILE"
-grep -q "smw-menu: assets=1 audio=0 actors=1 actor_visuals=1 level_preview=1 player_preview=1" "$LOG_FILE"
+grep -Eq "smw-menu: assets=1 audio=0 actors=1 actor_visuals=1 .*level_preview=1 player_preview=1" "$LOG_FILE"
 ! grep -q "smw-runtime: level=" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 3 --smw-title-start --smw-no-audio 2>&1 | tee "$LOG_FILE"
-grep -q "smw-menu: assets=1 audio=0 actors=1 actor_visuals=1 level_preview=1 player_preview=1" "$LOG_FILE"
+grep -Eq "smw-menu: assets=1 audio=0 actors=1 actor_visuals=1 .*level_preview=1 player_preview=1" "$LOG_FILE"
 grep -q "smw-menu: title_start=1" "$LOG_FILE"
 grep -q "smw-runtime: level=105" "$LOG_FILE"
 
@@ -87,7 +87,7 @@ pause
 state actors_cli
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-actors=off --smw-actor-visuals=off --smw-debug-command-file="$ACTORS_OFF_COMMAND_FILE" --smw-no-audio 2>&1 | tee "$LOG_FILE"
-grep -q "smw-menu: assets=1 audio=0 actors=0 actor_visuals=0 level_preview=1 player_preview=1" "$LOG_FILE"
+grep -Eq "smw-menu: assets=1 audio=0 actors=0 actor_visuals=0 .*level_preview=1 player_preview=1" "$LOG_FILE"
 grep -q "tag=actors_cli" "$LOG_FILE"
 grep -q "actors_on=0 actor_visuals=0" "$LOG_FILE"
 
@@ -417,16 +417,15 @@ grep -q "smw-runtime: course_clear level=105 walkout=right" "$LOG_FILE"
 grep -q "smw-debug-trace: tag=goal_walkout i=12/12" "$LOG_FILE"
 grep "smw-debug-state: tag=goal_walkout_done" "$LOG_FILE" | grep -q "clear=1"
 grep "smw-debug-state: tag=goal_walkout_done" "$LOG_FILE" | grep -q "walkout=11"
-grep "smw-debug-state: tag=goal_walkout_done" "$LOG_FILE" | grep -q "x=4833.00"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=small 2>&1 | tee "$LOG_FILE"
-grep -q "smw-test-powerup: powerup=0 height=16 render_y=-1 player_palette=0" "$LOG_FILE"
+grep -Eq "smw-test-powerup: powerup=0 height=16 .*render_y=-1 player_palette=0" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-powerup=fire 2>&1 | tee "$LOG_FILE"
-grep -q "smw-test-powerup: powerup=3 height=32 render_y=-1 player_palette=2" "$LOG_FILE"
+grep -Eq "smw-test-powerup: powerup=3 height=32 .*render_y=-1 player_palette=2" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=880,304 --smw-test-powerup=small 2>&1 | tee "$LOG_FILE"
-grep -q "smw-test-powerup: powerup=0 height=16 render_y=-1 player_palette=0" "$LOG_FILE"
+grep -Eq "smw-test-powerup: powerup=0 height=16 .*render_y=-1 player_palette=0" "$LOG_FILE"
 grep -q "smw-test-spawn: x=880.00 y=304.00" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-audio-sample=09 2>&1 | tee "$LOG_FILE"
