@@ -2196,7 +2196,7 @@ public partial class GameScene : Node2D
         _diagonalPipeCeilingCells.Clear();
         _cameraGizmo?.QueueFree();
         _cameraGizmo = null;
-        DisposeRuntimeTextures();
+        ClearWorldTextureReferences();
         _map16Layer = null;
         StartWorldRoot();
         AddWorldBackground();
@@ -8420,6 +8420,13 @@ public partial class GameScene : Node2D
             _playerTextures[i]?.Dispose();
             _playerTextures[i] = null;
         }
+    }
+
+    private void ClearWorldTextureReferences()
+    {
+        _spriteTexture = null;
+        _map16Texture = null;
+        Array.Clear(_spritePaletteTextures);
     }
 
     private static ImageTexture? LoadTextureFromImageFile(string resourcePath)
