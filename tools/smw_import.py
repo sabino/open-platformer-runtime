@@ -2856,6 +2856,11 @@ def import_rom(args: argparse.Namespace) -> dict[str, Any]:
         index += 1
         if level_id < 0 or level_id >= 0x200:
             raise ImportErrorWithExit(f"Level id out of range: 0x{level_id:X}")
+        print(
+            f"smw-import: extracting level {level_id:03X} ({index}/{len(level_queue)})",
+            file=sys.stderr,
+            flush=True,
+        )
         level_info = extract_level(rom, out_dir, level_id)
         level_name = level_titles.get(level_id, "")
         level_info["name"] = level_name

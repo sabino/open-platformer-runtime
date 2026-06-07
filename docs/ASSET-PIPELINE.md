@@ -47,13 +47,15 @@ dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-player-me
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-entrance-tables "$SMW_ROM_PATH" /tmp/smw-native-entrances
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-palettes "$SMW_ROM_PATH" /tmp/smw-native-palettes
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-rom "$SMW_ROM_PATH"
+dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- native-init "$SMW_ROM_PATH" /tmp/smw-native-runtime
+dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- native-import-level "$SMW_ROM_PATH" /tmp/smw-native-runtime 105
 ```
 
 ## Browser Loader
 
-`web/` contains the GitHub Pages browser loader. It uses the browser's native file picker, validates the selected ROM locally, probes importer table ranges through LoROM addressing, can download a small browser manifest, feeds a ROM-derived level index into the in-game selector, and can generate focused level asset packs in browser memory for the experimental Godot .NET Web runtime.
+`web/` contains the GitHub Pages browser loader. It uses the browser's native file picker, validates the selected ROM locally, probes importer table ranges through LoROM addressing, can download a small browser manifest, and passes the ROM bytes into the experimental Godot .NET Web runtime. Level search and generation happen inside the runtime through the shared C# importer.
 
-The browser path currently runs the Python importer through Pyodide. Moving more importer logic into `src/SmwAssets` is still the preferred long-term direction so the browser can use shared C# extraction code instead of a Python bridge.
+The browser path no longer runs the Python importer through Pyodide. `tools/smw_import.py` remains as a parity/reference importer while the shared C# path catches up to every extraction detail.
 
 ## Asset Boundary
 

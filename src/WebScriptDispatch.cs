@@ -8,6 +8,8 @@ public partial class Main
 {
     private static readonly StringName WebMethodReady = "_Ready";
     private static readonly StringName WebMethodUnhandledInput = "_UnhandledInput";
+    private static readonly StringName WebMethodProcess = "_Process";
+    private static readonly StringName WebMethodExitTree = "_ExitTree";
     private static readonly StringName WebMethodRefreshAfterImport = nameof(RefreshAfterWebAssetImport);
     private static readonly StringName WebMethodTitleStartProbe = nameof(StartGameFromTitleStartProbe);
 
@@ -23,6 +25,20 @@ public partial class Main
         if (method == WebMethodUnhandledInput && args.Count == 1)
         {
             _UnhandledInput(VariantUtils.ConvertTo<InputEvent>(in args[0]));
+            ret = default;
+            return true;
+        }
+
+        if (method == WebMethodProcess && args.Count == 1)
+        {
+            _Process(VariantUtils.ConvertTo<double>(in args[0]));
+            ret = default;
+            return true;
+        }
+
+        if (method == WebMethodExitTree && args.Count == 0)
+        {
+            _ExitTree();
             ret = default;
             return true;
         }
@@ -50,6 +66,8 @@ public partial class Main
     {
         if (method == WebMethodReady ||
             method == WebMethodUnhandledInput ||
+            method == WebMethodProcess ||
+            method == WebMethodExitTree ||
             method == WebMethodRefreshAfterImport ||
             method == WebMethodTitleStartProbe)
         {
