@@ -1,11 +1,7 @@
 const EXPECTED_SIZE = 0x80000;
 const COPIER_HEADER_SIZE = 0x200;
 const EXPECTED_SHA1 = "6B47BB75D16514B6A476AA0C73A683A2A4C18765";
-const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/";
-const PYODIDE_MODULE_URL = `${PYODIDE_INDEX_URL}pyodide.mjs`;
-const IMPORTER_URL = "import/smw_import.py";
 const RUNTIME_URL = "experimental-godot/";
-const DEFAULT_LEVEL_ID = "105";
 
 const PROBES = [
   { name: "global palettes", address: 0x00b0a0, length: 0x180 },
@@ -30,11 +26,10 @@ const progressBar = document.getElementById("progressBar");
 let currentManifest = null;
 let currentRomBytes = null;
 let currentRomIsSupported = false;
-let currentLevelIndex = [];
+let currentIndexedLevelCount = 0;
+let runtimeRomReady = false;
 let isBusy = false;
-let pyodidePromise = null;
-let importerSourcePromise = null;
-let runtimeImportPromise = null;
+let pendingRomReady = null;
 
 romFile.addEventListener("change", async () => {
   if (isBusy) {
@@ -50,7 +45,9 @@ romFile.addEventListener("change", async () => {
   currentManifest = null;
   currentRomBytes = null;
   currentRomIsSupported = false;
-  currentLevelIndex = [];
+  currentIndexedLevelCount = 0;
+  runtimeRomReady = false;
+  rejectPendingRomReady("ROM selection changed.");
   screenEl?.classList.remove("is-playing");
   runtimeFrame.hidden = true;
   setBusy(file.name);
@@ -68,13 +65,19 @@ romFile.addEventListener("change", async () => {
     renderInspection(currentManifest);
 
     if (inspection.isSupported) {
-      const levelIndex = await buildLevelIndex(currentRomBytes);
-      currentManifest.level_index = levelIndex;
-      currentLevelIndex = levelIndex.levels;
-      const readyMessage = currentLevelIndex.length > 0
-        ? `ROM validated locally. ${currentLevelIndex.length} levels will be searchable inside the game.`
-        : "ROM validated, but no valid levels were found.";
+      await progressStep("Loading runtime", 34, "Loading the Godot runtime...");
+      await ensureRuntimeFrame({ reveal: false });
+      await progressStep("Sending ROM", 48, "Sending ROM bytes into the runtime...");
+      const result = await sendRomToGodot(file.name, currentRomBytes);
+      currentIndexedLevelCount = result.indexedLevelCount ?? 0;
+      runtimeRomReady = currentIndexedLevelCount > 0;
+      currentManifest.runtime_status.indexed_level_count = currentIndexedLevelCount;
+      currentManifest.runtime_status.native_importer = "ready";
+      const readyMessage = runtimeRomReady
+        ? `ROM loaded. ${currentIndexedLevelCount} levels are searchable inside the game.`
+        : "ROM loaded, but no valid levels were indexed.";
       await progressStep("Ready", 100, readyMessage);
+      updateDetails("Complete", `${currentIndexedLevelCount} levels`);
     } else {
       showProgress("Unsupported", 100, statusEl.textContent);
     }
@@ -82,7 +85,9 @@ romFile.addEventListener("change", async () => {
     currentManifest = null;
     currentRomBytes = null;
     currentRomIsSupported = false;
-    currentLevelIndex = [];
+    currentIndexedLevelCount = 0;
+    runtimeRomReady = false;
+    rejectPendingRomReady("ROM processing failed.");
     const message = error instanceof Error ? error.message : "ROM processing failed.";
     showProgress("Failed", 100, message);
     detailsEl.innerHTML = detailsMarkup([
@@ -97,12 +102,11 @@ romFile.addEventListener("change", async () => {
 });
 
 window.addEventListener("message", (event) => {
-  if (event.source !== runtimeFrame.contentWindow ||
-      event.data?.type !== "open-platformer-runtime-import-level") {
+  if (event.source !== runtimeFrame.contentWindow || !event.data?.type) {
     return;
   }
 
-  void handleRuntimeLevelImport(event.data.levelId);
+  handleRuntimeMessage(event.data);
 });
 
 manifestButton.addEventListener("click", () => {
@@ -122,15 +126,18 @@ manifestButton.addEventListener("click", () => {
 });
 
 playButton.addEventListener("click", async () => {
-  if (isBusy || !currentRomBytes || !currentRomIsSupported) {
+  if (isBusy || !runtimeRomReady) {
     return;
   }
 
-  const levelId = initialLevelId();
-  beginBusy(`Preparing ${levelId}`, 4, `Preparing level ${levelId}...`);
+  beginBusy("Opening runtime", 98, "Opening the in-game course selector...");
 
   try {
-    await importAndSendLevel(levelId, { autoStart: true });
+    await ensureRuntimeFrame({ reveal: true });
+    screenEl?.classList.add("is-playing");
+    runtimeFrame.hidden = false;
+    showProgress("Runtime ready", 100, "Use the in-game selector to search and start a level.");
+    updateDetails("Complete", `${currentIndexedLevelCount} levels`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Browser play failed.";
     showProgress("Failed", 100, message);
@@ -141,58 +148,13 @@ playButton.addEventListener("click", async () => {
   }
 });
 
-async function handleRuntimeLevelImport(levelId) {
-  if (isBusy || !currentRomBytes || !currentRomIsSupported || runtimeImportPromise) {
-    return;
-  }
-
-  const normalizedLevelId = normalizeLevelId(levelId || "105");
-  beginBusy(`Preparing ${normalizedLevelId}`, 4, `Preparing level ${normalizedLevelId}...`);
-
-  runtimeImportPromise = importAndSendLevel(normalizedLevelId, { autoStart: true })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : "Browser import failed.";
-      showProgress("Failed", 100, message);
-      updateDetails("Failed", `Level ${normalizedLevelId}`);
-      throw error;
-    })
-    .finally(() => {
-      runtimeImportPromise = null;
-      isBusy = false;
-      refreshControls();
-    });
-
-  try {
-    await runtimeImportPromise;
-  } catch {
-    // The status line above is the user-facing error surface.
-  }
-}
-
-async function importAndSendLevel(levelId, options = {}) {
-  const autoStart = options.autoStart ?? true;
-  updateDetails("Importing", "Starting");
-  await progressStep("Starting import", 8, `Generating level ${levelId} from the local ROM...`);
-  const runtimeReadyPromise = ensureRuntimeFrame();
-  const assetPack = await buildAssetPack(currentRomBytes, levelId);
-  await progressStep("Loading runtime", 82, "Waiting for the Godot runtime...");
-  await runtimeReadyPromise;
-
-  currentManifest = assetPack.manifest;
-  await progressStep("Streaming files", 86, `Streaming ${assetPack.files.length} generated files into the runtime...`);
-  await sendAssetPackToGodot(assetPack, levelId, autoStart);
-  screenEl?.classList.add("is-playing");
-  runtimeFrame.hidden = false;
-  showProgress("Runtime ready", 100, "Runtime started.");
-  updateDetails("Complete", `Level ${levelId}`);
-  return assetPack;
-}
-
 function resetState() {
   currentManifest = null;
   currentRomBytes = null;
   currentRomIsSupported = false;
-  currentLevelIndex = [];
+  currentIndexedLevelCount = 0;
+  runtimeRomReady = false;
+  rejectPendingRomReady("ROM state reset.");
   isBusy = false;
   screenEl?.classList.remove("is-playing");
   runtimeFrame.hidden = true;
@@ -272,7 +234,7 @@ function refreshControls() {
 }
 
 function canPlay() {
-  return Boolean(currentRomBytes && currentRomIsSupported && currentLevelIndex.length > 0);
+  return Boolean(currentRomBytes && currentRomIsSupported && runtimeRomReady);
 }
 
 async function inspectRom(bytes) {
@@ -370,187 +332,95 @@ function renderInspection(manifest) {
   ]);
 }
 
-async function buildAssetPack(bytes, levelId) {
-  await progressStep("Loading Python", 18, "Loading browser Python runtime...");
-  const pyodide = await getPyodide();
-  await progressStep("Loading importer", 32, "Loading ROM importer...");
-  const importerSource = await getImporterSource();
-  await progressStep("Generating assets", 50, `Generating level ${levelId} from the local ROM...`);
-  updateDetails("Running", "Pyodide");
-
-  pyodide.FS.writeFile("/input.sfc", bytes);
-  pyodide.FS.writeFile("/smw_import.py", importerSource);
-  pyodide.globals.set("opr_level_id", levelId);
-  pyodide.runPython(`
-import argparse
-import importlib.util
-import os
-import shutil
-import sys
-
-shutil.rmtree("/out", ignore_errors=True)
-os.makedirs("/out", exist_ok=True)
-
-spec = importlib.util.spec_from_file_location("smw_import", "/smw_import.py")
-smw_import = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-sys.modules["smw_import"] = smw_import
-spec.loader.exec_module(smw_import)
-smw_import.import_rom(argparse.Namespace(
-    rom="/input.sfc",
-    out="/out",
-    level=[opr_level_id],
-    include_exit_targets=True,
-    exit_depth=1,
-))
-`);
-  pyodide.globals.delete("opr_level_id");
-  await progressStep("Collecting files", 72, "Collecting generated runtime files...");
-
-  const files = collectFiles(pyodide, "/out");
-  const manifestFile = files.find((file) => file.path === "manifest.json");
-  if (!manifestFile) {
-    throw new Error("Importer did not produce a manifest.");
-  }
-
-  const manifest = JSON.parse(new TextDecoder().decode(manifestFile.bytes));
-  if (currentLevelIndex.length > 0) {
-    manifest.level_index = {
-      source: "browser_rom_index",
-      count: currentLevelIndex.length,
-      levels: currentLevelIndex,
-    };
-    const manifestIndex = files.findIndex((file) => file.path === "manifest.json");
-    files[manifestIndex] = {
-      ...manifestFile,
-      bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)),
-    };
-  }
-
-  return {
-    files,
-    manifest,
-  };
-}
-
-async function buildLevelIndex(bytes) {
-  await progressStep("Loading Python", 38, "Loading browser Python runtime...");
-  const pyodide = await getPyodide();
-  await progressStep("Loading importer", 54, "Loading ROM importer...");
-  const importerSource = await getImporterSource();
-  await progressStep("Reading level names", 72, "Reading level names from ROM...");
-
-  pyodide.FS.writeFile("/input.sfc", bytes);
-  pyodide.FS.writeFile("/smw_import.py", importerSource);
-  const indexJson = pyodide.runPython(`
-import importlib.util
-import json
-import sys
-from pathlib import Path
-
-spec = importlib.util.spec_from_file_location("smw_import", "/smw_import.py")
-smw_import = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-sys.modules["smw_import"] = smw_import
-spec.loader.exec_module(smw_import)
-
-rom = smw_import.Rom.load(Path("/input.sfc"))
-try:
-    titles, title_source = smw_import.load_overworld_level_titles(rom)
-    title_error = None
-except Exception as exc:
-    titles = {}
-    title_source = "unavailable"
-    title_error = str(exc)
-
-levels = []
-invalid = []
-for level_id in range(smw_import.EDITOR_LEVEL_TITLE_COUNT):
-    try:
-        layer1_addr = rom.get_24(0x05E000 + level_id * 3)
-        layer1_len = smw_import.calc_level_len(rom, layer1_addr)
-        header = smw_import.decode_level_header(rom.get_bytes(layer1_addr, 5))
-        title = titles.get(level_id, "")
-        key = f"{level_id:03X}"
-        levels.append({
-            "id": key,
-            "name": title,
-            "display_name": title or f"Level {key}",
-            "title_source": title_source if title else "none",
-            "layer1_addr": f"0x{layer1_addr:06X}",
-            "layer1_length": layer1_len,
-            "screens": header["screens"],
-            "vertical": bool(header["vertical"]),
-        })
-    except Exception as exc:
-        invalid.append({"id": f"{level_id:03X}", "error": str(exc)})
-
-json.dumps({
-    "source": title_source,
-    "status": "ok" if title_error is None else "partial",
-    "error": title_error,
-    "count": len(levels),
-    "invalid_count": len(invalid),
-    "levels": levels,
-})
-`);
-  await progressStep("Preparing levels", 92, "Preparing searchable level list...");
-  const parsed = JSON.parse(indexJson);
-  parsed.levels.sort((left, right) => levelSortKey(left.id) - levelSortKey(right.id));
-  return parsed;
-}
-
-async function getPyodide() {
-  if (!pyodidePromise) {
-    pyodidePromise = import(PYODIDE_MODULE_URL)
-      .then(({ loadPyodide }) => loadPyodide({ indexURL: PYODIDE_INDEX_URL }));
-  }
-  return pyodidePromise;
-}
-
-async function getImporterSource() {
-  if (!importerSourcePromise) {
-    importerSourcePromise = fetch(IMPORTER_URL, { cache: "no-cache" }).then((response) => {
-      if (!response.ok) {
-        throw new Error(`Could not load browser importer (${response.status}).`);
-      }
-      return response.text();
-    });
-  }
-  return importerSourcePromise;
-}
-
-function collectFiles(pyodide, root) {
-  const files = [];
-  const visit = (directory) => {
-    for (const entry of pyodide.FS.readdir(directory)) {
-      if (entry === "." || entry === "..") {
-        continue;
-      }
-      const fullPath = `${directory}/${entry}`;
-      const stat = pyodide.FS.stat(fullPath);
-      if (pyodide.FS.isDir(stat.mode)) {
-        visit(fullPath);
-        continue;
-      }
-      const relativePath = fullPath.slice(root.length + 1);
-      files.push({
-        path: relativePath,
-        bytes: pyodide.FS.readFile(fullPath),
-      });
-    }
-  };
-  visit(root);
-  files.sort((left, right) => left.path.localeCompare(right.path));
-  return files;
-}
-
-async function ensureRuntimeFrame() {
+async function ensureRuntimeFrame(options = {}) {
   if (!runtimeFrame.src) {
     runtimeFrame.src = RUNTIME_URL;
   }
-  runtimeFrame.hidden = false;
+  if (options.reveal) {
+    runtimeFrame.hidden = false;
+  }
   await waitForGodotCommand();
+}
+
+async function sendRomToGodot(fileName, bytes) {
+  const readyPromise = waitForRuntimeRomReady();
+  const command = runtimeFrame.contentWindow?.openPlatformerRuntimeGodotCommand;
+  if (typeof command !== "function") {
+    rejectPendingRomReady("Godot runtime bridge is not available.");
+    throw new Error("Godot runtime bridge is not available.");
+  }
+
+  command("rom", bytes, fileName);
+  return readyPromise;
+}
+
+function waitForRuntimeRomReady() {
+  rejectPendingRomReady("Superseded by a new ROM import.");
+  return new Promise((resolve, reject) => {
+    let timeout = 0;
+    const entry = {
+      resolve: (value) => {
+        window.clearTimeout(timeout);
+        if (pendingRomReady === entry) {
+          pendingRomReady = null;
+        }
+        resolve(value);
+      },
+      reject: (message) => {
+        window.clearTimeout(timeout);
+        if (pendingRomReady === entry) {
+          pendingRomReady = null;
+        }
+        reject(new Error(message));
+      },
+    };
+    timeout = window.setTimeout(() => {
+      if (pendingRomReady === entry) {
+        pendingRomReady = null;
+      }
+      reject(new Error("Timed out waiting for the native ROM importer."));
+    }, 120000);
+    pendingRomReady = entry;
+  });
+}
+
+function rejectPendingRomReady(message) {
+  if (!pendingRomReady) {
+    return;
+  }
+
+  pendingRomReady.reject(message);
+}
+
+function handleRuntimeMessage(data) {
+  switch (data.type) {
+    case "open-platformer-runtime-import-status": {
+      const total = Math.max(1, Number(data.total) || 1);
+      const completed = Math.max(0, Math.min(total, Number(data.completed) || 0));
+      const percent = 48 + Math.round((completed / total) * 46);
+      const stage = data.levelId ? `${data.stage} ${data.levelId}` : data.stage;
+      showProgress(stage || "Importing", percent, stage || "Importing ROM...");
+      updateDetails("Running", stage || "Native importer");
+      break;
+    }
+    case "open-platformer-runtime-rom-ready": {
+      const count = Number(data.indexedLevelCount) || 0;
+      runtimeRomReady = count > 0;
+      currentIndexedLevelCount = count;
+      pendingRomReady?.resolve({
+        sha1: data.sha1,
+        indexedLevelCount: count,
+        generatedLevelCount: Number(data.generatedLevelCount) || 0,
+      });
+      break;
+    }
+    case "open-platformer-runtime-rom-error": {
+      const message = data.message || "Native ROM import failed.";
+      runtimeRomReady = false;
+      pendingRomReady?.reject(message);
+      break;
+    }
+  }
 }
 
 async function waitForGodotCommand() {
@@ -585,46 +455,13 @@ async function waitForGodotCommand() {
   });
 }
 
-async function sendAssetPackToGodot(assetPack, levelId, autoStart = true) {
-  const command = runtimeFrame.contentWindow?.openPlatformerRuntimeGodotCommand;
-  if (typeof command !== "function") {
-    throw new Error("Godot runtime bridge is not available.");
-  }
-
-  sendLevelIndexToGodot(command);
-  command("begin");
-  for (let index = 0; index < assetPack.files.length; index += 1) {
-    const file = assetPack.files[index];
-    command("file", file.path, file.bytes);
-    if (index % 4 === 0 || index + 1 === assetPack.files.length) {
-      const percent = 86 + Math.round(((index + 1) / assetPack.files.length) * 12);
-      showProgress(`Streaming ${index + 1}/${assetPack.files.length}`, percent, `Streaming ${assetPack.files.length} generated files into the runtime...`);
-      updateDetails(`${index + 1}/${assetPack.files.length}`, "Streaming");
-      await nextFrame();
-    }
-  }
-  command("complete", levelId, autoStart);
-}
-
-function sendLevelIndexToGodot(command) {
-  if (currentLevelIndex.length === 0) {
-    return;
-  }
-
-  command("level_index", JSON.stringify({
-    source: "browser_rom_index",
-    count: currentLevelIndex.length,
-    levels: currentLevelIndex,
-  }));
-}
-
 function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
 function updateDetails(importState, runtimeState) {
   const rom = currentManifest?.source_rom ?? currentManifest?.rom;
-  const romState = rom?.is_supported || rom?.sha1 ? "Supported" : "Selected";
+  const romState = rom?.is_supported ? "Supported" : rom?.sha1 ? "Unsupported" : "Selected";
   const hash = rom?.sha1 ? shortHash(rom.sha1) : "Pending";
   detailsEl.innerHTML = detailsMarkup([
     ["ROM", romState],
@@ -632,18 +469,6 @@ function updateDetails(importState, runtimeState) {
     ["Import", importState],
     ["Runtime", runtimeState],
   ]);
-}
-
-function initialLevelId() {
-  if (currentLevelIndex.some((level) => level.id === DEFAULT_LEVEL_ID)) {
-    return DEFAULT_LEVEL_ID;
-  }
-
-  return currentLevelIndex[0]?.id ?? DEFAULT_LEVEL_ID;
-}
-
-function levelSortKey(levelId) {
-  return Number.parseInt(levelId, 16);
 }
 
 function detailsMarkup(rows) {
@@ -672,15 +497,6 @@ async function sha1Hex(bytes) {
 
   const digest = await crypto.subtle.digest("SHA-1", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-
-function normalizeLevelId(value) {
-  const trimmed = String(value).trim().replace(/^0x/i, "");
-  const parsed = Number.parseInt(trimmed || "105", 16);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed >= 0x200) {
-    throw new Error(`Invalid level id: ${value}`);
-  }
-  return parsed.toString(16).toUpperCase().padStart(3, "0");
 }
 
 function shortHash(hash) {

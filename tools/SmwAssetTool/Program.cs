@@ -91,6 +91,8 @@ internal static class Program
                 "extract-palettes" when args.Length == 3 => ExtractPalettes(args[1], args[2]),
                 "verify-palettes" when args.Length == 3 => VerifyPalettes(args[1], args[2]),
                 "inspect-rom" when args.Length == 2 => InspectRom(args[1]),
+                "native-init" when args.Length == 3 => NativeInit(args[1], args[2]),
+                "native-import-level" when args.Length == 4 => NativeImportLevel(args[1], args[2], args[3]),
                 _ => UsageError(args),
             };
         }
@@ -143,6 +145,33 @@ internal static class Program
         var inspection = SmwRomInspector.Inspect(File.ReadAllBytes(fullPath));
         WriteJson(Console.OpenStandardOutput(), inspection.ToSerializable());
         return inspection.IsSupported ? 0 : 1;
+    }
+
+    private static int NativeInit(string romPath, string outDir)
+    {
+        var fullPath = Path.GetFullPath(romPath);
+        Check(File.Exists(fullPath), $"ROM does not exist: {fullPath}");
+        var result = SmwNativeImporter.InitializeAssetPack(
+            File.ReadAllBytes(fullPath),
+            Path.GetFileName(fullPath),
+            outDir,
+            new ConsoleImportProgress());
+        Console.WriteLine($"smw-asset-tool: native initialized {result.IndexedLevelCount} indexed levels at {result.ManifestPath}");
+        return 0;
+    }
+
+    private static int NativeImportLevel(string romPath, string outDir, string levelId)
+    {
+        var fullPath = Path.GetFullPath(romPath);
+        Check(File.Exists(fullPath), $"ROM does not exist: {fullPath}");
+        var result = SmwNativeImporter.ImportLevel(
+            File.ReadAllBytes(fullPath),
+            Path.GetFileName(fullPath),
+            outDir,
+            levelId,
+            new ConsoleImportProgress());
+        Console.WriteLine($"smw-asset-tool: native imported level {levelId} with {result.GeneratedLevelCount} generated manifest entries at {result.ManifestPath}");
+        return 0;
     }
 
     private static int ExtractLevels(string romPath, string outDir)
@@ -1287,6 +1316,17 @@ internal static class Program
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-palettes <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-palettes <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-rom <rom.sfc>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- native-init <rom.sfc> <out-dir>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- native-import-level <rom.sfc> <out-dir> <level-id>");
+    }
+
+    private sealed class ConsoleImportProgress : IProgress<SmwImportProgress>
+    {
+        public void Report(SmwImportProgress value)
+        {
+            var level = string.IsNullOrWhiteSpace(value.LevelId) ? "" : $" level={value.LevelId}";
+            Console.Error.WriteLine($"smw-asset-tool: {value.Stage}{level} ({value.Completed}/{value.Total})");
+        }
     }
 
     private static void Check(bool condition, string message)

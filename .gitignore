@@ -4,6 +4,7 @@
 .codex/
 generated/
 logs/
+dist/
 web-export/out/
 web-export/out-no-patch/
 local-rom.cfg

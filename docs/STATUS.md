@@ -22,7 +22,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 - The course selector lists imported levels, supports type-ahead search by id or title, and can launch a selected level.
 - A level can return to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or after the current course-clear walkout.
 - Runtime toggles exist for debug gizmos, actor simulation, and actor visuals. Gizmos default on; audio remains intentionally opt-in and greyed out in the selector.
-- A GitHub Pages browser loader exists under `web/`. It lets a user pick a local ROM file, validates it in browser memory, probes importer table ranges, exports a browser manifest, feeds a ROM-derived level index into the in-game selector, and can generate focused level asset packs requested by the experimental browser runtime.
+- A GitHub Pages browser loader exists under `web/`. It lets a user pick a local ROM file, validates it in browser memory, probes importer table ranges, exports a browser manifest, and passes ROM bytes into the experimental runtime so the C# importer can index, search, and generate levels inside the game.
 - An experimental Godot .NET Web export track exists for custom builds based on `godotengine/godot#106125`; it is not part of the stock Godot 4.6.3 path and currently depends on local Godot marshalling fixes.
 - Level rendering covers the current partial Map16/object projection, generated palettes, level previews, layer backgrounds for covered cases, and generated player/sprite atlases.
 - The main verified playability slice is still the first-level route plus its direct pipe target. Other imported levels may boot and render, but playability varies widely.
@@ -40,8 +40,8 @@ The runtime is useful today for technical playtesting, importer validation, and 
 ### Asset Pipeline
 
 - Generated assets are local artifacts and are not part of the repository.
-- The broad importer is still Python-based; the C# asset tool only covers focused extraction/verification slices.
-- The browser loader uses Pyodide for the current focused runtime asset pack. `src/SmwAssets` is still the starting point for moving filesystem-free importer logic into reusable C#.
+- The broad parity/reference importer is still Python-based, but the runtime, browser bridge, and C# asset tool can now use `src/SmwAssets/SmwNativeImporter.cs` for ROM indexing and focused level generation.
+- The browser loader no longer uses Pyodide; it passes ROM bytes into the experimental Godot runtime and lets the shared C# importer generate levels on demand.
 - The direct Godot .NET Web path depends on an unmerged upstream PR and custom export templates. It should be treated as experimental and may need COOP/COEP headers from the deployment host.
 - The level object expander is partial and does not implement every native object routine.
 - Lunar Magic/custom-ROM behavior is only partially understood; vanilla-compatible ROM data is the current target.

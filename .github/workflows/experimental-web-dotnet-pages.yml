@@ -89,9 +89,8 @@ jobs:
       - name: Prepare Pages artifact
         run: |
           set -euo pipefail
-          mkdir -p public/import public/experimental-godot
+          mkdir -p public/experimental-godot
           cp -R web/. public/
-          cp tools/smw_import.py public/import/smw_import.py
           cp -R web-export/out/. public/experimental-godot/
 
       - name: Setup Pages
