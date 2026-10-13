@@ -8,7 +8,7 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <GodotDisabledSourceGenerators>ScriptPathAttribute</GodotDisabledSourceGenerators>
-    <DefaultItemExcludes>$(DefaultItemExcludes);.godot/**;.godot_local/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);.godot/**;.godot_local/**;**/bin/**;**/obj/**;bin/**;obj/**</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(GodotWebDotNetPrototype)' == 'true'">
     <DefineConstants>$(DefineConstants);GODOT_WEB</DefineConstants>

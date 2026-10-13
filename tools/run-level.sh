@@ -6,7 +6,7 @@ source "$ROOT/tools/project-env.sh"
 smw_prepare_dotnet
 GODOT_BIN="$(smw_find_godot)"
 ROM_PATH="${SMW_ROM_PATH:-}"
-IMPORT_MODE=auto
+IMPORT_MODE=off
 HEADLESS=0
 CLEAN=1
 LEVEL_ID=""
@@ -15,11 +15,12 @@ GODOT_ARGS=()
 usage() {
   cat >&2 <<'EOF'
 usage:
-  tools/run-level.sh LEVEL [--rom rom.sfc] [--no-import] [--headless] [-- GODOT_ARGS...]
+  tools/run-level.sh LEVEL [--rom rom.sfc] [--import-assets] [--headless] [-- GODOT_ARGS...]
 
 options:
   --rom PATH      compatible unheadered ROM path; defaults to SMW_ROM_PATH
-  --no-import     run the level from the existing generated/smw manifest
+  --import-assets generate the optional legacy development pack before launching
+  --no-import     compatibility alias for the default native ROM path
   --no-clean      keep existing generated files before importing
   --headless      launch Godot headlessly
   -h, --help      show this help
@@ -79,6 +80,10 @@ while (($#)); do
       IMPORT_MODE=off
       shift
       ;;
+    --import-assets)
+      IMPORT_MODE=always
+      shift
+      ;;
     --no-clean)
       CLEAN=0
       shift
@@ -125,12 +130,10 @@ if [[ "$IMPORT_MODE" != "off" && -n "$ROM_PATH" ]]; then
     import_args+=(--clean)
   fi
   tools/import-smw.sh "${import_args[@]}"
-else
-  if [[ "$IMPORT_MODE" != "off" ]]; then
-    echo "run-level: SMW_ROM_PATH is not set; using existing generated/smw manifest" >&2
-  fi
+elif [[ -z "$ROM_PATH" ]]; then
   manifest_has_level "$LEVEL_ID"
 fi
+export SMW_ROM_PATH="$ROM_PATH"
 
 if [[ ! -x "$GODOT_BIN" ]]; then
   echo "run-level: Godot executable not found or not executable: $GODOT_BIN" >&2

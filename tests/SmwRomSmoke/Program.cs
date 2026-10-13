@@ -21,6 +21,8 @@ Throws<ArgumentOutOfRangeException>(() => data.ReadUInt16(0x01FFFF), "read beyon
 Throws<ArgumentOutOfRangeException>(() => data.ReadBytes(0x008000, -1), "negative range accepted");
 Throws<ArgumentOutOfRangeException>(() => LoRomData.NextAddress(0xFFFFFF), "cursor beyond 24 bits accepted");
 Throws<ArgumentException>(() => SmwRom.FromBytes(new byte[0x80000]), "wrong ROM hash accepted");
+Throws<ArgumentException>(() => SmwRom.FromSelectedBytes(new byte[0x80200]), "wrong headered ROM hash accepted");
+Throws<ArgumentException>(() => SmwRom.FromSelectedBytes(new byte[512]), "header without cartridge accepted");
 Throws<ArgumentException>(() => new LoRomData(new byte[1]), "incomplete ROM bank accepted");
 
 var overlap = Lz2Decoder.Decode(new byte[] { 0x01, 0x41, 0x42, 0x85, 0, 0, 0xFF });
@@ -99,6 +101,23 @@ if (!string.IsNullOrWhiteSpace(romPath))
     var headered = new byte[original.Length + 512];
     original.CopyTo(headered, 512);
     Throws<ArgumentException>(() => SmwRom.FromBytes(headered), "copier header accepted as native ROM");
+    var selected = SmwRom.FromSelectedBytes(headered);
+    Check(selected.Inspection.Sha1 == rom.Inspection.Sha1 && selected.Data.ReadRange(0x008000, original.Length).SequenceEqual(original), "copier header must strip without changing canonical ROM data");
+    headered[512] ^= 1;
+    Throws<ArgumentException>(() => SmwRom.FromSelectedBytes(headered), "mutated headered cartridge accepted");
+    var catalog = new SmwLevelCatalog(rom);
+    Check(catalog.Entries.Count == 512 && catalog.VerifiedTerrainCount == 4, "native catalog must distinguish all slots from verified layouts");
+    Check(catalog[0x105].Name == "YOSHI'S ISLAND 1" && catalog[0x106].Name == "YOSHI'S ISLAND 2", "native catalog must read original name tables");
+    Check(catalog[0x139].Name == "" && catalog[0x1CB].Name == "", "catalog must not read code beyond the vanilla name table as level titles");
+    Check(catalog[0x14].Name == "YELLOW SWITCH PALACE", "native catalog must trim to 19 tiles before expanding compound glyphs");
+    Check(catalog[0x105].ObjectCount == 92 && catalog[0x105].SpriteCount == 34 && catalog[0x105].ExitCount == 1, "native catalog must preserve the first course's records");
+    Check(catalog[0x1CB].TerrainVerified && !catalog[0x107].TerrainVerified, "unverified layouts cannot be offered as native supported courses");
+    foreach (var entry in catalog.Entries)
+    {
+        Check(entry.LayoutAliases.Contains(entry.Id), "a layout alias group must contain its slot");
+        Check(entry.LayoutAliases.All(id => catalog[id].Layer1Address == entry.Layer1Address), "layout alias group must preserve the actual pointer");
+    }
+    Throws<ArgumentOutOfRangeException>(() => _ = catalog[512], "catalog accepted out-of-range slot");
     var graphics = new SmwGraphicsDecoder(rom);
     Check(graphics.DecodeAll().Count == 52, "all vanilla graphics files");
     Check(graphics.Decode(0x28).Format == SmwGraphicsFormat.Planar2Bpp && graphics.Decode(0x28).TileCount == 128, "character set format");

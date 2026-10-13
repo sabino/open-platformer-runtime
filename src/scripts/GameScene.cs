@@ -1595,6 +1595,11 @@ public partial class GameScene : Node2D
 
     private bool LoadLevelData(string levelId)
     {
+        if (Rom != null && !SmwLevelCatalog.HasVerifiedTerrain(ParseLevelId(levelId)))
+        {
+            GD.Print($"smw-native-level: unsupported={levelId} reason=layout-not-verified");
+            return false;
+        }
         _nativeVisuals = null;
         _nativeLevel = null;
         _screenExits.Clear();
@@ -1608,7 +1613,7 @@ public partial class GameScene : Node2D
         {
             // Runtime level construction must not require the development
             // import manifest. Native visuals, streams and entrances use ROM
-            // tables; only unported terrain falls back to an imported preview.
+            // tables. Unverified layouts must not fall back to preview geometry.
             _currentLevelId = levelId;
             _nativeLevel = new SmwLevelData(Rom, ParseLevelId(levelId));
             _nativeVisuals = new SmwLevelVisuals(Rom, ParseLevelId(levelId));
@@ -1618,15 +1623,7 @@ public partial class GameScene : Node2D
             _levelTilemapPath = SmwAssetPaths.Path($"levels/level_{levelId}_partial_tilemap.json");
             GD.Print($"smw-native-data: level={levelId} rom_sha1={Rom.Inspection.Sha1} tileset={_currentLevelTileset} sprites={_nativeLevel.Header.SpriteGraphics}");
             LoadNativeLevelRecords(_nativeLevel);
-            // Additional levels move here after their complete object buffers
-            // are verified against the original loader.
-            if (_nativeLevel.Header.Id is 0x0C7 or 0x105 or 0x106 or 0x1CB)
-                LoadNativeTerrain(_nativeLevel);
-            else
-            {
-                GD.Print($"smw-terrain: level={levelId} source=generated-preview");
-                LoadPlacedTiles(_levelTilemapPath);
-            }
+            LoadNativeTerrain(_nativeLevel);
             return true;
         }
 

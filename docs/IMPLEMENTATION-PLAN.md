@@ -7,6 +7,13 @@ game systems: every original sequence, menu, level, player state, enemy, block,
 world event, save rule, visual effect, song, and sound effect. Verify exact
 behavior and presentation against the original ROM, including TAS playback.
 
+The immediate acceptance gate is [the complete first course](FIRST-COURSE.md):
+`105` with its `1CB` pipe room, ordinary input, original behavior/presentation,
+completion, progression and replay. Expand through new behavior families only
+after that gate. Shared native data and Godot scenes should also support later
+ROM-format profiles and explicit native implementations of custom behaviors;
+arbitrary ROM-hack assembly is not data-only compatibility.
+
 The baseline is the unheadered 512 KiB USA ROM, SHA-1
 `6B47BB75D16514B6A476AA0C73A683A2A4C18765`. Regional variants and ROM hacks
 are separate work. Their behavior must not change this vanilla baseline.
@@ -124,9 +131,16 @@ Levels `0C7`, `105`, `106`, and `1CB` now expand their terrain natively: all
 boot with an entirely empty pack, including no manifest, and the main/secondary
 pipe route passes in that same setup. The title terrain comparison uses the
 unchanged original power-on path. Audio remains disabled for this empty-pack gate.
-See [ROM-DATA.md](ROM-DATA.md). This milestone remains open: terrain object
-expansion, audio, the browser memory handoff, and other data families still
-require migration. The 26 pointer alias groups still need reachability analysis.
+Desktop ROM selection and the browser byte handoff now connect the same ROM to
+native gameplay and audio. Normal startup writes no asset pack and no longer
+runs Python. The C# catalog distinguishes 512 pointer slots from verified
+terrain layouts, bounds vanilla names to $5D words, and preserves primary-layout
+aliases. Native play rejects unverified terrain instead of importing preview
+geometry. Managed music/SFX and the integer DSP are implemented, with the
+whole-song timing limitations in [NATIVE-AUDIO.md](NATIVE-AUDIO.md).
+See [ROM-DATA.md](ROM-DATA.md). This milestone remains open: additional object
+families, world/UI/persistence data, actual Web runtime verification and
+reachability analysis still require work.
 
 Port LoROM mapping, decompression, palettes/planar graphics, Map16, object and
 sprite streams, entrances, OAM/animation data, UI/font/HUD data, overworld,

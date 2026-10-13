@@ -1,6 +1,6 @@
 # Getting Started
 
-This project requires Godot 4 .NET. The repository does not contain game assets. To run imported levels, provide your own compatible local ROM dump and generate local assets into `generated/smw/`.
+This project requires Godot 4 .NET. Run it and choose **Select ROM** in the startup menu, or pass `tools/run.sh --rom "/path/to/compatible-rom.sfc"`. The supplied USA ROM is validated and decoded in memory. A 512-byte copier header is stripped at this selection boundary; the canonical hash must still match. No generated asset pack or Python import is required for native courses or audio.
 
 The project targets Godot 4.6.3 and .NET 8; native macOS startup is also checked
 with Godot .NET 4.7.2. Project tools find `godot-mono` or `Godot_mono.app` and
@@ -21,7 +21,7 @@ With `SMW_ROM_PATH` configured, Godot validates the ROM and constructs player,
 sprite, foreground, and background textures through the shared native C#
 decoder. Player pose/animation/OAM tables also come directly from the ROM.
 Object/sprite streams and main/secondary entrances also load natively. The
-importer still provides terrain placement metadata for unsupported object families.
+native selector lists all 512 pointer slots but enables only verified terrain layouts. Other slots remain indexed for investigation, without approximate geometry fallback.
 Native audio can read the ROM directly or use the importer's versioned local cache.
 For direct engine invocation, `--smw-rom=/absolute/path/to/rom.sfc` selects the
 same native decoder. An explicitly supplied unsupported ROM fails startup.
@@ -29,7 +29,7 @@ same native decoder. An explicitly supplied unsupported ROM fails startup.
 `SMW_ASSET_BASE_PATH` can select a separate metadata pack for local testing.
 The default remains `generated/smw/`; no generated data belongs in git.
 
-## Import Assets
+## Optional development asset packs
 
 Import the default focused asset pack:
 
@@ -66,14 +66,14 @@ Open the graphical Godot run:
 tools/run.sh
 ```
 
-Import and run one level in a single command:
+Run a verified layout directly from your ROM:
 
 ```bash
 SMW_ROM_PATH=/path/to/compatible-rom.sfc tools/run-level.sh 106
 tools/run-level.sh 1CB --no-import --headless -- --quit-after 2
 ```
 
-Automated runs can start one generated level directly:
+Automated runs can start a native level directly with `SMW_ROM_PATH` or `--smw-rom=...`:
 
 ```bash
 godot4-mono --path . --smw-test-level=106

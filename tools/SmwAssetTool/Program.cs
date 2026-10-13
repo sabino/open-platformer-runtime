@@ -80,6 +80,7 @@ internal static class Program
                 "extract-palettes" when args.Length == 3 => ExtractPalettes(args[1], args[2]),
                 "verify-palettes" when args.Length == 3 => VerifyPalettes(args[1], args[2]),
                 "inspect-rom" when args.Length == 2 => InspectRom(args[1]),
+                "inspect-level-catalog" when args.Length == 2 => InspectLevelCatalog(args[1]),
                 _ => UsageError(args),
             };
         }
@@ -132,6 +133,23 @@ internal static class Program
         var inspection = SmwRomInspector.Inspect(File.ReadAllBytes(fullPath));
         WriteJson(Console.OpenStandardOutput(), inspection.ToSerializable());
         return inspection.IsSupported ? 0 : 1;
+    }
+
+    private static int InspectLevelCatalog(string romPath)
+    {
+        var rom = SmwRom.FromSelectedBytes(File.ReadAllBytes(romPath));
+        var catalog = new SmwLevelCatalog(rom);
+        WriteJson(Console.OpenStandardOutput(), new
+        {
+            schema_version = SmwLevelCatalog.SchemaVersion,
+            source_rom_sha1 = catalog.RomSha1,
+            scope = "Pointer slots and layout aliases; reachable courses and gameplay parity are separate gates",
+            slot_count = catalog.Entries.Count,
+            verified_terrain_count = catalog.VerifiedTerrainCount,
+            title_source = SmwLevelCatalog.TitleSource,
+            levels = catalog.Entries,
+        });
+        return 0;
     }
 
     private static int ExtractGraphics(string romPath, string outDir)
@@ -1186,6 +1204,7 @@ internal static class Program
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-palettes <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-palettes <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-rom <rom.sfc>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-level-catalog <rom.sfc>");
     }
 
     private static void Check(bool condition, string message)

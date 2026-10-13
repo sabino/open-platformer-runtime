@@ -2,7 +2,7 @@
 
 Open Platformer Runtime is a Godot 4 .NET runtime engine recreation of **Super Mario World**. It is a native engine/runtime clone, not an emulator, and it does not ship Nintendo ROMs, extracted art, extracted audio, level data, saves, screenshots, or generated asset packs.
 
-The repository contains source code, ROM decoding/verification tools, and documentation. The shared C# decoder loads graphics, palettes, Map16, backgrounds, object/sprite streams, entrances, player animation/OAM data, and audio banks directly from a compatible local ROM. Levels `0C7`, `105`, `106`, and `1CB` also expand their terrain directly from the ROM; their complete Map16 buffers match the original loader, and they boot without a generated pack or manifest. Other terrain placement still uses the development importer under ignored `generated/smw/` while native loading is completed.
+The repository contains source code, ROM decoding/verification tools, and documentation. The shared C# decoder loads graphics, palettes, Map16, backgrounds, object/sprite streams, entrances, player animation/OAM data, and audio banks directly from a compatible local ROM. Levels `0C7`, `105`, `106`, and `1CB` also expand their terrain directly from the ROM; their complete Map16 buffers match the original loader, and they boot without a generated pack or manifest. The selector indexes all 512 ROM pointer slots, while native play is gated to verified layouts. Unported terrain no longer silently uses an approximate preview. Optional development packs remain under ignored `generated/smw/`.
 
 This project is still early. The current runtime has a focused playable slice, a course selector, partial imported level support, and deterministic debugging tools, but it is not a complete game and should not be presented as a faithful replacement for the original runtime yet.
 
@@ -18,6 +18,7 @@ This project is still early. The current runtime has a focused playable slice, a
 - [Reference notes](docs/REFERENCE.md)
 - [Physics notes](docs/PHYSICS.md)
 - [Native-unit physics reference](docs/PHYSICS-REFERENCE.md)
+- [First complete course gate](docs/FIRST-COURSE.md)
 - [High-level plan](docs/PLAN.md)
 - [Release hygiene](docs/RELEASE-HYGIENE.md)
 - [Contributing](CONTRIBUTING.md)
@@ -25,16 +26,16 @@ This project is still early. The current runtime has a focused playable slice, a
 
 ## Quick Start
 
-Import assets from a compatible local ROM dump:
-
-```bash
-tools/import-smw.sh "/path/to/compatible-rom.sfc"
-```
-
-Run the project with Godot 4 .NET:
+Run the project with Godot 4 .NET and select your ROM in the startup menu:
 
 ```bash
 tools/run.sh
+```
+
+Or provide it directly; no Python import or generated pack is required:
+
+```bash
+tools/run.sh --rom "/path/to/compatible-rom.sfc"
 ```
 
 Listen to ROM-derived music and test sound effects:
@@ -75,7 +76,7 @@ The playable browser path is experimental and requires a custom Godot build from
 
 The current runtime can boot a SNES-sized `256x224` Godot viewport, generate local assets from a user-provided ROM, show a searchable imported-level selector, launch selected imported levels, and return from a level to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or the current course-clear path.
 
-The repository also includes a GitHub Pages browser loader under `web/`. It uses the browser's native file picker, local Web Crypto validation, Pyodide-backed in-browser importing, and a postMessage bridge that lets the Godot course selector request additional levels.
+The browser loader under `web/` validates the file locally and hands ROM bytes directly to the shared C# decoder. Replacing or clearing the selection destroys the previous runtime and its audio. Neither ROM bytes nor extracted assets are uploaded.
 
 The strongest verified gameplay slice is still the first-level route and its direct pipe target. Other imported levels may boot or render, but broad level compatibility is not guaranteed. Many systems are partial or missing, including exact collision, complete Map16 semantics, most blocks, most enemies, exact sprite loading/despawn, overworld progression, save data, complete audio, and many player states.
 

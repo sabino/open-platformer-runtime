@@ -5,7 +5,7 @@ smw_prepare_dotnet
 GODOT_BIN="$(smw_find_godot)"
 cd "$SMW_PROJECT_ROOT"
 
-SMW_RUN_IMPORT=auto
+SMW_RUN_IMPORT=off
 SMW_RUN_BUILD="${SMW_SKIP_DOTNET_BUILD:-0}"
 SMW_RUN_ARGS=()
 while (($#)); do
@@ -13,21 +13,20 @@ while (($#)); do
     --rom)
       [[ $# -ge 2 ]] || { echo "run: --rom requires a path" >&2; exit 2; }
       export SMW_ROM_PATH="$2"
-      SMW_RUN_IMPORT=always
       shift 2
       ;;
+    --import-assets) SMW_RUN_IMPORT=always; shift ;;
     --no-import) SMW_RUN_IMPORT=off; shift ;;
     --no-build) SMW_RUN_BUILD=1; shift ;;
     --help|-h)
-      echo 'usage: tools/run.sh [--rom ROM] [--no-import] [--no-build] [GODOT_ARGS...]'
+      echo 'usage: tools/run.sh [--rom ROM] [--import-assets] [--no-build] [GODOT_ARGS...]'
       exit 0
       ;;
     *) SMW_RUN_ARGS+=("$1"); shift ;;
   esac
 done
 
-if [[ "$SMW_RUN_IMPORT" == always ]] ||
-    [[ "$SMW_RUN_IMPORT" == auto && ! -f generated/smw/manifest.json ]]; then
+if [[ "$SMW_RUN_IMPORT" == always ]]; then
   [[ -n "${SMW_ROM_PATH:-}" ]] || {
     echo 'run: set SMW_ROM_PATH, configure ignored local-rom.cfg, or pass --rom' >&2
     exit 2

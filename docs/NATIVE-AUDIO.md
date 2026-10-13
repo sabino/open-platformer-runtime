@@ -158,9 +158,12 @@ run in pull-request CI. The full-game parity goal remains incomplete.
 The intended shareable app contains managed game code and the engine runtime,
 with each user's own ROM supplied locally. Desktop currently accepts
 `--smw-rom=/path/to/compatible-rom.sfc` or `SMW_ROM_PATH` and validates the USA
-ROM fingerprint before loading. The browser already has a local ROM picker;
-its experimental native audio playback still needs validation. A desktop ROM
-picker and standalone desktop export presets are pending. The checked-in Web
+ROM fingerprint before loading. The desktop startup menu also provides
+**Select ROM**. Both hosts strip a recognized copier header and validate the
+canonical image. The browser hands the selected bytes into the same native
+ROM and audio nodes. Its experimental native audio playback still needs
+validation. A Linux export preset is present; packaged desktop and Web runtime
+execution are separate release checks. The checked-in Web
 export excludes `generated/**`, ROMs, local configuration and caches. Native
 audio reads the ROM directly without requiring preview WAVs or pre-rendered
 music. Private development caches remain ignored and untracked.

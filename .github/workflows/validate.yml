@@ -26,13 +26,15 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+      - name: Check browser loader handoff without ROM assets
+        run: node --test tests/WebLoader/loader.test.mjs
       - name: Build and run managed tests without ROM assets
         run: tools/check-dotnet.sh
       - name: Check experimental Web conditional compilation
         run: >-
           dotnet build SmwGodotNative.csproj
           -p:GodotWebDotNetPrototype=true
-          -p:BaseOutputPath=.godot_local/web-ci/bin/
+          -p:OutputPath=.godot_local/web-ci/bin/
           -p:BaseIntermediateOutputPath=.godot_local/web-ci/obj/
       - name: Check source-only distribution
         shell: bash

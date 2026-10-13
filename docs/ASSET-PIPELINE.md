@@ -2,6 +2,12 @@
 
 The repository is source-only. Generated data is local runtime state and must not be committed.
 
+## Native runtime input
+
+`SmwRom.FromSelectedBytes` canonicalizes the selected file and validates the USA ROM. `SmwLevelCatalog` reads the original 512 pointer slots, object/sprite counts, layout aliases and overworld names through the shared reader. It bounds the name table to its actual $5D entries and applies the original 19-tile text limit. Names are labels, not reachability evidence.
+
+The desktop picker and browser byte bridge connect this ROM to both `GameScene` and `SmwAudio`. Verified terrain, textures, entrances and audio data load lazily in memory. Selecting a ROM writes no asset pack. The native play gate currently admits `0C7`, `105`, `106`, and `1CB`; other layouts require original-loader verification first.
+
 ## Local Generated Output
 
 The importer writes Godot-readable files under:
@@ -32,7 +38,7 @@ tools/check-importer.sh
 
 ## C# Asset Tool
 
-`tools/SmwAssetTool` is the first checked-in C# extraction and verification slice. The long-term target is to keep moving normal project workflows into C# tooling so Python is no longer required for day-to-day runtime work.
+`tools/SmwAssetTool` provides offline extraction and verification. Normal native startup already uses shared C# decoding without Python.
 
 Shared, filesystem-free ROM inspection code now lives in `src/SmwAssets`. New importer logic that must run in both CLI and browser contexts should be added there first, then called from host-specific tools.
 
@@ -47,13 +53,14 @@ dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-player-me
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-entrance-tables "$SMW_ROM_PATH" /tmp/smw-native-entrances
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-palettes "$SMW_ROM_PATH" /tmp/smw-native-palettes
 dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-rom "$SMW_ROM_PATH"
+dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-level-catalog "$SMW_ROM_PATH"
 ```
 
 ## Browser Loader
 
-`web/` contains the GitHub Pages browser loader. It uses the browser's native file picker, validates the selected ROM locally, probes importer table ranges through LoROM addressing, can download a small browser manifest, feeds a ROM-derived level index into the in-game selector, and can generate focused level asset packs in browser memory for the experimental Godot .NET Web runtime.
+`web/` contains the GitHub Pages browser loader. It uses the browser's native file picker, validates the selected ROM locally, probes importer table ranges through LoROM addressing, can download a small browser manifest, and passes the ROM bytes into the experimental Godot .NET Web runtime. The runtime indexes ROM slots and constructs verified layouts through the shared C# decoders. The old independent preview expander is not used for native play.
 
-The browser path currently runs the Python importer through Pyodide. Moving more importer logic into `src/SmwAssets` is still the preferred long-term direction so the browser can use shared C# extraction code instead of a Python bridge.
+The browser path no longer runs the Python importer through Pyodide. `tools/smw_import.py` remains as a parity/reference importer while the shared C# path catches up to every extraction detail.
 
 ## Asset Boundary
 

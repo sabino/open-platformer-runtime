@@ -31,9 +31,8 @@ jobs:
       - name: Prepare Pages artifact
         run: |
           set -euo pipefail
-          mkdir -p public/import
+          mkdir -p public
           cp -R web/. public/
-          cp tools/smw_import.py public/import/smw_import.py
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

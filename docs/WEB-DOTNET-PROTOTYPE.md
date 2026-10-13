@@ -4,7 +4,7 @@ This project can be prepared for the same experimental path used by Raul Santos'
 
 This is not the stock Godot 4.6.3 Mono export path. It requires a custom Godot editor and matching Web export templates built from `godotengine/godot#106125`, plus .NET SDK 9.0 and the `wasm-tools` workload.
 
-This path now covers the first playable browser slice when paired with the `web/` loader: the browser validates a local ROM, Pyodide generates a focused level asset pack, and the custom Godot .NET Web export consumes those files through the web bridge. It is still experimental and does not replace the normal local Godot workflow.
+This path now covers the first playable browser slice when paired with the `web/` loader: the browser validates a local ROM, passes the ROM bytes through the runtime bridge, and the custom Godot .NET Web export indexes and generates level assets through shared C# code. It is still experimental and does not replace the normal local Godot workflow.
 
 The local Godot fork also carries Web .NET marshalling fixes needed by this project:
 

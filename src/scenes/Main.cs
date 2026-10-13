@@ -13,13 +13,21 @@ public partial class Main : Node2D
     private static readonly Vector2I LogicalViewportSize = new(256, 224);
     private static readonly Vector2I DefaultWindowSize = new(LogicalViewportSize.X * 3, LogicalViewportSize.Y * 3);
     private const string DefaultLevelId = "105";
+    private const int RomImportStageCount = 8;
     private static string ManifestPath => SmwAssetPaths.ManifestPath;
     private static string DefaultMenuLevelPreviewPath => SmwAssetPaths.Path("levels/level_105_partial_layout.png");
     private static string MenuPlayerPreviewPath => SmwAssetPaths.Path("player/gfx32_player_palette0.png");
+    private static readonly string[] RomFileDialogFilters =
+    [
+        "*.sfc,*.smc,*.swc;SNES ROMs;application/octet-stream",
+        "*;All Files;application/octet-stream",
+    ];
 
     private Control? _menu;
     private GameScene? _game;
     private SmwRom? _rom;
+    private SmwLevelCatalog? _romCatalog;
+    private readonly Dictionary<int, SmwRgbaImage> _nativePreviews = [];
     private SmwAudio? _audio;
     private bool _audioPlayerOpen;
     private ColorRect? _gameBackground;
@@ -29,25 +37,34 @@ public partial class Main : Node2D
     private Label? _selectedLevelTitle;
     private Label? _levelSearchStatus;
     private Label? _assetStatusLabel;
+    private Label? _romImportStatusLabel;
     private Button? _startButton;
+    private Button? _romImportButton;
     private OptionButton? _levelSelect;
     private LineEdit? _levelSearch;
     private ItemList? _levelList;
+    private ProgressBar? _romImportProgress;
     private CheckBox? _audioToggle;
     private CheckBox? _debugToggle;
     private CheckBox? _actorsToggle;
     private CheckBox? _actorVisualsToggle;
+    private FileDialog? _romFileDialog;
     private readonly List<ImportedLevelEntry> _importedLevels = [];
     private readonly List<ImportedLevelEntry> _visibleLevels = [];
     private readonly Dictionary<string, ImportedLevelEntry> _webIndexedLevels = new(StringComparer.Ordinal);
     private string _selectedLevelId = DefaultLevelId;
     private string _menuLevelPreviewPath = DefaultMenuLevelPreviewPath;
+    private string _romImportStatusText = "Select your SMW USA ROM to begin.";
     private bool _debugOverlays = true;
     private bool _audioEnabled;
     private bool _actorsEnabled = true;
     private bool _actorVisualsEnabled = true;
+    private bool _romImportInProgress;
+    private bool _quitAfterNativeRomImport;
+    private int _romImportStartedLevels;
+    private int _romImportExpectedLevels = RomImportStageCount;
+    private Callable? _nativeRomDialogCallback;
     private JavaScriptObject? _webBridgeCallback;
-    private int _webImportedFileCount;
 
     private sealed record ImportedLevelEntry(
         string Id,
@@ -110,8 +127,10 @@ public partial class Main : Node2D
         string? inputScriptPath = null;
         string? autoplayMode = null;
         string? debugCommandPath = null;
+        string? startupRomImportPath = null;
         int? debugRconPort = null;
         var titleStart = false;
+        var quitAfterStartupRomImport = false;
         Vector2? testSpawn = null;
         int? testPowerup = null;
         int? testScreenExit = null;
@@ -174,6 +193,14 @@ public partial class Main : Node2D
             {
                 debugCommandPath = arg["--smw-debug-command-file=".Length..];
                 autostart = true;
+            }
+            else if (arg.StartsWith("--smw-test-import-rom=", StringComparison.Ordinal))
+            {
+                startupRomImportPath = arg["--smw-test-import-rom=".Length..];
+            }
+            else if (arg == "--smw-test-import-quit")
+            {
+                quitAfterStartupRomImport = true;
             }
             else if (arg.StartsWith("--smw-debug-rcon=", StringComparison.Ordinal) &&
                 int.TryParse(arg["--smw-debug-rcon=".Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedRconPort))
@@ -251,6 +278,13 @@ public partial class Main : Node2D
         {
             GD.Print($"smw-audio: sample_preview {_audio?.PlaySampleProbe(audioSamplePreview.Value) ?? $"sample={audioSamplePreview.Value:X2} available=0 samples=0"}");
         }
+        if (startupRomImportPath != null)
+        {
+            _quitAfterNativeRomImport = quitAfterStartupRomImport;
+            StartDesktopRomImport(startupRomImportPath);
+        }
+        if (Array.Exists(OS.GetCmdlineArgs(), arg => arg == "--smw-rom-menu-smoke"))
+            RunRomMenuSmoke();
     }
 
     private bool LoadConfiguredRom()
@@ -258,13 +292,12 @@ public partial class Main : Node2D
         var path = OS.GetEnvironment("SMW_ROM_PATH");
         foreach (var arg in OS.GetCmdlineArgs())
             if (arg.StartsWith("--smw-rom=", StringComparison.Ordinal)) path = arg["--smw-rom=".Length..];
-        // The experimental browser pack bridge remains available while its
-        // ROM-memory handoff is migrated to this same filesystem-free decoder.
         if (string.IsNullOrWhiteSpace(path)) return true;
         try
         {
             if (!FileAccess.FileExists(path)) throw new IOException($"ROM not found: {path}");
-            _rom = SmwRom.FromBytes(FileAccess.GetFileAsBytes(path));
+            _rom = SmwRom.FromSelectedBytes(FileAccess.GetFileAsBytes(path));
+            _romCatalog = new SmwLevelCatalog(_rom);
             GD.Print($"smw-rom: source=native sha1={_rom.Inspection.Sha1} size={_rom.Data.Length}");
             return true;
         }
@@ -332,6 +365,18 @@ public partial class Main : Node2D
     private void LoadImportedLevelList()
     {
         _importedLevels.Clear();
+        if (_romCatalog != null)
+        {
+            // The native ROM is authoritative; stale or unrelated disk caches
+            // cannot override its level directory or layout support.
+            foreach (var entry in _romCatalog.Entries)
+                _importedLevels.Add(new ImportedLevelEntry(entry.Id.ToString("X3"), entry.Name,
+                    string.IsNullOrWhiteSpace(entry.Name) ? $"Slot {entry.Id:X3}" : entry.Name,
+                    SmwLevelCatalog.TitleSource, null, entry.ObjectCount, entry.SpriteCount,
+                    entry.ExitCount, entry.TerrainVerified));
+            FinalizeImportedLevelList();
+            return;
+        }
         if (!FileAccess.FileExists(ManifestPath))
         {
             FinalizeImportedLevelList();
@@ -419,7 +464,7 @@ public partial class Main : Node2D
 
     private void FinalizeImportedLevelList()
     {
-        MergeWebIndexedLevels();
+        if (_romCatalog == null) MergeWebIndexedLevels();
         _importedLevels.Sort((left, right) => LevelSortKey(left.Id).CompareTo(LevelSortKey(right.Id)));
         if (_importedLevels.Count > 0)
         {
@@ -519,19 +564,20 @@ public partial class Main : Node2D
 
         if (_menuLevelPreview != null)
         {
-            SetTextureAndDispose(_menuLevelPreview, LoadTexture(_menuLevelPreviewPath));
+            SetTextureAndDispose(_menuLevelPreview, LoadMenuPreview());
         }
         if (_selectedLevelPreview != null)
         {
-            SetTextureAndDispose(_selectedLevelPreview, LoadTexture(_menuLevelPreviewPath));
+            SetTextureAndDispose(_selectedLevelPreview, LoadMenuPreview());
         }
         if (_selectedLevelLabel != null)
         {
             _selectedLevelLabel.Text = level switch
             {
                 { IsGenerated: true } => $"Objects {level.ObjectCount}    Sprites {level.SpriteCount}    Exits {level.ScreenExitCount}",
-                { IsGenerated: false } => "ROM indexed. Press Start to import this level.",
-                _ => $"Level {_selectedLevelId} is not in the generated manifest",
+                { IsGenerated: false } when _romCatalog != null => "Indexed. Layout not verified for native play yet.",
+                { IsGenerated: false } => "Select the ROM to load native level data.",
+                _ => _rom == null ? "Select your ROM to see available courses." : $"Slot {_selectedLevelId} is not indexed",
             };
         }
         if (_selectedLevelTitle != null)
@@ -542,11 +588,15 @@ public partial class Main : Node2D
         }
         if (_startButton != null)
         {
-            _startButton.Text = level != null && !level.IsGenerated
-                ? $"Import {level.Id}"
+            _startButton.Text = _romCatalog != null && level is not { IsGenerated: true }
+                ? "Layout unavailable"
+                : level != null && !level.IsGenerated
+                ? $"Load {level.Id}"
                 : level != null
                     ? $"Start {level.Id}"
-                : $"Start Level {_selectedLevelId}";
+                    : $"Start Level {_selectedLevelId}";
+            _startButton.Disabled = _romImportInProgress ||
+                (_romCatalog != null ? level is not { IsGenerated: true } : !HasGeneratedAssetPack());
         }
         SelectVisibleLevelRow(_selectedLevelId);
     }
@@ -642,6 +692,12 @@ public partial class Main : Node2D
         {
             StartGame();
         }
+    }
+
+    public override void _ExitTree()
+    {
+        _webBridgeCallback?.Dispose();
+        _webBridgeCallback = null;
     }
 
     private bool HandleMenuTypeSearch(InputEvent @event)
@@ -886,6 +942,7 @@ public partial class Main : Node2D
         _assetStatusLabel.AddThemeColorOverride("font_color", new Color(0.88f, 0.96f, 1.0f, 1.0f));
         panel.AddChild(_assetStatusLabel);
 
+        AddDesktopRomImportControls(panel);
         AddMenuLevelSelect(panel);
 
         PrintMenuAudioProbeStatus();
@@ -915,14 +972,63 @@ public partial class Main : Node2D
 
     private string AssetStatusText()
     {
+        if (_romCatalog != null)
+            return $"{_romCatalog.Entries.Count} ROM slots. {_romCatalog.VerifiedTerrainCount} verified layouts; gameplay in progress.";
         if (_webIndexedLevels.Count > 0)
-        {
-            return $"{_webIndexedLevels.Count} ROM levels indexed. Missing assets generate on demand.";
-        }
+            return $"{_webIndexedLevels.Count} ROM slots indexed. Select the ROM for native playback.";
 
         return HasGeneratedAssetPack()
             ? "Generated asset pack found."
-            : "No generated asset pack found. The playable slice will use a placeholder level.";
+            : "Select your ROM. No game assets are included.";
+    }
+
+    private void AddDesktopRomImportControls(VBoxContainer panel)
+    {
+        if (IsWebDisplay())
+        {
+            return;
+        }
+
+        _romImportButton = new Button
+        {
+            Text = _romImportInProgress ? "Loading ROM" : "Select ROM",
+            CustomMinimumSize = new Vector2(112, 15),
+            Disabled = _romImportInProgress,
+        };
+        _romImportButton.AddThemeFontSizeOverride("font_size", 6);
+        _romImportButton.AddThemeColorOverride("font_color", new Color(0.88f, 0.96f, 1.0f, 1.0f));
+        _romImportButton.AddThemeColorOverride("font_focus_color", new Color(1.0f, 0.95f, 0.62f, 1.0f));
+        _romImportButton.AddThemeColorOverride("font_hover_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
+        _romImportButton.AddThemeColorOverride("font_pressed_color", new Color(0.03f, 0.10f, 0.16f, 1.0f));
+        _romImportButton.AddThemeStyleboxOverride("normal", MakePanelStyle(new Color(0.05f, 0.22f, 0.34f, 0.95f), new Color(0.78f, 0.93f, 1.0f, 0.90f), 1, 3));
+        _romImportButton.AddThemeStyleboxOverride("hover", MakePanelStyle(new Color(0.08f, 0.31f, 0.45f, 0.95f), new Color(0.92f, 0.98f, 1.0f, 1.0f), 1, 3));
+        _romImportButton.AddThemeStyleboxOverride("pressed", MakePanelStyle(new Color(0.78f, 0.93f, 1.0f, 0.95f), new Color(0.92f, 0.98f, 1.0f, 1.0f), 1, 3));
+        _romImportButton.AddThemeStyleboxOverride("focus", MakePanelStyle(new Color(0.05f, 0.22f, 0.34f, 0.95f), new Color(1.0f, 0.95f, 0.62f, 1.0f), 1, 3));
+        _romImportButton.Pressed += OpenDesktopRomPicker;
+        panel.AddChild(_romImportButton);
+
+        _romImportProgress = new ProgressBar
+        {
+            CustomMinimumSize = new Vector2(112, 5),
+            MinValue = 0,
+            MaxValue = Math.Max(1, _romImportExpectedLevels),
+            Value = Math.Clamp(_romImportStartedLevels, 0, Math.Max(1, _romImportExpectedLevels)),
+            ShowPercentage = false,
+            Indeterminate = _romImportInProgress && _romImportStartedLevels == 0,
+        };
+        _romImportProgress.AddThemeStyleboxOverride("background", MakePanelStyle(new Color(0.0f, 0.0f, 0.0f, 0.28f), new Color(0.78f, 0.93f, 1.0f, 0.35f), 1, 2));
+        _romImportProgress.AddThemeStyleboxOverride("fill", MakePanelStyle(new Color(1.0f, 0.95f, 0.62f, 0.92f), new Color(1.0f, 0.95f, 0.62f, 0.92f), 0, 2));
+        panel.AddChild(_romImportProgress);
+
+        _romImportStatusLabel = new Label
+        {
+            Text = _romImportStatusText,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            CustomMinimumSize = new Vector2(112, 12),
+        };
+        _romImportStatusLabel.AddThemeFontSizeOverride("font_size", 5);
+        _romImportStatusLabel.AddThemeColorOverride("font_color", new Color(0.82f, 0.94f, 1.0f, 1.0f));
+        panel.AddChild(_romImportStatusLabel);
     }
 
     private static MarginContainer MarginWrap(Control child, int margin)
@@ -957,7 +1063,7 @@ public partial class Main : Node2D
 
     private void AddMenuLevelPreview(Control menu)
     {
-        var texture = LoadTexture(_menuLevelPreviewPath);
+        var texture = LoadMenuPreview();
         if (texture == null)
         {
             return;
@@ -987,12 +1093,7 @@ public partial class Main : Node2D
         previewTitle.AddThemeConstantOverride("shadow_offset_y", 1);
         panel.AddChild(previewTitle);
 
-        var texture = LoadTexture(_menuLevelPreviewPath);
-        if (texture == null)
-        {
-            SelectMenuLevel(_selectedLevelId);
-            return;
-        }
+        var texture = LoadMenuPreview();
 
         var playerCard = new PanelContainer();
         playerCard.ClipContents = true;
@@ -1061,7 +1162,8 @@ public partial class Main : Node2D
         _actorVisualsToggle.Toggled += enabled => _actorVisualsEnabled = enabled;
         actorRow.AddChild(_actorVisualsToggle);
 
-        var audioPlayer = new Button { Text = "Music / SFX Player", TooltipText = "Listen to original ROM songs and test gameplay sounds." };
+        var audioPlayer = new Button { Text = "Music / SFX Player", TooltipText = "Listen to original ROM songs and test gameplay sounds.",
+            Disabled = _rom == null && !HasGeneratedAssetPack() };
         audioPlayer.AddThemeFontSizeOverride("font_size", 7);
         audioPlayer.Pressed += () => ShowAudioPlayer();
         panel.AddChild(audioPlayer);
@@ -1086,6 +1188,32 @@ public partial class Main : Node2D
         return texture;
     }
 
+    private Texture2D? LoadMenuPreview()
+    {
+        if (_rom == null) return LoadTexture(_menuLevelPreviewPath);
+        var id = LevelSortKey(_selectedLevelId);
+        if (!SmwLevelCatalog.HasVerifiedTerrain(id)) return null;
+        if (!_nativePreviews.TryGetValue(id, out var preview))
+        {
+            // An object-layout thumbnail, not a framebuffer parity capture.
+            // Render the first 16x27 Map16 screen using the shared ROM atlas.
+            var visuals = new SmwLevelVisuals(_rom, id);
+            var atlas = visuals.ForegroundImage();
+            using var atlasImage = Image.CreateFromData(atlas.Width, atlas.Height, false, Image.Format.Rgba8, atlas.Bytes);
+            using var image = Image.CreateEmpty(256, 432, false, Image.Format.Rgba8);
+            var sky = SmwPaletteDecoder.ToRgb(visuals.Sky);
+            image.Fill(Color.Color8(sky.R, sky.G, sky.B));
+            var terrain = new SmwMap16Terrain(_rom, new SmwLevelData(_rom, id));
+            foreach (var tile in terrain.LayerTiles())
+                if (tile.X < 16 && tile.Y < 27)
+                    image.BlendRect(atlasImage, new Rect2I(tile.Map16 % 16 * 16, tile.Map16 / 16 * 16, 16, 16), new Vector2I(tile.X * 16, tile.Y * 16));
+            preview = new SmwRgbaImage(image.GetWidth(), image.GetHeight(), image.GetData());
+            _nativePreviews[id] = preview;
+        }
+        using var result = Image.CreateFromData(preview.Width, preview.Height, false, Image.Format.Rgba8, preview.Bytes);
+        return ImageTexture.CreateFromImage(result);
+    }
+
     private static void SetTextureAndDispose(TextureRect rect, Texture2D? texture)
     {
         rect.Texture = texture;
@@ -1103,7 +1231,7 @@ public partial class Main : Node2D
         _selectedLevelTitle.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         panel.AddChild(_selectedLevelTitle);
 
-        _selectedLevelLabel = new Label();
+        _selectedLevelLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
         _selectedLevelLabel.AddThemeFontSizeOverride("font_size", 5);
         _selectedLevelLabel.AddThemeColorOverride("font_color", new Color(0.86f, 0.96f, 1.0f, 1.0f));
         panel.AddChild(_selectedLevelLabel);
@@ -1141,7 +1269,8 @@ public partial class Main : Node2D
 
         _levelList = new ItemList
         {
-            CustomMinimumSize = new Vector2(112, 106),
+            CustomMinimumSize = new Vector2(112, 30),
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
             AutoHeight = false,
             FixedColumnWidth = 112,
             MaxTextLines = 1,
@@ -1168,6 +1297,268 @@ public partial class Main : Node2D
         FilterMenuLevels(string.Empty);
     }
 
+    private void OpenDesktopRomPicker()
+    {
+        if (_romImportInProgress)
+        {
+            SetRomImportStatus("ROM import is already running.");
+            return;
+        }
+        if (IsWebDisplay())
+        {
+            SetRomImportStatus("Use the browser ROM loader for web builds.");
+            return;
+        }
+
+        var currentDirectory = InitialRomPickerDirectory();
+        if (DisplayServer.HasFeature(DisplayServer.Feature.NativeDialogFile))
+        {
+            _nativeRomDialogCallback = Callable.From<bool, string[], int>(OnNativeRomPickerClosed);
+            DisplayServer.FileDialogShow(
+                "Select SMW ROM",
+                currentDirectory,
+                string.Empty,
+                showHidden: false,
+                DisplayServer.FileDialogMode.OpenFile,
+                RomFileDialogFilters,
+                _nativeRomDialogCallback.Value);
+            SetRomImportStatus("Choose a SMW USA ROM; copier headers are accepted.");
+            return;
+        }
+
+        ShowEmbeddedRomPicker(currentDirectory);
+    }
+
+    private static string InitialRomPickerDirectory()
+    {
+        var romPath = OS.GetEnvironment("SMW_ROM_PATH");
+        if (!string.IsNullOrWhiteSpace(romPath))
+        {
+            var directory = IoPath.GetDirectoryName(romPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                return directory;
+            }
+        }
+
+        return OS.GetSystemDir(OS.SystemDir.Downloads);
+    }
+
+    private void OnNativeRomPickerClosed(bool status, string[] selectedPaths, int selectedFilterIndex)
+    {
+        if (!status || selectedPaths.Length == 0 || string.IsNullOrWhiteSpace(selectedPaths[0]))
+        {
+            SetRomImportStatus("ROM import canceled.");
+            return;
+        }
+
+        StartDesktopRomImport(selectedPaths[0]);
+    }
+
+    private void ShowEmbeddedRomPicker(string currentDirectory)
+    {
+        if (_romFileDialog != null)
+        {
+            _romFileDialog.QueueFree();
+            _romFileDialog = null;
+        }
+
+        _romFileDialog = new FileDialog
+        {
+            Title = "Select SMW ROM",
+            ModeOverridesTitle = false,
+            FileMode = FileDialog.FileModeEnum.OpenFile,
+            Access = FileDialog.AccessEnum.Filesystem,
+            CurrentDir = currentDirectory,
+            Filters = RomFileDialogFilters,
+            UseNativeDialog = false,
+        };
+        _romFileDialog.FileSelected += StartDesktopRomImport;
+        _romFileDialog.Canceled += OnRomPickerCanceled;
+        AddChild(_romFileDialog);
+        _romFileDialog.PopupCenteredClamped(new Vector2I(640, 420), 0.9f);
+        SetRomImportStatus("Choose a SMW USA ROM; copier headers are accepted.");
+    }
+
+    private void OnRomPickerCanceled()
+    {
+        SetRomImportStatus("ROM import canceled.");
+    }
+
+    private void StartDesktopRomImport(string romPath)
+    {
+        if (_romImportInProgress)
+        {
+            SetRomImportStatus("ROM import is already running.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(romPath))
+        {
+            SetRomImportStatus("No ROM selected.");
+            return;
+        }
+        if (!FileAccess.FileExists(romPath))
+        {
+            SetRomImportStatus("Selected ROM file does not exist.");
+            return;
+        }
+
+        SetRomImportStatus($"Reading {IoPath.GetFileName(romPath)}...");
+        try
+        {
+            var romBytes = FileAccess.GetFileAsBytes(romPath);
+            StartNativeRomImport(romBytes, IoPath.GetFileName(romPath));
+        }
+        catch (Exception exc) when (exc is IOException or UnauthorizedAccessException)
+        {
+            CompleteNativeImportFailure($"ROM read failed: {exc.Message}");
+        }
+    }
+
+    private async void StartNativeRomImport(byte[] romBytes, string? fileName)
+    {
+        if (_romImportInProgress)
+        {
+            NotifyWebRomError("ROM loading is already running.");
+            return;
+        }
+        var label = IoPath.GetFileName(string.IsNullOrWhiteSpace(fileName) ? "selected.sfc" : fileName);
+        BeginNativeImport($"Loading {label}...", 0, RomImportStageCount, indeterminate: true);
+        NotifyWebImportStatus("Validating ROM", 0, RomImportStageCount, null);
+        try
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            var rom = SmwRom.FromSelectedBytes(romBytes);
+            var catalog = new SmwLevelCatalog(rom, (completed, total) =>
+            {
+                var step = completed / 64;
+                UpdateRomImportProgress(step, RomImportStageCount, indeterminate: false);
+                NotifyWebImportStatus("Indexing ROM slots", step, RomImportStageCount, null);
+            });
+            // Validate the native audio data before replacing the active ROM.
+            // No executable firmware or pre-rendered music enters playback.
+            _ = OpenPlatformerRuntime.Audio.SmwAudioData.FromRom(rom);
+            if (_game != null) ReturnToCourseSelect();
+            _audio?.QueueFree();
+            _audio = null;
+            _rom = rom;
+            _romCatalog = catalog;
+            _nativePreviews.Clear();
+            _webIndexedLevels.Clear();
+            if (_audioEnabled)
+            {
+                _audio = new SmwAudio { Name = "SmwAudio", Rom = _rom };
+                AddChild(_audio);
+            }
+            LoadImportedLevelList();
+            SelectMenuLevel(DefaultLevelId, updateUi: false);
+            _romImportInProgress = false;
+            UpdateRomImportProgress(RomImportStageCount, RomImportStageCount, indeterminate: false);
+            SetRomImportStatus($"ROM ready. {catalog.Entries.Count} slots; {catalog.VerifiedTerrainCount} verified layouts.");
+            RebuildMenuAfterDesktopImport();
+            NotifyWebRomReady(catalog);
+            GD.Print($"smw-menu-import: native_complete=1 indexed={catalog.Entries.Count} verified_terrain={catalog.VerifiedTerrainCount} sha1={catalog.RomSha1} source=rom-memory generated_files=0");
+            if (_quitAfterNativeRomImport) GetTree().Quit();
+        }
+        catch (Exception exc)
+        {
+            CompleteNativeImportFailure(exc.Message);
+            GD.PrintErr($"smw-menu-import: failed rom={label} error={exc.Message}");
+        }
+    }
+
+    private void BeginNativeImport(string status, int completed, int total, bool indeterminate)
+    {
+        _romImportInProgress = true;
+        _romImportStartedLevels = completed;
+        _romImportExpectedLevels = Math.Max(1, total);
+        SetRomImportStatus(status);
+        UpdateRomImportProgress(completed, _romImportExpectedLevels, indeterminate);
+        UpdateDesktopRomImportControls();
+    }
+
+    private void CompleteNativeImportFailure(string detail)
+    {
+        _romImportInProgress = false;
+        SetRomImportStatus($"ROM import failed. {ShortenMenuText(detail, 40)}");
+        UpdateRomImportProgress(_romImportStartedLevels, _romImportExpectedLevels, indeterminate: false);
+        UpdateDesktopRomImportControls();
+        NotifyWebRomError(detail);
+        if (_quitAfterNativeRomImport)
+        {
+            GetTree().Quit(1);
+        }
+    }
+
+    private void RebuildMenuAfterDesktopImport()
+    {
+        if (_menu == null)
+        {
+            UpdateDesktopRomImportControls();
+            return;
+        }
+
+        _menu.QueueFree();
+        ClearMenuReferences();
+        ShowMenu();
+    }
+
+    private void SetRomImportStatus(string text)
+    {
+        _romImportStatusText = text;
+        if (_romImportStatusLabel != null)
+        {
+            _romImportStatusLabel.Text = text;
+        }
+        if (_assetStatusLabel != null)
+        {
+            _assetStatusLabel.Text = text;
+        }
+    }
+
+    private void UpdateRomImportProgress(int startedLevels, int expectedLevels, bool indeterminate)
+    {
+        _romImportStartedLevels = Math.Clamp(startedLevels, 0, Math.Max(1, expectedLevels));
+        _romImportExpectedLevels = Math.Max(1, expectedLevels);
+        if (_romImportProgress == null)
+        {
+            return;
+        }
+
+        _romImportProgress.MaxValue = _romImportExpectedLevels;
+        _romImportProgress.Value = _romImportStartedLevels;
+        _romImportProgress.Indeterminate = indeterminate;
+    }
+
+    private void UpdateDesktopRomImportControls()
+    {
+        if (_romImportButton != null)
+        {
+            _romImportButton.Disabled = _romImportInProgress;
+            _romImportButton.Text = _romImportInProgress ? "Loading ROM" : "Select ROM";
+        }
+        if (_startButton != null)
+        {
+            _startButton.Disabled = _romImportInProgress ||
+                (_romCatalog != null ? FindImportedLevel(_selectedLevelId) is not { IsGenerated: true } : !HasGeneratedAssetPack());
+        }
+        if (_levelSearch != null)
+        {
+            _levelSearch.Editable = !_romImportInProgress;
+        }
+        if (_levelList != null)
+        {
+            _levelList.MouseFilter = _romImportInProgress
+                ? Control.MouseFilterEnum.Ignore
+                : Control.MouseFilterEnum.Stop;
+        }
+        if (_romImportProgress != null)
+        {
+            _romImportProgress.Indeterminate = _romImportInProgress && _romImportStartedLevels == 0;
+            _romImportProgress.Value = Math.Clamp(_romImportStartedLevels, 0, Math.Max(1, _romImportExpectedLevels));
+        }
+    }
+
     private void FilterMenuLevels(string query)
     {
         if (_levelList == null)
@@ -1189,7 +1580,7 @@ public partial class Main : Node2D
 
         if (_levelSearchStatus != null)
         {
-            var noun = _webIndexedLevels.Count > 0 ? "valid levels" : "imported levels";
+            var noun = _romCatalog != null || _webIndexedLevels.Count > 0 ? "ROM slots" : "imported levels";
             _levelSearchStatus.Text = _visibleLevels.Count == _importedLevels.Count
                 ? $"{_importedLevels.Count} {noun}"
                 : $"{_visibleLevels.Count} of {_importedLevels.Count} levels";
@@ -1494,25 +1885,12 @@ public partial class Main : Node2D
         {
             switch (command)
             {
+                case "rom":
+                    ReceiveWebRom(args);
+                    break;
+
                 case "level_index":
                     ReceiveWebLevelIndex(args);
-                    break;
-
-                case "begin":
-                    _webImportedFileCount = 0;
-                    SmwAssetPaths.PreferUserAssetPack();
-                    GD.Print("smw-web: import_begin=1");
-                    break;
-
-                case "file":
-                    ReceiveWebAssetFile(args);
-                    break;
-
-                case "complete":
-                    var levelId = args.Count > 1 ? NormalizeLevelId(args[1].AsString()) : DefaultLevelId;
-                    var autoStart = args.Count > 2 && args[2].AsBool();
-                    GD.Print($"smw-web: import_complete=1 files={_webImportedFileCount} level={levelId} autostart={(autoStart ? 1 : 0)}");
-                    CallDeferred(nameof(RefreshAfterWebAssetImport), levelId, autoStart);
                     break;
 
                 case "status":
@@ -1566,6 +1944,22 @@ public partial class Main : Node2D
         GD.Print($"smw-web: level_index={count}");
     }
 
+    private void ReceiveWebRom(Godot.Collections.Array args)
+    {
+        if (args.Count < 2 ||
+            args[1].VariantType != Variant.Type.Object ||
+            args[1].AsGodotObject() is not JavaScriptObject jsBuffer ||
+            !JavaScriptBridge.IsJsBuffer(jsBuffer))
+        {
+            throw new ArgumentException("rom command requires a JavaScript ArrayBuffer or Uint8Array payload");
+        }
+
+        var fileName = args.Count > 2 ? args[2].AsString() : "selected.sfc";
+        var bytes = JavaScriptBridge.JsBufferToPackedByteArray(jsBuffer);
+        GD.Print($"smw-web: rom_received file={fileName} bytes={bytes.Length}");
+        StartNativeRomImport(bytes, fileName);
+    }
+
     private int AddWebIndexedLevels(Godot.Collections.Array levels, bool clearExisting)
     {
         if (clearExisting)
@@ -1602,83 +1996,74 @@ public partial class Main : Node2D
         return _webIndexedLevels.Count;
     }
 
-    private void ReceiveWebAssetFile(Godot.Collections.Array args)
-    {
-        if (args.Count < 3)
-        {
-            throw new ArgumentException("file command requires path and buffer");
-        }
-
-        var relativePath = NormalizeWebAssetPath(args[1].AsString());
-        if (args[2].VariantType != Variant.Type.Object ||
-            args[2].AsGodotObject() is not JavaScriptObject jsBuffer ||
-            !JavaScriptBridge.IsJsBuffer(jsBuffer))
-        {
-            throw new ArgumentException($"asset payload is not a JavaScript buffer: {relativePath}");
-        }
-
-        var bytes = JavaScriptBridge.JsBufferToPackedByteArray(jsBuffer);
-        var userPath = SmwAssetPaths.UserPath(relativePath);
-        var absolutePath = ProjectSettings.GlobalizePath(userPath);
-        var directory = IoPath.GetDirectoryName(absolutePath);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            DirAccess.MakeDirRecursiveAbsolute(directory);
-        }
-
-        using var file = FileAccess.Open(userPath, FileAccess.ModeFlags.Write);
-        if (file == null)
-        {
-            throw new IOException($"failed to open {userPath} for writing");
-        }
-
-        file.StoreBuffer(bytes);
-        _webImportedFileCount++;
-    }
-
-    private static string NormalizeWebAssetPath(string relativePath)
-    {
-        var normalized = relativePath.Replace('\\', '/').TrimStart('/');
-        if (normalized.Length == 0 ||
-            normalized.Contains("..", StringComparison.Ordinal) ||
-            normalized.StartsWith("res://", StringComparison.OrdinalIgnoreCase) ||
-            normalized.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException($"invalid asset path: {relativePath}");
-        }
-
-        return normalized;
-    }
-
     private static string FormatWebStatus(Godot.Collections.Array args)
     {
         return args.Count > 1 ? args[1].AsString() : string.Empty;
     }
 
-    private bool RequestWebLevelImport(string levelId)
+    private void NotifyWebImportStatus(string stage, int completed, int total, string? levelId)
     {
         if (!IsWebDisplay())
         {
-            return false;
+            return;
         }
 
-        var normalized = NormalizeLevelId(levelId);
-        if (_startButton != null)
+        var levelPart = string.IsNullOrWhiteSpace(levelId) ? "null" : JsString(levelId);
+        EmitWebHostMessage(
+            $$"""
+            {
+              type: "open-platformer-runtime-import-status",
+              stage: {{JsString(stage)}},
+              completed: {{completed}},
+              total: {{Math.Max(1, total)}},
+              levelId: {{levelPart}}
+            }
+            """);
+    }
+
+    private void NotifyWebRomReady(SmwLevelCatalog result)
+    {
+        if (!IsWebDisplay())
         {
-            _startButton.Disabled = true;
-            _startButton.Text = $"Importing {normalized}";
-        }
-        if (_levelSearchStatus != null)
-        {
-            _levelSearchStatus.Text = $"Importing level {normalized} from ROM...";
+            return;
         }
 
+        EmitWebHostMessage(
+            $$"""
+            {
+              type: "open-platformer-runtime-rom-ready",
+              sha1: {{JsString(result.RomSha1)}},
+              indexedLevelCount: {{result.Entries.Count}},
+              verifiedTerrainCount: {{result.VerifiedTerrainCount}},
+              generatedLevelCount: 0
+            }
+            """);
+    }
+
+    private void NotifyWebRomError(string message)
+    {
+        if (!IsWebDisplay())
+        {
+            return;
+        }
+
+        EmitWebHostMessage(
+            $$"""
+            {
+              type: "open-platformer-runtime-rom-error",
+              message: {{JsString(message)}}
+            }
+            """);
+    }
+
+    private static void EmitWebHostMessage(string objectLiteral)
+    {
         try
         {
             JavaScriptBridge.Eval(
                 $$"""
                 {
-                  const message = { type: "open-platformer-runtime-import-level", levelId: "{{normalized}}" };
+                  const message = {{objectLiteral}};
                   if (window.parent && window.parent !== window) {
                     window.parent.postMessage(message, "*");
                   } else {
@@ -1687,19 +2072,22 @@ public partial class Main : Node2D
                 }
                 """,
                 useGlobalExecutionContext: true);
-            GD.Print($"smw-web: request_import level={normalized}");
-            return true;
         }
         catch (Exception exc)
         {
-            GD.PrintErr($"smw-web: request_import_failed level={normalized} error={exc.Message}");
-            if (_startButton != null)
-            {
-                _startButton.Disabled = false;
-                _startButton.Text = $"Import {normalized}";
-            }
-            return false;
+            GD.PushWarning($"smw-web: failed to notify host: {exc.Message}");
         }
+    }
+
+    private static string JsString(string value)
+    {
+        return "\"" + value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("<", "\\u003C", StringComparison.Ordinal)
+            .Replace(">", "\\u003E", StringComparison.Ordinal) + "\"";
     }
 
     private void RefreshAfterWebAssetImport(string levelId, bool autoStart)
@@ -1731,10 +2119,23 @@ public partial class Main : Node2D
         {
             return;
         }
+        if (_romImportInProgress)
+        {
+            SetRomImportStatus("ROM import is still running.");
+            return;
+        }
+        if (_rom == null && !HasGeneratedAssetPack())
+        {
+            SetRomImportStatus("Select your ROM before starting a course.");
+            GD.Print("smw-native-level: unavailable=1 reason=rom-required");
+            return;
+        }
 
         var selectedLevel = FindImportedLevel(_selectedLevelId);
-        if (selectedLevel is { IsGenerated: false } && RequestWebLevelImport(selectedLevel.Id))
+        if (_romCatalog != null && selectedLevel is not { IsGenerated: true })
         {
+            SetRomImportStatus($"Slot {_selectedLevelId}: native layout is not verified yet.");
+            GD.Print($"smw-native-level: unsupported={_selectedLevelId} reason=layout-not-verified");
             return;
         }
 
@@ -1782,10 +2183,13 @@ public partial class Main : Node2D
         _selectedLevelTitle = null;
         _levelSearchStatus = null;
         _assetStatusLabel = null;
+        _romImportStatusLabel = null;
         _startButton = null;
+        _romImportButton = null;
         _levelSelect = null;
         _levelSearch = null;
         _levelList = null;
+        _romImportProgress = null;
         _audioToggle = null;
         _debugToggle = null;
         _actorsToggle = null;
