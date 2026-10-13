@@ -18,5 +18,7 @@
     <Compile Remove=".godot_local/**/*.cs" />
     <Compile Remove="tests/**/*.cs" />
     <Compile Remove="tools/**/*.cs" />
+    <Compile Remove="src/**/obj/**/*.cs" />
+    <Compile Remove="src/**/bin/**/*.cs" />
   </ItemGroup>
 </Project>

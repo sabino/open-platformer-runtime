@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using OpenPlatformerRuntime.SmwAssets;
 #if !GODOT_WEB
 using System.Net;
 using System.Net.Sockets;
@@ -314,7 +315,7 @@ public partial class GameScene : Node2D
     private ImageTexture? _spriteTexture;
     private readonly ImageTexture?[] _spritePaletteTextures = new ImageTexture?[8];
     private ImageTexture? _map16Texture;
-    private Map16TileLayer? _map16Layer;
+    private SmwTerrainLayer? _map16Layer;
     private Godot.Collections.Dictionary? _entranceTables;
     private string _currentLevelId = "105";
     private string _levelGfxAtlasPath = SmwAssetPaths.Path("tilesets/level_105_tileset7_8x8.png");
@@ -322,6 +323,10 @@ public partial class GameScene : Node2D
     private string _levelSpriteAtlasPath = SmwAssetPaths.Path("spritesets/level_105_spritegfx8_8x8.png");
     private string _levelSpriteVramPath = SmwAssetPaths.Path("spritesets/level_105_spritegfx8_vram.bin");
     private string _levelPalettePath = SmwAssetPaths.Path("palettes/level_105_palette.json");
+    private SmwLevelVisuals? _nativeVisuals;
+    private SmwLevelData? _nativeLevel;
+    private SmwEntranceDecoder? _nativeEntrances;
+    private bool _developmentExitBankSubmap;
     private string _levelLayoutPreviewPath = SmwAssetPaths.Path("levels/level_105_partial_layout.png");
     private string _levelTilemapPath = SmwAssetPaths.Path("levels/level_105_partial_tilemap.json");
     private string _levelLayer2BackgroundPath = SmwAssetPaths.Path("levels/level_105_layer2_background.png");
@@ -447,6 +452,8 @@ public partial class GameScene : Node2D
     public SmwAudio? Audio { get; set; }
     public bool AudioEnabled { get; set; } = true;
     public string InitialLevelId { get; set; } = "105";
+    public SmwRom? Rom { get; set; }
+    public bool? OverworldSubmap { get; set; }
     public event Action? CourseSelectRequested;
 
     public override void _Ready()
@@ -454,14 +461,17 @@ public partial class GameScene : Node2D
         GetViewport().TransparentBg = false;
         RenderingServer.SetDefaultClearColor(new Color(0.0f, 0.39f, 0.74f, 1.0f));
         _currentLevelId = NormalizeLevelId(InitialLevelId);
+        _developmentExitBankSubmap = (ParseLevelId(_currentLevelId) & 0x100) != 0;
+        if (Rom != null) _nativeEntrances = new SmwEntranceDecoder(Rom);
         _debugActorsEnabled = ActorsEnabled;
         _debugActorVisualsEnabled = ActorVisualsEnabled;
         _audio = Audio;
         if (_audio == null && AudioEnabled)
         {
-            _audio = new SmwAudio { Name = "SmwAudio" };
+            _audio = new SmwAudio { Name = "SmwAudio", Rom = Rom };
             AddChild(_audio);
         }
+        if (_audio != null) _audio.ClockedByGameplay = true;
         LoadAssetPack();
         _state = MakeInitialPlayerState();
         ResetPowerupAnimationState();
@@ -664,6 +674,7 @@ public partial class GameScene : Node2D
         PrintQueuedDebugTrace(frameInput);
         MaybeReturnToCourseSelectAfterCourseClear();
 
+        _audio?.AdvanceSimulationFrame();
         _debugFrameCounter++;
         if (isDebugStep)
         {
@@ -753,6 +764,7 @@ public partial class GameScene : Node2D
         UpdateDebugGizmos();
         PrintQueuedDebugTrace(new SmwPhysics.FrameInput());
 
+        _audio?.AdvanceSimulationFrame();
         _debugFrameCounter++;
         if (isDebugStep)
         {
@@ -775,6 +787,7 @@ public partial class GameScene : Node2D
         UpdateDebugGizmos();
         PrintQueuedDebugTrace(new SmwPhysics.FrameInput());
 
+        _audio?.AdvanceSimulationFrame();
         _debugFrameCounter++;
         if (isDebugStep)
         {
@@ -798,6 +811,7 @@ public partial class GameScene : Node2D
         UpdateDebugGizmos();
         PrintQueuedDebugTrace(frameInput);
 
+        _audio?.AdvanceSimulationFrame();
         _debugFrameCounter++;
         _powerupAnimationFrames--;
         if (_powerupAnimationFrames <= 0 && _pendingPowerup >= 0)
@@ -828,6 +842,7 @@ public partial class GameScene : Node2D
         UpdateDebugGizmos();
         PrintQueuedDebugTrace(frameInput);
 
+        _audio?.AdvanceSimulationFrame();
         _debugFrameCounter++;
         _powerupSettleFrames--;
         if (isDebugStep)
@@ -912,6 +927,7 @@ public partial class GameScene : Node2D
         public string LevelId = "105";
         public SmwPhysics.PlayerState State;
         public int Frame;
+        public byte[]? NativeAudioState;
         public float CameraX;
         public float CameraY;
         public float CameraHorizontalFocus;
@@ -1145,81 +1161,6 @@ public partial class GameScene : Node2D
         public required List<(int X, int Y)> Tiles { get; init; }
         public bool DragonCoin { get; init; }
         public bool Collected { get; set; }
-    }
-
-    private sealed partial class Map16TileLayer : Node2D
-    {
-        private ImageTexture? _texture;
-        private readonly List<PlacedMap16Tile> _tiles = [];
-        private readonly HashSet<(int X, int Y)> _hiddenTiles = [];
-
-        public void Configure(ImageTexture texture, IEnumerable<PlacedMap16Tile> tiles)
-        {
-            _texture = texture;
-            _tiles.Clear();
-            _tiles.AddRange(tiles);
-            _hiddenTiles.Clear();
-            QueueRedraw();
-        }
-
-        public void HideTile(int x, int y)
-        {
-            if (_hiddenTiles.Add((x, y)))
-            {
-                QueueRedraw();
-            }
-        }
-
-        public void ReplaceTile(PlacedMap16Tile replacement)
-        {
-            for (var i = 0; i < _tiles.Count; i++)
-            {
-                if (_tiles[i].X != replacement.X || _tiles[i].Y != replacement.Y)
-                {
-                    continue;
-                }
-
-                _tiles[i] = replacement;
-                _hiddenTiles.Remove((replacement.X, replacement.Y));
-                QueueRedraw();
-                return;
-            }
-
-            _tiles.Add(replacement);
-            _hiddenTiles.Remove((replacement.X, replacement.Y));
-            QueueRedraw();
-        }
-
-        public override void _Draw()
-        {
-            if (_texture == null)
-            {
-                return;
-            }
-
-            foreach (var tile in _tiles)
-            {
-                if (_hiddenTiles.Contains((tile.X, tile.Y)) || tile.Map16 < 0)
-                {
-                    continue;
-                }
-
-                var region = new Rect2(
-                    (tile.Map16 % Map16AtlasColumns) * Map16TileSize,
-                    (tile.Map16 / Map16AtlasColumns) * Map16TileSize,
-                    Map16TileSize,
-                    Map16TileSize);
-                if (region.Position.Y + Map16TileSize > _texture.GetHeight())
-                {
-                    continue;
-                }
-
-                DrawTextureRectRegion(
-                    _texture,
-                    new Rect2(TileToWorld(tile.X, tile.Y), new Vector2(Map16TileSize, Map16TileSize)),
-                    region);
-            }
-        }
     }
 
     private SmwPhysics.FrameInput ReadFrameInput()
@@ -1654,12 +1595,40 @@ public partial class GameScene : Node2D
 
     private bool LoadLevelData(string levelId)
     {
+        _nativeVisuals = null;
+        _nativeLevel = null;
         _screenExits.Clear();
         _levelObjects.Clear();
         _layer2Objects.Clear();
         _levelSprites.Clear();
         _placedTiles.Clear();
         _rawPlacedTiles.Clear();
+
+        if (Rom != null)
+        {
+            // Runtime level construction must not require the development
+            // import manifest. Native visuals, streams and entrances use ROM
+            // tables; only unported terrain falls back to an imported preview.
+            _currentLevelId = levelId;
+            _nativeLevel = new SmwLevelData(Rom, ParseLevelId(levelId));
+            _nativeVisuals = new SmwLevelVisuals(Rom, ParseLevelId(levelId));
+            _currentLevelTileset = _nativeLevel.Header.Tileset;
+            _currentLevelMusicIndex = _nativeLevel.Header.Music;
+            _currentLevelMusicPreview = MusicPreviewForLevelHeader(_currentLevelMusicIndex);
+            _levelTilemapPath = SmwAssetPaths.Path($"levels/level_{levelId}_partial_tilemap.json");
+            GD.Print($"smw-native-data: level={levelId} rom_sha1={Rom.Inspection.Sha1} tileset={_currentLevelTileset} sprites={_nativeLevel.Header.SpriteGraphics}");
+            LoadNativeLevelRecords(_nativeLevel);
+            // Additional levels move here after their complete object buffers
+            // are verified against the original loader.
+            if (_nativeLevel.Header.Id is 0x0C7 or 0x105 or 0x106 or 0x1CB)
+                LoadNativeTerrain(_nativeLevel);
+            else
+            {
+                GD.Print($"smw-terrain: level={levelId} source=generated-preview");
+                LoadPlacedTiles(_levelTilemapPath);
+            }
+            return true;
+        }
 
         if (!FileAccess.FileExists(SmwAssetPaths.ManifestPath))
         {
@@ -1769,6 +1738,45 @@ public partial class GameScene : Node2D
         return true;
     }
 
+    private void LoadNativeLevelRecords(SmwLevelData level)
+    {
+        foreach (var obj in level.Layer1.Objects) _levelObjects.Add(NativeObjectDictionary(obj));
+        if (level.Layer2 != null)
+            foreach (var obj in level.Layer2.Objects) _layer2Objects.Add(NativeObjectDictionary(obj));
+        foreach (var exit in level.LoadedExits)
+            _screenExits.Add(new Godot.Collections.Dictionary
+            {
+                ["screen"] = exit.Screen,
+                ["exit_low"] = exit.DestinationLow,
+                ["raw_r11"] = exit.Properties,
+                ["vanilla_properties"] = exit.Properties & 3,
+            });
+        foreach (var sprite in level.Sprites.Sprites)
+            _levelSprites.Add(new SpriteSpawn(sprite.X, sprite.Y + (int)LevelVisualYOffset, sprite.Screen, sprite.Id,
+                sprite.Position >> 2 & 3, sprite.Offset));
+        GD.Print($"smw-native-streams: level={_currentLevelId} objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} sprites={_levelSprites.Count} exits={_screenExits.Count} source=rom");
+    }
+
+    private static Godot.Collections.Dictionary NativeObjectDictionary(SmwLevelObject obj)
+    {
+        var p = obj.Placement;
+        return new Godot.Collections.Dictionary
+        {
+            ["object_id"] = obj.Id,
+            ["size_or_type"] = obj.SizeOrType,
+            ["sequence"] = obj.Sequence,
+            ["offset"] = obj.Offset,
+            ["placement"] = new Godot.Collections.Dictionary
+            {
+                ["screen_cursor"] = p.Screen,
+                ["x_tile"] = p.XTile,
+                ["y_tile"] = p.YTile,
+                ["x_px"] = p.XTile * 16,
+                ["y_px"] = p.YTile * 16,
+            },
+        };
+    }
+
     private void ApplyLevelHeaderMetadata(Godot.Collections.Dictionary levelDetails)
     {
         _currentLevelMusicIndex = 0;
@@ -1810,7 +1818,9 @@ public partial class GameScene : Node2D
 
         if (AudioEnabled)
         {
-            _audio?.PlayMusicPreview(_starPowerTimer > 0 ? "Star" : _currentLevelMusicPreview);
+            if (_starPowerTimer > 0) _audio?.PlayMusicPreview("Star");
+            else if (Rom != null) _audio?.PlayLevelMusic(_currentLevelMusicIndex);
+            else _audio?.PlayMusicPreview(_currentLevelMusicPreview);
         }
         GD.Print($"smw-runtime: level_music level={_currentLevelId} music_index={_currentLevelMusicIndex} bank={(_starPowerTimer > 0 ? "Star" : _currentLevelMusicPreview)}");
     }
@@ -1984,6 +1994,18 @@ public partial class GameScene : Node2D
         }
     }
 
+    private void LoadNativeTerrain(SmwLevelData level)
+    {
+        var terrain = new SmwMap16Terrain(Rom!, level);
+        foreach (var tile in terrain.LayerTiles())
+        {
+            var placed = new PlacedMap16Tile(tile.X, tile.Y, tile.Map16, tile.Source);
+            _placedTiles.Add(placed);
+            _rawPlacedTiles.Add(placed);
+        }
+        GD.Print($"smw-native-terrain: level={level.Header.Id:X3} source=rom state=fresh-development-entry tiles={_placedTiles.Count} low_sha256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(terrain.LowBytes))} high_sha256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(terrain.HighBytes))}");
+    }
+
     private void LoadPlacedTiles(string tilemapPath)
     {
         if (!FileAccess.FileExists(tilemapPath))
@@ -2078,6 +2100,29 @@ public partial class GameScene : Node2D
 
     private void LoadPlayerGraphicsMetadata()
     {
+        if (Rom != null)
+        {
+            var data = new SmwPlayerGraphicsData(Rom);
+            void Load(string name, List<int> target)
+            {
+                target.Clear();
+                target.AddRange(data.Values(name));
+            }
+            Load("head_tile_pointer_index", _headTilePointers);
+            Load("body_tile_pointer_index", _bodyTilePointers);
+            Load("walking_pose_count", _playerWalkingPoseCounts);
+            Load("animation_speed_table", _playerAnimationSpeedTable);
+            Load("player_xy_disp_index_index", _playerXYDispIndexIndex);
+            Load("player_xy_disp_index", _playerXYDispIndex);
+            Load("x_disp", _playerXDisp);
+            Load("y_disp", _playerYDisp);
+            Load("powerup_tileset_index", _playerPowerupTilesetIndex);
+            Load("tiles", _playerTileDescriptors);
+            Load("tiles_index", _playerTilesIndex);
+            Load("tile_x_flip", _playerTileXFlip);
+            GD.Print($"smw-native-player: tables={data.Tables.Count} source=rom");
+            return;
+        }
         var playerGraphicsPath = SmwAssetPaths.Path("player/player_graphics.json");
         if (!FileAccess.FileExists(playerGraphicsPath))
         {
@@ -2357,6 +2402,13 @@ public partial class GameScene : Node2D
     private void LoadSpriteTexture()
     {
         var paletteTextureCount = LoadSpritePaletteTextures();
+        if (_nativeVisuals != null)
+        {
+            // The historical preview uses CGRAM row 14 (OAM palette 6).
+            _spriteTexture = CreateNativeTexture("sprite-preview", _nativeVisuals.SpriteImage(6));
+            GD.Print($"smw-runtime: sprite_palettes={paletteTextureCount} source=rom");
+            return;
+        }
 
         if (!FileAccess.FileExists(_levelSpriteAtlasPath))
         {
@@ -2377,6 +2429,12 @@ public partial class GameScene : Node2D
     private int LoadSpritePaletteTextures()
     {
         Array.Clear(_spritePaletteTextures);
+        if (_nativeVisuals != null)
+        {
+            for (var row = 0; row < _spritePaletteTextures.Length; row++)
+                _spritePaletteTextures[row] = CreateNativeTexture($"sprites-{row}", _nativeVisuals.SpriteImage(row));
+            return _spritePaletteTextures.Length;
+        }
         if (!FileAccess.FileExists(_levelSpriteVramPath) ||
             !TryLoadLevelPalette(out var palette))
         {
@@ -2447,6 +2505,12 @@ public partial class GameScene : Node2D
     private bool TryLoadLevelPalette(out Color[] palette)
     {
         palette = [];
+        if (_nativeVisuals != null)
+        {
+            palette = new Color[256];
+            for (var i = 0; i < palette.Length; i++) palette[i] = ColorForRomWord(_nativeVisuals.Palette[i]);
+            return true;
+        }
         if (!FileAccess.FileExists(_levelPalettePath))
         {
             return false;
@@ -2993,12 +3057,10 @@ public partial class GameScene : Node2D
 
     private void AddLayer2BackgroundPreview()
     {
-        if (!FileAccess.FileExists(_levelLayer2BackgroundPath))
-        {
-            return;
-        }
-
-        var texture = LoadTextureFromImageFile(_levelLayer2BackgroundPath);
+        var native = _nativeVisuals?.BackgroundImage();
+        var texture = _nativeVisuals != null
+            ? native == null ? null : CreateNativeTexture("background", native)
+            : LoadTextureFromImageFile(_levelLayer2BackgroundPath);
         if (texture == null)
         {
             return;
@@ -3022,7 +3084,7 @@ public partial class GameScene : Node2D
         var background = new ColorRect
         {
             Name = "LevelBackground",
-            Color = new Color(0.0f, 0.39f, 0.74f, 1.0f),
+            Color = _nativeVisuals == null ? new Color(0.0f, 0.39f, 0.74f, 1.0f) : ColorForRomWord(_nativeVisuals.Sky),
             Position = new Vector2(0, LevelVisualYOffset),
             Size = new Vector2(8192, 1024),
             MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -3033,12 +3095,14 @@ public partial class GameScene : Node2D
 
     private bool AddGeneratedMap16Tiles()
     {
-        if (_placedTiles.Count == 0 || !FileAccess.FileExists(_levelMap16AtlasPath))
+        if (_placedTiles.Count == 0)
         {
             return false;
         }
 
-        var texture = LoadTextureFromImageFile(_levelMap16AtlasPath);
+        var texture = _nativeVisuals == null
+            ? LoadTextureFromImageFile(_levelMap16AtlasPath)
+            : CreateNativeTexture("map16", _nativeVisuals.ForegroundImage());
         if (texture == null)
         {
             return false;
@@ -3063,13 +3127,8 @@ public partial class GameScene : Node2D
             _map16TilesByCoord[(tile.X, tile.Y)] = tile;
         }
 
-        var layer = new Map16TileLayer
-        {
-            Name = "GeneratedMap16Tiles",
-            ZIndex = -10,
-        };
-        layer.TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
-        layer.Configure(texture, layerTiles);
+        var layer = GD.Load<PackedScene>("res://src/scenes/SmwTerrainLayer.tscn").Instantiate<SmwTerrainLayer>();
+        layer.Configure(texture, layerTiles.Select(tile => (tile.X, tile.Y, tile.Map16)), LevelVisualYOffset);
         _map16Layer = layer;
         AddWorldChild(layer);
 
@@ -3345,13 +3404,13 @@ public partial class GameScene : Node2D
 
             _placedTiles[i] = replacement;
             _map16TilesByCoord[(tile.X, tile.Y)] = replacement;
-            _map16Layer?.ReplaceTile(replacement);
+            _map16Layer?.ReplaceTile(replacement.X, replacement.Y, replacement.Map16);
             return;
         }
 
         _placedTiles.Add(replacement);
         _map16TilesByCoord[(tile.X, tile.Y)] = replacement;
-        _map16Layer?.ReplaceTile(replacement);
+        _map16Layer?.ReplaceTile(replacement.X, replacement.Y, replacement.Map16);
     }
 
     private static bool IsSpinJumpBreakableTurnBlock(PlacedMap16Tile tile)
@@ -7270,6 +7329,11 @@ public partial class GameScene : Node2D
 
         for (var paletteIndex = 0; paletteIndex < _playerTextures.Length; paletteIndex++)
         {
+            if (_nativeVisuals != null)
+            {
+                _playerTextures[paletteIndex] = CreateNativeTexture($"player-{paletteIndex}", _nativeVisuals.PlayerImage(paletteIndex));
+                continue;
+            }
             var playerAtlasPath = SmwAssetPaths.Path($"player/gfx32_player_palette{paletteIndex}.png");
             if (!FileAccess.FileExists(playerAtlasPath))
             {
@@ -7990,7 +8054,6 @@ public partial class GameScene : Node2D
             if (entry.TryGetValue("screen", out var screenVariant) && screenVariant.AsInt32() == screen)
             {
                 exitData = entry;
-                break;
             }
         }
 
@@ -8005,6 +8068,13 @@ public partial class GameScene : Node2D
 
     private bool TryResolveScreenExit(Godot.Collections.Dictionary exitData, out LevelEntrance entrance)
     {
+        if (_nativeEntrances != null)
+        {
+            var exit = new SmwScreenExit(ReadInt(exitData, "screen", 0),
+                (byte)ReadInt(exitData, "exit_low", 0), (byte)ReadInt(exitData, "raw_r11", 0));
+            var id = exit.ResolveId(OverworldSubmap ?? _developmentExitBankSubmap);
+            return (_nativeLevel?.ExitSecondarySelector ?? 0) != 0 ? TryResolveSecondaryEntrance(id, out entrance) : TryResolveMainEntrance(id, out entrance);
+        }
         if (!exitData.TryGetValue("vanilla_destination", out var destinationVariant))
         {
             entrance = default;
@@ -8025,6 +8095,11 @@ public partial class GameScene : Node2D
 
     private bool TryResolveMainEntrance(int levelId, out LevelEntrance entrance)
     {
+        if (_nativeEntrances != null)
+        {
+            entrance = FromNativeEntrance(_nativeEntrances.Main(levelId));
+            return true;
+        }
         var f000 = ReadEntranceTableByte("level_info_05f000", levelId);
         var f200 = ReadEntranceTableByte("level_info_05f200", levelId);
         if (f000 == null || f200 == null)
@@ -8048,6 +8123,11 @@ public partial class GameScene : Node2D
 
     private bool TryResolveSecondaryEntrance(int secondaryId, out LevelEntrance entrance)
     {
+        if (_nativeEntrances != null)
+        {
+            entrance = FromNativeEntrance(_nativeEntrances.Secondary(secondaryId));
+            return true;
+        }
         var targetLow = ReadEntranceTableByte("secondary_level_low_05f800", secondaryId);
         var yByte = ReadEntranceTableByte("secondary_y_05fa00", secondaryId);
         var xByte = ReadEntranceTableByte("secondary_x_05fc00", secondaryId);
@@ -8073,6 +8153,7 @@ public partial class GameScene : Node2D
 
     private int? ReadEntranceTableByte(string tableName, int index)
     {
+        if (_nativeEntrances != null) return _nativeEntrances.ReadTable(tableName, index);
         if (!EnsureEntranceTablesLoaded() || _entranceTables == null)
         {
             return null;
@@ -8091,6 +8172,10 @@ public partial class GameScene : Node2D
 
         return table[index].AsInt32();
     }
+
+    private static LevelEntrance FromNativeEntrance(SmwEntrance entrance) => new(
+        FormatLevelId(entrance.Level), new Vector2(entrance.X, entrance.Y + LevelVisualYOffset), entrance.Action,
+        entrance.Secondary, entrance.SourceId);
 
     private bool EnsureEntranceTablesLoaded()
     {
@@ -8448,6 +8533,22 @@ public partial class GameScene : Node2D
         return texture;
     }
 
+    private static Color ColorForRomWord(ushort word)
+    {
+        var color = SmwPaletteDecoder.ToRgb(word);
+        return new Color(color.R / 255.0f, color.G / 255.0f, color.B / 255.0f, 1);
+    }
+
+    private ImageTexture CreateNativeTexture(string name, SmwRgbaImage rgba)
+    {
+        using var image = Image.CreateFromData(rgba.Width, rgba.Height, false, Image.Format.Rgba8, rgba.Bytes);
+        var transferred = image.GetData();
+        if (!transferred.AsSpan().SequenceEqual(rgba.Bytes))
+            throw new InvalidOperationException($"Native image transfer changed pixels: {name}");
+        GD.Print($"smw-native-texture: level={_currentLevelId} name={name} width={rgba.Width} height={rgba.Height} sha256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(transferred))}");
+        return ImageTexture.CreateFromImage(image);
+    }
+
     private void UpdateHud()
     {
         UpdateStatusHud();
@@ -8535,7 +8636,7 @@ public partial class GameScene : Node2D
 
     private void PrintRuntimeState()
     {
-        var layer2Bg = FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
+        var layer2Bg = _nativeLevel != null ? (_nativeLevel.Background != null ? 1 : 0) : FileAccess.FileExists(_levelLayer2BackgroundPath) ? 1 : 0;
         GD.Print($"smw-runtime: level={_currentLevelId} layer1_objects={_levelObjects.Count} layer2_objects={_layer2Objects.Count} layer2_bg={layer2Bg} map16_tiles={_placedTiles.Count} collision_rects={_solids.Count} slope_surfaces={_slopes.Count} pipe_cells={_diagonalPipeFloorCells.Count}/{_diagonalPipeBodyCells.Count}/{_diagonalPipeCeilingCells.Count} coin_pickups={_coinPickups.Count} screen_exits={_screenExits.Count} pipe_rects={_pipeEntrances.Count} sprite_spawns={_levelSprites.Count} sprite_actors={_spriteActors.Count} fireballs={_playerFireballs.Count} goal_tapes={_goalTapeTriggers.Count} player_sprites={_playerTileSprites.Count}");
     }
 
@@ -8850,10 +8951,11 @@ public partial class GameScene : Node2D
 
         if (_audio == null)
         {
-            _audio = new SmwAudio { Name = "SmwAudio" };
+            _audio = new SmwAudio { Name = "SmwAudio", Rom = Rom };
             AddChild(_audio);
         }
 
+        _audio.ClockedByGameplay = true;
         _audio.ProcessMode = ProcessModeEnum.Inherit;
         StartLevelMusic();
         var enabledState = BuildDebugAudioState("toggle");
@@ -9623,7 +9725,7 @@ public partial class GameScene : Node2D
             $"frame={_debugFrameCounter} input={DescribeFrameInput(frameInput)} " +
             $"x={_state.XFloat:0.00} y={_state.YFloat:0.00} xi={_state.X} yi={_state.Y} sub={_state.SubX:X2},{_state.SubY:X2} subx={_state.SubX} suby={_state.SubY} " +
             $"xs={_state.XSpeed} ys={_state.YSpeed} subxs={_state.SubXSpeed} subys={_state.SubYSpeed} " +
-            $"p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} h={SmwPhysics.PlayerHeightFor(_state)} " +
+            $"p={_state.PMeter:X2} pow={_state.Powerup} star={_starPowerTimer:X2} hurt={_playerHurtCooldown} h={SmwPhysics.PlayerHeightFor(_state)} " +
             $"g={(_state.OnGround ? 1 : 0)} duck={(_state.Ducking ? 1 : 0)} sj={(_state.SpinJump ? 1 : 0)} rt={(_state.RunningTakeoff ? 1 : 0)} " +
             $"jf={_state.JumpHeldFrames} cf={_state.CapeFloatFrames} air={_state.InAirState:X2} face={_state.Facing} slope={_state.SlopeKind} slope_player={_state.SlopePlayer} slope_type={_state.SlopeType} " +
             $"loose={_state.LooseSteepSlopeGroundFrames} loose_kind={_state.LooseSteepSlopeKind} overrun={(_state.NativeSlopeOverrunGround ? 1 : 0)} lead={_state.LeadingFootCarryFrames} preserve_y={_state.PreserveGroundYSpeedFrames} " +
@@ -9827,6 +9929,7 @@ public partial class GameScene : Node2D
             LevelId = _currentLevelId,
             State = _state,
             Frame = _debugFrameCounter,
+            NativeAudioState = _audio?.CaptureNativeState(),
             CameraX = _cameraX,
             CameraY = _cameraY,
             CameraHorizontalFocus = _cameraHorizontalFocus,
@@ -9920,6 +10023,8 @@ public partial class GameScene : Node2D
 
     private void ApplyDebugCheckpoint(DebugCheckpointData checkpoint)
     {
+        if (AudioEnabled && _audio?.HasNativeData == true && checkpoint.NativeAudioState == null)
+            throw new InvalidOperationException("Legacy checkpoint has no native audio state; restore it with audio disabled");
         var levelId = string.IsNullOrWhiteSpace(checkpoint.LevelId) ? _currentLevelId : checkpoint.LevelId;
         DebugEnterLevel(levelId);
         ApplyPlacedTilesCheckpoint(checkpoint.PlacedTiles);
@@ -10009,6 +10114,11 @@ public partial class GameScene : Node2D
         _lastActorEvent = checkpoint.LastActorEvent;
         _lastActorContact = checkpoint.LastActorContact;
 
+        if (checkpoint.NativeAudioState != null)
+        {
+            if (_audio == null) DebugSetAudioEnabled(true);
+            _audio?.RestoreNativeState(checkpoint.NativeAudioState);
+        }
         RefreshPlayerDebugPresentation(forceGraphic: true);
         UpdateCamera();
         UpdateHud();
@@ -10107,7 +10217,7 @@ public partial class GameScene : Node2D
 
         if (_map16Texture != null && _map16Layer != null)
         {
-            _map16Layer.Configure(_map16Texture, _placedTiles.Where(tile => tile.Map16 >= 0));
+            _map16Layer.Configure(_map16Texture, _placedTiles.Where(tile => tile.Map16 >= 0).Select(tile => (tile.X, tile.Y, tile.Map16)), LevelVisualYOffset);
         }
         AddGeneratedCollision(DebugOverlays);
         RebuildPipeEntrances();
@@ -11532,7 +11642,7 @@ public partial class GameScene : Node2D
         else
         {
             HidePauseLabel();
-            StartLevelMusic();
+            _audio?.SetMusicPaused(false);
         }
 
         UpdateHud();
@@ -11755,6 +11865,7 @@ public partial class GameScene : Node2D
 
     public override void _ExitTree()
     {
+        if (_audio != null && GodotObject.IsInstanceValid(_audio)) _audio.ClockedByGameplay = false;
         DisposeRuntimeTextures();
 #if !GODOT_WEB
         StopDebugRcon();

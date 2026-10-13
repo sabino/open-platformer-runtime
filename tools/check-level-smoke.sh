@@ -2,7 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GODOT_BIN="${GODOT_BIN:-$(command -v godot4-mono || command -v godot-mono || command -v godot4 || command -v godot || true)}"
+source "$ROOT/tools/project-env.sh"
+smw_prepare_dotnet
+GODOT_BIN="$(smw_find_godot)"
 ROM_PATH="${SMW_ROM_PATH:-}"
 IMPORT_MODE=auto
 ALL_LEVELS=0
@@ -136,10 +138,13 @@ if [[ ! -x "$GODOT_BIN" ]]; then
 fi
 
 if [[ "${SMW_SKIP_DOTNET_BUILD:-0}" != "1" ]]; then
-  dotnet build SmwGodotNative.csproj --no-restore >/dev/null
+  dotnet build SmwGodotNative.csproj >/dev/null
 fi
 
-mapfile -t manifest_levels < <(python3 - <<'PY'
+manifest_levels=()
+while IFS= read -r manifest_level; do
+  manifest_levels+=("$manifest_level")
+done < <(python3 - <<'PY'
 import json
 from pathlib import Path
 manifest = Path("generated/smw/manifest.json")

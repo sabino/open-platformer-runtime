@@ -9,7 +9,7 @@ This document captures the current implementation slice. It is intentionally spe
 - Layer 1/layer 2 raw object streams, Layer 2 RLE background previews, decoded placement metadata, screen exits, sprite streams, Map16, palettes, GFX atlases, sprite VRAM atlases, Map16 preview atlases, partial level layout previews, and secondary-exit tables are generated locally.
 - The importer can generate a requested level, a list of levels, or the full `000..1FF` level-id range.
 - The manifest records imported level metadata and decoded overworld level titles when available.
-- Runtime asset selection is manifest-driven for tilemaps, previews, tileset atlases, and decoded level titles.
+- With a configured ROM, runtime graphics/palettes/player OAM tables, object/sprite streams and entrances load natively in C#. Terrain placement, previews, and decoded level titles still use the development manifest.
 
 ## Menu and Runtime Shell
 
@@ -18,16 +18,17 @@ This document captures the current implementation slice. It is intentionally spe
 - The selector can launch a selected imported level.
 - `Esc`, `Backspace`, gamepad Back/Guide, and the current course-clear flow return from a level to the selector.
 - Runtime toggles exist for debug gizmos, actor simulation, and actor visuals.
-- Audio is intentionally opt-in and greyed out in the selector.
+- Audio is opt-in through the selector toggle or command line; a standalone listening player is available.
 
 ## Rendering
 
-- Runtime placement of generated Map16 tilemaps uses a batched custom draw layer.
-- Generated Layer 2 RLE background previews render behind covered Layer 1 Map16 placements.
+- Runtime Map16 terrain uses Godot `TileMapLayer` and `TileSetAtlasSource` resources.
+- ROM-decoded Layer 2 RLE backgrounds render behind covered Layer 1 Map16 placements; exact scrolling remains incomplete.
 - Map16 rendering converts raw quadrant word order into render quadrant order.
 - Level Map16 previews resolve through the native per-tileset Map16 pointer table.
-- Runtime enemy visuals build palette-specific sprite atlases from imported sprite VRAM and per-level CGRAM where possible.
-- Mario runtime rendering uses a partial native `PlayerGFXRt` OAM bridge with generated player atlas data, signed displacement tables, dynamic head/body tile upload pointer mapping, facing flips, walking/spin-jump animation table data, power-up forms, fire palette selection, and collision height changes.
+- Runtime enemy visuals build eight palette-specific sprite atlases from native ROM graphics and per-level palette assembly.
+- Mario runtime rendering uses a partial native `PlayerGFXRt` OAM bridge with ROM-decoded player atlas data, signed displacement tables, dynamic head/body tile upload pointer mapping, facing flips, walking/spin-jump animation table data, power-up forms, fire palette selection, and collision height changes. The pose/animation/OAM tables now load directly from the ROM.
+- Native visual verification checks 28 complete RGBA images and Godot CPU image transfer for levels `105` and `1CB`; metadata-only boots and their main/secondary pipe route require no generated art, palette JSON, player graphics JSON, level-stream JSON or entrance JSON. Full framebuffer/gameplay parity remains unproven.
 
 ## Gameplay Slice
 
@@ -61,8 +62,13 @@ This document captures the current implementation slice. It is intentionally spe
 ## Audio
 
 - Audio is disabled by default.
-- The current audio path is a diagnostic/internal BRR/APU probe, not a complete SPC/DSP sequencer.
-- Named SFX probes and music-preview controls exist for development verification.
+- ROM-derived sequences and BRR samples play through a native SMW sequencer and integer eight-voice S-DSP pipeline.
+- The music player exposes 50 original song IDs, gameplay SFX, transport controls, volume and live playback diagnostics.
+- The Sound effects tab lists 106 commands/cues, including circle close and a course-clear/circle preview sequence. Yoshi mounting/dismounting controls original percussion where authored.
+- Output has stereo, mono, L/R mirroring and separate side gains. An optional monitor provides per-voice/sample solo, mute, gain and L/R controls without altering native PCM/state.
+- DSP-only fixtures match `snes_spc` exactly. Register traces and PCM for 50 five-second song cases match the translated C driver at 500 Hz control boundaries; original SPC700 instruction timing is a separate, unfinished gate.
+- No SPC700 CPU executes during gameplay. Godot receives the final stereo PCM through `AudioStreamGenerator`.
+- See [NATIVE-AUDIO.md](NATIVE-AUDIO.md) for verification and limitations.
 
 ## Validation
 

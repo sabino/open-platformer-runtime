@@ -2,7 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GODOT_BIN="${GODOT_BIN:-$(command -v godot4-mono || command -v godot-mono || command -v godot4 || command -v godot || true)}"
+source "$ROOT/tools/project-env.sh"
+smw_prepare_dotnet
+GODOT_BIN="$(smw_find_godot)"
 ROM_PATH="${SMW_ROM_PATH:-}"
 IMPORT_MODE=auto
 HEADLESS=0
@@ -136,12 +138,14 @@ if [[ ! -x "$GODOT_BIN" ]]; then
 fi
 
 if [[ "${SMW_SKIP_DOTNET_BUILD:-0}" != "1" ]]; then
-  dotnet build SmwGodotNative.csproj --no-restore >/dev/null
+  dotnet build SmwGodotNative.csproj >/dev/null
 fi
 
 display_args=()
 if ((HEADLESS)); then
   display_args+=(--headless)
+elif [[ "$(/usr/bin/uname -s)" == Darwin ]]; then
+  : # Godot's native macOS display driver.
 elif [[ "${XDG_SESSION_TYPE:-}" == "wayland" || -n "${WAYLAND_DISPLAY:-}" ]]; then
   display_args+=(--display-driver wayland --rendering-driver opengl3)
   export GDK_BACKEND=wayland
@@ -153,7 +157,6 @@ fi
 
 exec "$GODOT_BIN" \
   "${display_args[@]}" \
-  --audio-driver Dummy \
   --path "$ROOT" \
   --smw-test-level="$LEVEL_ID" \
   "${GODOT_ARGS[@]}"

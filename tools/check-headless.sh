@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GODOT_BIN="${GODOT_BIN:-$(command -v godot4-mono || command -v godot-mono || command -v godot4 || command -v godot || true)}"
+source "$(dirname "${BASH_SOURCE[0]}")/project-env.sh"
+smw_prepare_dotnet
+GODOT_BIN="$(smw_find_godot)"
+cd "$SMW_PROJECT_ROOT"
 
 if [[ ! -x "$GODOT_BIN" ]]; then
   echo "Godot executable not found or not executable: $GODOT_BIN" >&2
@@ -15,6 +18,22 @@ export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
 "$GODOT_BIN" --version
 
 dotnet build SmwGodotNative.csproj
+# Keep cached-pack smoke support, while checking the original-ROM-verified
+# inventory and buffer hashes whenever the native ROM path is configured.
+MAP16_105_COUNT=1480
+COLLISION_105_COUNT=28
+COLLISION_1CB_COUNT=9
+SLOPE_105_COUNT=42
+PIPE_FLOOR_105_COUNT=14
+SPRITE_PALETTE_SOURCE=vram
+if [[ -n "${SMW_ROM_PATH:-}" ]]; then
+  MAP16_105_COUNT=1468
+  COLLISION_105_COUNT=30
+  COLLISION_1CB_COUNT=11
+  SLOPE_105_COUNT=44
+  PIPE_FLOOR_105_COUNT=16
+  SPRITE_PALETTE_SOURCE=rom
+fi
 LOG_FILE="$(mktemp)"
 INPUT_SCRIPT="$(mktemp)"
 PIPE_SCRIPT="$(mktemp)"
@@ -339,9 +358,12 @@ spawn 4828 282 big
 trace 12 none tag=goal_walkout
 EOF
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-audio 2>&1 | tee "$LOG_FILE"
-grep -q "smw-audio: internal_apu=1 samples=5" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480 collision_rects=28 slope_surfaces=42 pipe_cells=14/38/10 coin_pickups=4" "$LOG_FILE"
-grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
+grep -Eq "smw-audio: native_dsp=1 source=(rom|native-cache|legacy-bank-cache) samples=5" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=$MAP16_105_COUNT collision_rects=$COLLISION_105_COUNT slope_surfaces=$SLOPE_105_COUNT pipe_cells=$PIPE_FLOOR_105_COUNT/38/10 coin_pickups=4" "$LOG_FILE"
+grep -q "smw-runtime: sprite_palettes=8 source=$SPRITE_PALETTE_SOURCE" "$LOG_FILE"
+if [[ -n "${SMW_ROM_PATH:-}" ]]; then
+  grep -q "smw-native-terrain: level=105 source=rom state=fresh-development-entry tiles=1468 low_sha256=7ABA94DEAB748E9676B51F309344B3237F5B7EF311D653A56A0661A7BE39F4CD high_sha256=3DFE79DF5AE5EEF9A3CC093E6D727706F2388E14DA2CC7E8F41430B893BE68BF" "$LOG_FILE"
+fi
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=34" "$LOG_FILE"
 grep -q "sprite_actors=32" "$LOG_FILE"
@@ -354,18 +376,21 @@ grep -q "smw-runtime: level_music level=105 music_index=0 bank=Level" "$LOG_FILE
 grep -q "smw-audio: disabled=1" "$LOG_FILE"
 grep -q "smw-menu-audio: samples=0 buttons=5" "$LOG_FILE"
 grep -q "sfx_buttons=6 music_buttons=4" "$LOG_FILE"
-! grep -q "smw-audio: internal_apu=1" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480" "$LOG_FILE"
-grep -q "smw-runtime: sprite_palettes=8 source=vram" "$LOG_FILE"
+! grep -q "smw-audio: native_dsp=1" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=$MAP16_105_COUNT" "$LOG_FILE"
+grep -q "smw-runtime: sprite_palettes=8 source=$SPRITE_PALETTE_SOURCE" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-autostart --smw-test-screen-exit=7 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: entrance_motion action=4 frames=1 dx=0.00 dy=1.00" "$LOG_FILE"
 grep -q "smw-runtime: entrance level=1CB source=1CB secondary=0 settings=4 spawn=24,240" "$LOG_FILE"
-grep -q "smw-runtime: level=1CB layer1_objects=16 layer2_objects=0 layer2_bg=1 map16_tiles=585 collision_rects=9 slope_surfaces=0 pipe_cells=0/0/0 coin_pickups=7" "$LOG_FILE"
+grep -q "smw-runtime: level=1CB layer1_objects=16 layer2_objects=0 layer2_bg=1 map16_tiles=585 collision_rects=$COLLISION_1CB_COUNT slope_surfaces=0 pipe_cells=0/0/0 coin_pickups=7" "$LOG_FILE"
+if [[ -n "${SMW_ROM_PATH:-}" ]]; then
+  grep -q "smw-native-terrain: level=1CB source=rom state=fresh-development-entry tiles=585 low_sha256=F4F07E96D0627BF5140C89855E3760BAA860F228D31CEC55D27D6A2838A32C50 high_sha256=4FC9BA6E15E73D2963C3B3D0674E223227920B3C9C57C60ABA071CB44898901E" "$LOG_FILE"
+fi
 grep -q "smw-runtime: level_music level=1CB music_index=1 bank=Level" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 2 --smw-test-level=1CB 2>&1 | tee "$LOG_FILE"
-grep -q "smw-runtime: level=1CB layer1_objects=16 layer2_objects=0 layer2_bg=1 map16_tiles=585 collision_rects=9 slope_surfaces=0 pipe_cells=0/0/0 coin_pickups=7" "$LOG_FILE"
+grep -q "smw-runtime: level=1CB layer1_objects=16 layer2_objects=0 layer2_bg=1 map16_tiles=585 collision_rects=$COLLISION_1CB_COUNT slope_surfaces=0 pipe_cells=0/0/0 coin_pickups=7" "$LOG_FILE"
 grep -q "pipe_rects=1" "$LOG_FILE"
 grep -q "sprite_spawns=0" "$LOG_FILE"
 grep -q "sprite_actors=0" "$LOG_FILE"
@@ -375,12 +400,12 @@ grep -q "smw-runtime: level_music level=1CB music_index=1 bank=Level" "$LOG_FILE
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-level=1CB --smw-test-screen-exit=1 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: entrance_motion action=6 frames=1 dx=4.00 dy=-4.00" "$LOG_FILE"
 grep -q "smw-runtime: entrance level=105 source=1CB secondary=1 settings=6 spawn=2072,242" "$LOG_FILE"
-grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=1480" "$LOG_FILE"
+grep -q "smw-runtime: level=105 layer1_objects=92 layer2_objects=0 layer2_bg=1 map16_tiles=$MAP16_105_COUNT" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-autostart --smw-test-spawn=272,176 --smw-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-runtime: coin_pickup level=105 dragon=1 coins=0 dragon_coins=1" "$LOG_FILE"
 grep -q "score=1000" "$LOG_FILE"
-grep -q "smw-audio: sfx=dragon_coin port=3 command=01" "$LOG_FILE"
+grep -q "smw-audio: sfx=dragon_coin port=0 command=1C" "$LOG_FILE"
 grep -q "native=1" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --path . --quit-after 1 --smw-test-level=1CB --smw-test-spawn=112,240 --smw-audio 2>&1 | tee "$LOG_FILE"
@@ -526,7 +551,7 @@ grep -q "ys=-48" "$LOG_FILE"
 grep -q "actor_event=stomp:AB:1" "$LOG_FILE"
 grep -q "actor_contact=AB:0:.*down=1:top=1:cross=1" "$LOG_FILE"
 grep -q "smw-runtime: sprite_stomp level=105 sprite=AB state=1 source=stomp:AB:1 chain=1 reward_index=1 score=200" "$LOG_FILE"
-grep -q "smw-audio: sfx=stomp port=1 command=14" "$LOG_FILE"
+grep -q "smw-audio: sfx=stomp port=0 command=14" "$LOG_FILE"
 grep -q "score=200" "$LOG_FILE"
 grep -q "stomp_chain=1" "$LOG_FILE"
 
@@ -543,7 +568,7 @@ grep "smw-debug-state: tag=step_done" "$LOG_FILE" | grep -q "deaths=0"
 "$GODOT_BIN" --headless --path . --quit-after 4 --smw-test-autostart --smw-debug-command-file="$BREAK_COMMAND_FILE" --smw-audio 2>&1 | tee "$LOG_FILE"
 grep -q "smw-debug: command_file=$BREAK_COMMAND_FILE" "$LOG_FILE"
 grep -q "smw-runtime: block_break level=105 count=2 total=2" "$LOG_FILE"
-grep -q "smw-audio: sfx=block_break port=1 command=08" "$LOG_FILE"
+grep -q "smw-audio: sfx=block_break port=0 command=08" "$LOG_FILE"
 grep -q "smw-debug-state: tag=step_done" "$LOG_FILE"
 grep -q "blocks=2" "$LOG_FILE"
 grep -q "tile=120,20:----" "$LOG_FILE"
@@ -810,8 +835,8 @@ grep -q "god=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh audio status | tee "$RCON_LOG"
 grep -q "smw-debug-audio: tag=status enabled=1" "$RCON_LOG"
 grep -q "bank=Level" "$RCON_LOG"
-grep -q "mix_chunk=512" "$RCON_LOG"
-grep -q "mix_frames=" "$RCON_LOG"
+grep -q "backend=native_dsp" "$RCON_LOG"
+grep -q "generated_frames=" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh audio sample 09 | tee "$RCON_LOG"
 grep -q "smw-debug-audio: tag=sample" "$RCON_LOG"
 grep -q "sample=09 available=1" "$RCON_LOG"
@@ -830,7 +855,7 @@ grep -q "last_sfx_cmd=13" "$RCON_LOG"
 grep -q "last_sfx_native=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh audio 1up | tee "$RCON_LOG"
 grep -q "last_sfx=one_up" "$RCON_LOG"
-grep -q "last_sfx_cmd=02" "$RCON_LOG"
+grep -q "last_sfx_cmd=05" "$RCON_LOG"
 grep -q "last_sfx_native=1" "$RCON_LOG"
 SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh perf status | tee "$RCON_LOG"
 grep -q "smw-debug-perf: tag=status" "$RCON_LOG"
@@ -1016,7 +1041,7 @@ SMW_DEBUG_RCON_PORT="$RCON_PORT" tools/smw-rcon.sh quit >/dev/null || true
 wait "$RCON_PID" || true
 
 "$GODOT_BIN" --headless --audio-driver Dummy --path . --quit-after 1 --smw-audio-preview=Level 2>&1 | tee "$LOG_FILE"
-grep -q "smw-audio: music_preview=Level events=12 loop_frames=96" "$LOG_FILE"
+grep -q "smw-audio: music_preview=Level source=original-sequence" "$LOG_FILE"
 
 "$GODOT_BIN" --headless --audio-driver Dummy --path . --quit-after 1 --smw-audio-preview=Star 2>&1 | tee "$LOG_FILE"
-grep -q "smw-audio: music_preview=Star events=12 loop_frames=64" "$LOG_FILE"
+grep -q "smw-audio: music_preview=Star source=original-sequence" "$LOG_FILE"
