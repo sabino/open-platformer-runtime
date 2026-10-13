@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SmwAssets/SmwAssets.csproj" />
+    <ProjectReference Include="../../src/SmwAudioCore/SmwAudioCore.csproj" />
   </ItemGroup>
 </Project>

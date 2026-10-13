@@ -19,6 +19,9 @@ public static class SmwAssetPaths
                 return _forcedBasePath;
             }
 
+            var configured = OS.GetEnvironment("SMW_ASSET_BASE_PATH");
+            if (!string.IsNullOrWhiteSpace(configured)) return configured.TrimEnd('/');
+
             return FileAccess.FileExists(UserPath("manifest.json"))
                 ? UserBasePath
                 : ResourceBasePath;

@@ -1,0 +1,60 @@
+name: Validate source and native audio
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: Managed builds and source-only tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Check browser loader handoff without ROM assets
+        run: node --test tests/WebLoader/loader.test.mjs
+      - name: Build and run managed tests without ROM assets
+        run: tools/check-dotnet.sh
+      - name: Check experimental Web conditional compilation
+        run: >-
+          dotnet build SmwGodotNative.csproj
+          -p:GodotWebDotNetPrototype=true
+          -p:OutputPath=.godot_local/web-ci/bin/
+          -p:BaseIntermediateOutputPath=.godot_local/web-ci/obj/
+      - name: Check source-only distribution
+        shell: bash
+        run: |
+          test -f LICENSE
+          if git ls-files | rg -i '(^generated/|^\.godot/|^\.godot_local/|\.(sfc|smc|spc|brr|pcm|wav|srm|sav)$)'; then
+            echo 'Generated or proprietary audio/game data is tracked' >&2
+            exit 1
+          fi
+
+  dsp:
+    name: Exact DSP reference fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compare synthetic raw PCM with pinned external DSP oracle
+        run: tools/check-native-audio.sh

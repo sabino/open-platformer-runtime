@@ -20,7 +20,9 @@ config/icon="res://icon.svg"
 
 window/size/viewport_width=256
 window/size/viewport_height=224
-window/stretch/mode="canvas_items"
+window/stretch/mode="viewport"
+window/stretch/aspect="keep"
+window/stretch/scale_mode="integer"
 window/per_pixel_transparency/enabled=false
 
 [dotnet]
@@ -31,3 +33,4 @@ project/assembly_name="SmwGodotNative"
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0

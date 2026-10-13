@@ -26,6 +26,10 @@ public static class SmwRomInspector
 
     public static int LoRomIndex(int address, int romByteLength)
     {
+        if ((uint)address > 0xFFFFFF)
+        {
+            throw new ArgumentOutOfRangeException(nameof(address), "ROM data addresses must fit in 24 bits");
+        }
         if ((address & 0x8000) == 0)
         {
             throw new ArgumentOutOfRangeException(nameof(address), $"LoROM address must have bit 0x8000 set: 0x{address:X6}");

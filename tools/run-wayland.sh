@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GODOT_BIN="${GODOT_BIN:-$(command -v godot4-mono || command -v godot-mono || command -v godot4 || command -v godot || true)}"
+source "$(dirname "${BASH_SOURCE[0]}")/project-env.sh"
+if [[ "$(/usr/bin/uname -s)" == Darwin ]]; then
+  exec "$SMW_PROJECT_ROOT/tools/run.sh" "$@"
+fi
+smw_prepare_dotnet
+GODOT_BIN="$(smw_find_godot)"
 SWAY_WORKSPACE="${SMW_SWAY_WORKSPACE:-6}"
 
 if [[ ! -x "$GODOT_BIN" ]]; then
@@ -10,7 +15,7 @@ if [[ ! -x "$GODOT_BIN" ]]; then
 fi
 
 if [[ "${SMW_SKIP_DOTNET_BUILD:-0}" != "1" ]]; then
-  dotnet build SmwGodotNative.csproj --no-restore >/dev/null
+  dotnet build SmwGodotNative.csproj >/dev/null
 fi
 
 if [[ "${XDG_SESSION_TYPE:-}" == "wayland" || -n "${WAYLAND_DISPLAY:-}" ]]; then

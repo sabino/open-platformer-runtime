@@ -6,27 +6,10 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenPlatformerRuntime.SmwAssets;
+using OpenPlatformerRuntime.Audio;
 
 internal static class Program
 {
-    private const int BgPaletteAddress = 0x00B0B0;
-    private const int FgPaletteAddress = 0x00B190;
-    private const int ObjectPaletteAddress = 0x00B250;
-    private const int PlayerPaletteAddress = 0x00B2C8;
-    private const int SpritePaletteAddress = 0x00B318;
-    private const int Layer3PaletteAddress = 0x00B170;
-    private const int BerryPaletteAddress = 0x00B674;
-    private const int BackAreaColorAddress = 0x00B0A0;
-    private const int AnimatedColorAddress = 0x00B60C;
-    private const int PaletteBlack = 0x0000;
-    private const int PaletteWhite = 0x7FDD;
-    private static readonly int[] LevelVerticalTable =
-    [
-        0x00, 0x00, 0x80, 0x01, 0x81, 0x02, 0x82, 0x03,
-        0x83, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
-    ];
     private static readonly PlayerTableSpec[] PlayerOamTableSpecs =
     [
         new("player_xy_disp_index_index", 0x00DCEC, 70, "u8"),
@@ -80,9 +63,15 @@ internal static class Program
             {
                 "extract-core" when args.Length == 3 => ExtractCore(args[1], args[2]),
                 "verify-core" when args.Length == 3 => VerifyCore(args[1], args[2]),
+                "extract-graphics" when args.Length == 3 => ExtractGraphics(args[1], args[2]),
+                "extract-level-graphics" when args.Length is 3 or 4 => ExtractLevelGraphics(args[1], args[2], args.Length == 4 ? args[3] : "105,1CB"),
+                "extract-level-data" when args.Length is 3 or 4 => ExtractLevelData(args[1], args[2], args.Length == 4 ? args[3] : "all"),
+                "extract-terrain" when args.Length is 3 or 4 => ExtractTerrain(args[1], args[2], args.Length == 4 ? args[3] : "0C7,105,106,1CB"),
+                "audit-terrain" when args.Length == 3 => AuditTerrain(args[1], args[2]),
                 "extract-levels" when args.Length == 3 => ExtractLevels(args[1], args[2]),
                 "verify-levels" when args.Length == 3 => VerifyLevels(args[1], args[2]),
                 "extract-audio-previews" when args.Length == 3 => ExtractAudioPreviews(args[1], args[2]),
+                "extract-audio-native" when args.Length == 3 => ExtractNativeAudio(args[1], args[2]),
                 "verify-audio-previews" when args.Length == 3 => VerifyAudioPreviews(args[1], args[2]),
                 "extract-player-metadata" when args.Length == 3 => ExtractPlayerMetadata(args[1], args[2]),
                 "verify-player-metadata" when args.Length == 3 => VerifyPlayerMetadata(args[1], args[2]),
@@ -91,8 +80,7 @@ internal static class Program
                 "extract-palettes" when args.Length == 3 => ExtractPalettes(args[1], args[2]),
                 "verify-palettes" when args.Length == 3 => VerifyPalettes(args[1], args[2]),
                 "inspect-rom" when args.Length == 2 => InspectRom(args[1]),
-                "native-init" when args.Length == 3 => NativeInit(args[1], args[2]),
-                "native-import-level" when args.Length == 4 => NativeImportLevel(args[1], args[2], args[3]),
+                "inspect-level-catalog" when args.Length == 2 => InspectLevelCatalog(args[1]),
                 _ => UsageError(args),
             };
         }
@@ -147,30 +135,283 @@ internal static class Program
         return inspection.IsSupported ? 0 : 1;
     }
 
-    private static int NativeInit(string romPath, string outDir)
+    private static int InspectLevelCatalog(string romPath)
     {
-        var fullPath = Path.GetFullPath(romPath);
-        Check(File.Exists(fullPath), $"ROM does not exist: {fullPath}");
-        var result = SmwNativeImporter.InitializeAssetPack(
-            File.ReadAllBytes(fullPath),
-            Path.GetFileName(fullPath),
-            outDir,
-            new ConsoleImportProgress());
-        Console.WriteLine($"smw-asset-tool: native initialized {result.IndexedLevelCount} indexed levels at {result.ManifestPath}");
+        var rom = SmwRom.FromSelectedBytes(File.ReadAllBytes(romPath));
+        var catalog = new SmwLevelCatalog(rom);
+        WriteJson(Console.OpenStandardOutput(), new
+        {
+            schema_version = SmwLevelCatalog.SchemaVersion,
+            source_rom_sha1 = catalog.RomSha1,
+            scope = "Pointer slots and layout aliases; reachable courses and gameplay parity are separate gates",
+            slot_count = catalog.Entries.Count,
+            verified_terrain_count = catalog.VerifiedTerrainCount,
+            title_source = SmwLevelCatalog.TitleSource,
+            levels = catalog.Entries,
+        });
         return 0;
     }
 
-    private static int NativeImportLevel(string romPath, string outDir, string levelId)
+    private static int ExtractGraphics(string romPath, string outDir)
     {
-        var fullPath = Path.GetFullPath(romPath);
-        Check(File.Exists(fullPath), $"ROM does not exist: {fullPath}");
-        var result = SmwNativeImporter.ImportLevel(
-            File.ReadAllBytes(fullPath),
-            Path.GetFileName(fullPath),
-            outDir,
-            levelId,
-            new ConsoleImportProgress());
-        Console.WriteLine($"smw-asset-tool: native imported level {levelId} with {result.GeneratedLevelCount} generated manifest entries at {result.ManifestPath}");
+        var rom = Rom.Load(romPath);
+        var outputRoot = Path.GetFullPath(outDir);
+        Directory.CreateDirectory(outputRoot);
+        var decoder = new SmwGraphicsDecoder(rom.Native);
+        var files = new List<object>();
+        foreach (var file in decoder.DecodeAll())
+        {
+            var stem = $"gfx/full/gfx{file.Id:X2}";
+            var rawPath = $"{stem}.raw.bin";
+            var pixelsPath = $"{stem}.pixels.bin";
+            WriteBinary(Path.Combine(outputRoot, rawPath), file.Bytes.ToArray());
+            WriteBinary(Path.Combine(outputRoot, pixelsPath), file.DecodePixels());
+            string? planarPath = null;
+            if (file.Format != SmwGraphicsFormat.Packed3Bpp)
+            {
+                planarPath = $"{stem}.planar4.bin";
+                WriteBinary(Path.Combine(outputRoot, planarPath), file.ExpandTo4Bpp());
+            }
+            files.Add(new
+            {
+                id = $"{file.Id:X2}", source_addr = $"0x{file.SourceAddress:X6}",
+                compressed_length = file.CompressedLength, decompressed_length = file.Bytes.Length,
+                format = GraphicsFormatName(file.Format), tile_count = file.TileCount,
+                raw_file = rawPath, pixels_file = pixelsPath, planar4_file = planarPath,
+                raw_sha1 = Convert.ToHexString(SHA1.HashData(file.Bytes)),
+            });
+            if (file.Format == SmwGraphicsFormat.Planar3Bpp && file.TileCount == 128)
+                WriteBinary(Path.Combine(outputRoot, $"{stem}.upload-00.bin"), decoder.DecodeLevelUpload(file.Id, 0));
+        }
+        WriteBinary(Path.Combine(outputRoot, "gfx/full/gfx08.upload-11.bin"), decoder.DecodeLevelUpload(8, 0x11));
+        WriteBinary(Path.Combine(outputRoot, "gfx/full/gfx01.special-world.bin"), decoder.DecodeLevelUpload(1, 0, specialWorld: true));
+        WriteJson(Path.Combine(outputRoot, "native_graphics_manifest.json"), new
+        {
+            schema_version = 1, decoder_version = 1, source_rom_sha1 = rom.Sha1, files,
+        });
+        Console.WriteLine($"smw-asset-tool: extracted all {files.Count} vanilla graphics files to {outputRoot}");
+        return 0;
+    }
+
+    private static string GraphicsFormatName(SmwGraphicsFormat format) => format switch
+    {
+        SmwGraphicsFormat.Planar2Bpp => "snes_2bpp_planar",
+        SmwGraphicsFormat.Planar3Bpp => "snes_3bpp_planar",
+        SmwGraphicsFormat.Planar4Bpp => "snes_4bpp_planar",
+        SmwGraphicsFormat.Packed3Bpp => "smw_mode7_packed_3bpp",
+        _ => throw new InvalidOperationException("Unknown graphics format"),
+    };
+
+    private static int ExtractLevelGraphics(string romPath, string outDir, string levelIds)
+    {
+        var rom = Rom.Load(romPath);
+        var root = Path.GetFullPath(outDir);
+        var palettes = new SmwPaletteDecoder(rom.Native);
+        var playerPixels = new SmwGraphicsDecoder(rom.Native).Decode(0x32).DecodePixels();
+        var bootPalette = new ushort[256];
+        palettes.ApplyLevelBase(bootPalette, default);
+        WriteBinary(Path.Combine(root, "boot-palette-base.bin"), WordBytes(bootPalette));
+        var entries = new List<object>();
+        foreach (var text in levelIds.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var id = int.Parse(text, System.Globalization.NumberStyles.HexNumber);
+            var level = new SmwLevelGraphics(rom.Native, id);
+            var header = level.Header;
+            var dir = Path.Combine(root, $"level_{id:X3}");
+            var paletteBase = new ushort[256];
+            var sky = palettes.ApplyLevelBase(paletteBase, header.Palette);
+            var palette = palettes.CreateLevelEntry(header.Palette);
+            var foreground = level.ReadBackgroundWindow();
+            var sprites = level.ReadSpriteWindow();
+            var map16 = level.ReadForegroundMap16();
+            WriteBinary(Path.Combine(dir, "header.bin"), header.Bytes.ToArray());
+            WriteBinary(Path.Combine(dir, "palette_base.bin"), WordBytes(paletteBase));
+            WriteBinary(Path.Combine(dir, "palette_entry.bin"), WordBytes(palette));
+            WriteBinary(Path.Combine(dir, "foreground.bin"), foreground);
+            WriteBinary(Path.Combine(dir, "sprites.bin"), sprites);
+            WriteBinary(Path.Combine(dir, "map16.bin"), WordBytes(map16));
+            var images = new List<object>();
+            void SaveImage(string name, SmwRgbaImage image)
+            {
+                WriteBinary(Path.Combine(dir, name), image.Bytes);
+                images.Add(new { file = name, width = image.Width, height = image.Height, sha256 = Convert.ToHexString(SHA256.HashData(image.Bytes)) });
+            }
+            SaveImage("map16.rgba", SmwGraphicsImages.CreateMap16Atlas(map16, foreground, palette));
+            var background = level.ReadBackgroundTiles();
+            if (background != null)
+            {
+                WriteBinary(Path.Combine(dir, "background.bin"), background.Bytes);
+                SaveImage("background.rgba", SmwGraphicsImages.CreateLayer2(background, level.ReadBackgroundMap16(), foreground, palette));
+            }
+            for (var variant = 0; variant < 4; variant++)
+            {
+                var row = palettes.CreatePlayerRow(variant);
+                WriteBinary(Path.Combine(dir, $"player-palette-{variant}.bin"), WordBytes(row));
+                SaveImage($"player-{variant}.rgba", SmwGraphicsImages.CreateAtlas(playerPixels, row));
+            }
+            var spritePixels = SnesGraphics.DecodePlanar(sprites, 4);
+            for (var row = 0; row < 8; row++)
+                SaveImage($"sprites-{row}.rgba", SmwGraphicsImages.CreateAtlas(spritePixels, palette.AsSpan((8 + row) * 16, 16)));
+            entries.Add(new
+            {
+                id = $"{id:X3}", source_addr = $"0x{header.SourceAddress:X6}", sky, screens = header.Screens, level_mode = header.Mode,
+                tileset = header.Tileset, sprite_graphics = header.SpriteGraphics, layout_flags = header.LayoutFlags, images,
+                background = background == null ? null : new { source_addr = $"0x{background.SourceAddress:X6}", compressed_length = background.CompressedLength, page = background.Page },
+            });
+        }
+        WriteJson(Path.Combine(root, "native_level_graphics.json"), new { schema_version = 1, source_rom_sha1 = rom.Sha1, levels = entries });
+        Console.WriteLine($"smw-asset-tool: extracted native level graphics for {entries.Count} levels to {root}");
+        return 0;
+    }
+
+    private static byte[] WordBytes(ReadOnlySpan<ushort> words)
+    {
+        var bytes = new byte[words.Length * 2];
+        for (var i = 0; i < words.Length; i++)
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(i * 2, 2), words[i]);
+        return bytes;
+    }
+
+    private static int ExtractLevelData(string romPath, string outDir, string ids)
+    {
+        var rom = Rom.Load(romPath);
+        var output = Path.GetFullPath(outDir);
+        var entrances = new SmwEntranceDecoder(rom.Native);
+        var levels = ids == "all" ? Enumerable.Range(0, 512) : ids.Split(',').Select(id => int.Parse(id, System.Globalization.NumberStyles.HexNumber));
+        var summaries = new List<object>();
+        var aliases = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var id in levels)
+        {
+            var data = new SmwLevelData(rom.Native, id);
+            var key = $"{id:X3}";
+            var dir = Path.Combine(output, key);
+            WriteBinary(Path.Combine(dir, "layer1.bin"), data.Layer1.Bytes);
+            WriteBinary(Path.Combine(dir, "layer2.bin"), data.Layer2?.Bytes ?? data.Background!.Bytes);
+            WriteBinary(Path.Combine(dir, "sprites.bin"), data.Sprites.Bytes);
+            object Objects(SmwObjectStream stream) => new
+            {
+                source_addr = $"0x{stream.SourceAddress:X6}", length = stream.Bytes.Length,
+                objects = stream.Objects.Select(obj => new
+                {
+                    sequence = obj.Sequence, offset = obj.Offset, raw = new int[] { obj.B0, obj.B1, obj.SizeOrType },
+                    object_id = obj.Id, size_or_type = obj.SizeOrType, exit_low = obj.ExitLow,
+                    placement = new
+                    {
+                        layer = obj.Placement.Layer, screen_cursor = obj.Placement.Screen,
+                        sub_x = obj.Placement.SubX, sub_y = obj.Placement.SubY, high_subscreen = obj.Placement.HighSubscreen,
+                        vertical = obj.Placement.Vertical, map16_offset = obj.Placement.Map16Offset,
+                        x_tile = obj.Placement.XTile, y_tile = obj.Placement.YTile,
+                    },
+                }).ToArray(),
+                exits = stream.Exits.Select(exit => new { screen = exit.Screen, exit_low = exit.DestinationLow, raw_r11 = exit.Properties,
+                    requested_secondary = exit.Secondary, destination_main_map = exit.ResolveId(false), destination_submap = exit.ResolveId(true) }).ToArray(),
+            };
+            WriteJson(Path.Combine(dir, "data.json"), new
+            {
+                id = key, header = data.Header.Bytes.ToArray().Select(value => (int)value).ToArray(), layout_flags = data.Header.LayoutFlags,
+                layer1 = Objects(data.Layer1), layer2 = data.Layer2 == null ? null : Objects(data.Layer2),
+                layer2_addr = $"0x{data.Layer2Address:X6}", layer2_kind = data.Layer2 == null ? "rle_background" : "object_stream",
+                layer2_compressed_length = data.Layer2?.Bytes.Length ?? data.Background!.CompressedLength,
+                sprites = new
+                {
+                    source_addr = $"0x{data.Sprites.SourceAddress:X6}", header = data.Sprites.Header,
+                    memory_setting = data.Sprites.MemorySetting, buoyancy = data.Sprites.Buoyancy,
+                    records = data.Sprites.Sprites.Select(sprite => new
+                    {
+                        index = sprite.Index, offset = sprite.Offset, raw = new int[] { sprite.Position, sprite.ScreenPosition, sprite.Id },
+                        screen = sprite.Screen, along = sprite.Along, across = sprite.Across, x = sprite.X, y = sprite.Y,
+                        vertical = sprite.Vertical,
+                    }).ToArray(),
+                },
+                main_entrance = entrances.Main(id), secondary_entrance = entrances.Secondary(id),
+            });
+            var alias = $"{data.Header.SourceAddress:X6}:{data.Layer2Address:X6}:{data.Sprites.SourceAddress:X6}";
+            if (!aliases.TryGetValue(alias, out var aliasIds)) aliases[alias] = aliasIds = [];
+            aliasIds.Add(key);
+            summaries.Add(new { id = key, objects = data.Layer1.Objects.Count, sprites = data.Sprites.Sprites.Count, vertical = data.Header.Vertical,
+                layer2_kind = data.Layer2 == null ? "rle_background" : "object_stream", pointer_tuple = alias });
+        }
+        foreach (var pair in entrances.TableAddresses)
+            WriteBinary(Path.Combine(output, "entrances", pair.Key + ".bin"), rom.Native.Data.ReadBytes(pair.Value, 512));
+        WriteJson(Path.Combine(output, "native_level_data.json"), new
+        {
+            schema_version = 1, source_rom_sha1 = rom.Sha1, levels = summaries,
+            pointer_alias_groups = aliases.Values.Where(group => group.Count > 1).ToArray(),
+            classification = "Pointer aliases are inventory evidence, not proof that a level is unused; progression reachability remains to be audited",
+        });
+        Console.WriteLine($"smw-asset-tool: extracted {summaries.Count} vanilla level slots and entrance tables to {output}");
+        return 0;
+    }
+
+    private static int AuditTerrain(string romPath, string outDir)
+    {
+        var rom = Rom.Load(romPath);
+        var levels = new List<object>();
+        var constructed = 0;
+        var unsupported = 0;
+        var errors = 0;
+        for (var id = 0; id < 512; id++)
+        {
+            var data = new SmwLevelData(rom.Native, id);
+            try
+            {
+                var terrain = new SmwMap16Terrain(rom.Native, data);
+                constructed++;
+                levels.Add(new { id = $"{id:X3}", status = "constructed", mode = data.Header.Mode, tileset = data.Header.Tileset,
+                    layer1 = $"0x{data.Header.SourceAddress:X6}", layer2 = $"0x{data.Layer2Address:X6}",
+                    low_sha256 = Convert.ToHexString(SHA256.HashData(terrain.LowBytes)), high_sha256 = Convert.ToHexString(SHA256.HashData(terrain.HighBytes)) });
+            }
+            catch (SmwTerrainUnsupportedObjectException error)
+            {
+                unsupported++;
+                levels.Add(new { id = $"{id:X3}", status = "unsupported", mode = data.Header.Mode, tileset = data.Header.Tileset,
+                    layer = error.Layer, sequence = error.Sequence, object_id = $"{error.ObjectId:X2}", type = $"{error.Type:X2}",
+                    routine = $"0x{error.Routine:X6}", message = error.Message });
+            }
+            catch (Exception error) when (error is InvalidDataException or ArgumentOutOfRangeException or NotSupportedException)
+            {
+                errors++;
+                levels.Add(new { id = $"{id:X3}", status = "error", mode = data.Header.Mode, tileset = data.Header.Tileset, message = error.Message });
+            }
+        }
+        WriteJson(Path.Combine(Path.GetFullPath(outDir), "native_terrain_audit.json"), new
+        {
+            source_rom_sha1 = rom.Sha1, slots = 512, constructed, unsupported, errors, levels,
+            scope = "Native expansion with fresh state; constructed does not establish original-buffer, rendering, gameplay, or reachability parity",
+        });
+        Console.WriteLine($"smw-asset-tool: terrain audit constructed={constructed} unsupported={unsupported} errors={errors} slots=512");
+        return errors == 0 ? 0 : 1;
+    }
+
+    private static int ExtractTerrain(string romPath, string outDir, string ids)
+    {
+        var rom = Rom.Load(romPath);
+        var root = Path.GetFullPath(outDir);
+        var entries = new List<object>();
+        foreach (var text in ids.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var id = int.Parse(text, System.Globalization.NumberStyles.HexNumber);
+            var level = new SmwLevelData(rom.Native, id);
+            var terrain = new SmwMap16Terrain(rom.Native, level);
+            var dir = Path.Combine(root, $"{id:X3}");
+            WriteBinary(Path.Combine(dir, "map16-low.bin"), terrain.LowBytes.ToArray());
+            WriteBinary(Path.Combine(dir, "map16-high.bin"), terrain.HighBytes.ToArray());
+            WriteJson(Path.Combine(dir, "tiles.json"), terrain.LayerTiles());
+            entries.Add(new
+            {
+                id = $"{id:X3}", header = level.Header.Bytes.ToArray().Select(value => (int)value), level_mode = level.Header.Mode,
+                tileset = level.Header.Tileset, buffer_size = SmwMap16Terrain.BufferSize,
+                low_sha256 = Convert.ToHexString(SHA256.HashData(terrain.LowBytes)),
+                high_sha256 = Convert.ToHexString(SHA256.HashData(terrain.HighBytes)),
+            });
+        }
+        WriteJson(Path.Combine(root, "native_terrain.json"), new
+        {
+            schema_version = 1, source_rom_sha1 = rom.Sha1, levels = entries,
+            initial_state = "zero item memory; moon, checkpoint, five-Yoshi-coin, midpoint, and palace-switch flags clear",
+            unsupported_objects = "fail explicitly; never replace with approximate geometry",
+        });
+        Console.WriteLine($"smw-asset-tool: expanded native Map16 terrain for {entries.Count} levels to {root}");
         return 0;
     }
 
@@ -201,6 +442,28 @@ internal static class Program
         }
 
         Console.WriteLine($"smw-asset-tool: verified native level metadata for {string.Join(",", summaries.Keys)}");
+        return 0;
+    }
+
+    private static int ExtractNativeAudio(string romPath, string outDir)
+    {
+        var rom = Rom.Load(romPath);
+        var data = SmwAudioData.FromRom(rom.Native);
+        var bytes = data.ToBinary();
+        var path = Path.Combine(Path.GetFullPath(outDir), "audio/native_audio_data.bin");
+        WriteBinary(path, bytes);
+        var roundtrip = SmwAudioData.FromBinary(File.ReadAllBytes(path));
+        foreach (var bank in Enum.GetValues<SmwMusicBank>())
+            Check(data.CreateDataImage(bank).SequenceEqual(roundtrip.CreateDataImage(bank)), "Native audio binary roundtrip differs");
+        WriteJson(Path.Combine(Path.GetFullPath(outDir), "native_audio_manifest.json"), new
+        {
+            schema_version = SmwAudioData.SchemaVersion, source_rom_sha1 = rom.Sha1,
+            file = "audio/native_audio_data.bin", sha256 = Convert.ToHexString(SHA256.HashData(bytes)),
+            voices = 8, samples = 20, level_song_entries = 29, overworld_song_entries = 9, credits_song_entries = 12,
+            sample_rate = 32000, normal_input = "ROM-derived native data; no SPC700 CPU or pre-rendered music",
+            fidelity_scope = "DSP fixtures and translated-driver events; whole-firmware timing remains open",
+        });
+        Console.WriteLine($"smw-asset-tool: extracted native audio schema={SmwAudioData.SchemaVersion} bytes={bytes.Length}");
         return 0;
     }
 
@@ -303,34 +566,32 @@ internal static class Program
     private static CoreManifest BuildCoreManifest(Rom rom)
     {
         var assets = new List<CoreAsset>();
-        AddPlayerGfx(rom, assets, "gfx32", 0x00B8D8);
-        AddPlayerGfx(rom, assets, "gfx33", 0x00B88B);
+        AddPlayerGfx(rom, assets, 0x32);
+        AddPlayerGfx(rom, assets, 0x33);
         AddAudioBanks(rom, assets);
         AddGlobalMap16(rom, assets);
 
         return new CoreManifest(
             SchemaVersion: 1,
             SourceRomSha1: rom.Sha1,
-            SourceRomSize: rom.Data.Length,
+            SourceRomSize: rom.Native.Data.Length,
             Assets: assets);
     }
 
-    private static void AddPlayerGfx(Rom rom, List<CoreAsset> assets, string name, int pointerAddress)
+    private static void AddPlayerGfx(Rom rom, List<CoreAsset> assets, int id)
     {
-        var sourceAddress = 0x080000 | rom.GetWord(pointerAddress);
-        var (data, compressedLength) = SmwDecompress(rom, sourceAddress);
-        Check(data.Length % 32 == 0, $"{name} decompressed to non-4bpp length {data.Length}");
+        var file = new SmwGraphicsDecoder(rom.Native).Decode(id);
         assets.Add(new CoreAsset(
-            File: $"gfx/{name}.bin",
+            File: $"gfx/gfx{id:X2}.bin".ToLowerInvariant(),
             Kind: "player_gfx",
-            SourceAddress: sourceAddress,
-            Format: "snes_4bpp_planar",
-            Data: data,
+            SourceAddress: file.SourceAddress,
+            Format: GraphicsFormatName(file.Format),
+            Data: file.Bytes.ToArray(),
             Extra: new Dictionary<string, object>
             {
-                ["compressed_length"] = compressedLength,
-                ["decompressed_length"] = data.Length,
-                ["tile_count"] = data.Length / 32,
+                ["compressed_length"] = file.CompressedLength,
+                ["decompressed_length"] = file.Bytes.Length,
+                ["tile_count"] = file.TileCount,
             }));
     }
 
@@ -388,37 +649,26 @@ internal static class Program
     private static Dictionary<string, LevelSummary> BuildLevelSummaries(Rom rom, int[] levelIds)
     {
         var summaries = new Dictionary<string, LevelSummary>(StringComparer.Ordinal);
-        var spriteBanks = rom.GetByte(0x05D8F5) == 0x22 ? rom.GetBytes(0x0EF100, 512) : Enumerable.Repeat((byte)7, 512).ToArray();
-
         foreach (var levelId in levelIds)
         {
-            var layer1Address = rom.Get24(0x05E000 + levelId * 3);
-            var layer1Length = CalculateLevelLength(rom, layer1Address);
-            var layer1Raw = rom.GetBytes(layer1Address, layer1Length);
-            var header = DecodeLevelHeader(layer1Raw);
-            var parsedLayer1 = ParseLevelObjects(layer1Raw, header, layerIndex: 0);
+            var data = new SmwLevelData(rom.Native, levelId);
+            var layer1Address = data.Layer1.SourceAddress;
+            var layer1Raw = data.Layer1.Bytes;
+            var layer1Length = layer1Raw.Length;
+            var header = ProjectLevelHeader(data.Header);
+            var parsedLayer1 = ProjectObjects(data.Layer1);
             AnnotateVanillaScreenExits(parsedLayer1.ScreenExits, levelId);
 
-            var layer2Address = rom.Get24(0x05E600 + levelId * 3);
-            var layer2Kind = "object_stream";
-            byte[] layer2Raw;
-            int layer2Length;
-            if ((layer2Address & 0xFF0000) == 0xFF0000)
-            {
-                layer2Address = (layer2Address & 0xFFFF) | 0x0C0000;
-                (layer2Raw, layer2Length) = UnpackRle(rom, layer2Address);
-                layer2Kind = "rle_background";
-            }
-            else
-            {
-                layer2Length = CalculateLevelLength(rom, layer2Address);
-                layer2Raw = rom.GetBytes(layer2Address, layer2Length);
-            }
-
-            var spriteAddress = rom.GetWord(0x05EC00 + levelId * 2) | (spriteBanks[levelId] << 16);
-            var spriteLength = CalculateSpriteDataLength(rom, spriteAddress);
-            var spriteRaw = rom.GetBytes(spriteAddress, spriteLength);
-            var parsedSprites = ParseSpriteData(spriteRaw);
+            var layer2Address = data.Layer2Address;
+            var layer2Kind = data.Layer2 == null ? "rle_background" : "object_stream";
+            var layer2Raw = data.Layer2?.Bytes ?? data.Background!.Bytes;
+            var layer2Length = data.Layer2?.Bytes.Length ?? data.Background!.CompressedLength;
+            var spriteAddress = data.Sprites.SourceAddress;
+            var spriteRaw = data.Sprites.Bytes;
+            var spriteLength = spriteRaw.Length;
+            var parsedSprites = new ParsedSprites(data.Sprites.Header, data.Sprites.Sprites.Select(sprite => new SpriteRecord(
+                sprite.Offset, sprite.Position, sprite.ScreenPosition, sprite.Screen, sprite.X, sprite.Y,
+                sprite.Position >> 2 & 3, sprite.Id, [sprite.Position, sprite.ScreenPosition, sprite.Id])).ToList());
 
             var key = $"{levelId:X3}";
             summaries[key] = new LevelSummary(
@@ -449,256 +699,40 @@ internal static class Program
         return summaries;
     }
 
-    private static int CalculateLevelLength(Rom rom, int address)
+    private static LevelHeader ProjectLevelHeader(SmwLevelHeader h) => new(
+        h.Bytes.ToArray().Select(value => (int)value).ToArray(), h.Screens, h.BackgroundPalette, h.Mode, h.Sky,
+        h.SpriteGraphics, h.Music, h.Layer3Priority, h.ForegroundPalette, h.SpritePalette, h.Timer,
+        h.Tileset, h.Layer1Scroll, h.ItemMemory, h.LayoutFlags, h.Vertical,
+        h.Vertical ? 32 : h.Screens * 16, h.Vertical ? h.Screens * 16 : 27);
+
+    private static ParsedLayerObjects ProjectObjects(SmwObjectStream stream)
     {
-        var start = address;
-        address += 5;
-        while (true)
+        var objects = stream.Objects.Select(obj =>
         {
-            var b0 = rom.GetByte(address);
-            address++;
-            if (b0 == 0xFF)
-            {
-                break;
-            }
-
-            var b1 = rom.GetByte(address);
-            var b2 = rom.GetByte(address + 1);
-            address += 2;
-            var objectId = (b1 >> 4) | ((b0 & 0x60) >> 1);
-            if (objectId == 0 && b2 == 0)
-            {
-                address++;
-            }
-            else if (objectId is 0x22 or 0x23)
-            {
-                address++;
-            }
-            else if (objectId is 0x27 or 0x29)
-            {
-                address += 2;
-            }
-        }
-
-        return address - start;
-    }
-
-    private static int CalculateSpriteDataLength(Rom rom, int address)
-    {
-        var start = address;
-        address++;
-        while (rom.GetByte(address) != 0xFF)
-        {
-            address += 3;
-        }
-
-        return address + 1 - start;
-    }
-
-    private static LevelHeader DecodeLevelHeader(byte[] raw)
-    {
-        Check(raw.Length >= 5, "level stream is too short for header");
-        var screens = (raw[0] & 0x1F) + 1;
-        var mode = raw[1] & 0x1F;
-        var layoutFlags = LevelVerticalTable[mode];
-        var vertical = (layoutFlags & 1) != 0;
-        return new LevelHeader(
-            Raw: raw.Take(5).Select(value => (int)value).ToArray(),
-            Screens: screens,
-            BgPalette: raw[0] >> 5,
-            LevelMode: mode,
-            BackgroundColor: raw[1] >> 5,
-            SpriteGraphics: raw[2] & 0x0F,
-            MusicIndex: (raw[2] >> 4) & 0x07,
-            Layer3Priority: (raw[2] >> 7) & 0x01,
-            FgPalette: raw[3] & 0x07,
-            SpritePalette: (raw[3] >> 3) & 0x07,
-            TimerIndex: raw[3] >> 6,
-            Tileset: raw[4] & 0x0F,
-            Layer1Scroll: (raw[4] >> 4) & 0x03,
-            ItemMemory: raw[4] >> 6,
-            LayoutFlags: layoutFlags,
-            Vertical: vertical,
-            WidthTiles: vertical ? 16 : screens * 16,
-            HeightTiles: vertical ? screens * 16 : 27);
-    }
-
-    private static ParsedLayerObjects ParseLevelObjects(byte[] raw, LevelHeader header, int layerIndex)
-    {
-        var objects = new List<LevelObject>();
-        var exits = new List<ScreenExit>();
-        var index = 5;
-        var sequence = 0;
-        var screenCursor = 0;
-        while (index < raw.Length)
-        {
-            var offset = index;
-            var b0 = raw[index++];
-            if (b0 == 0xFF)
-            {
-                break;
-            }
-
-            Check(index + 2 <= raw.Length, "truncated level object stream");
-            var b1 = raw[index];
-            var b2 = raw[index + 1];
-            index += 2;
-            var objectId = (b1 >> 4) | ((b0 & 0x60) >> 1);
-            if ((b0 & 0x80) != 0)
-            {
-                screenCursor++;
-            }
-
-            var extra = new List<int>();
-            if (objectId == 0 && b2 == 0)
-            {
-                extra.Add(raw[index++]);
-                var vanillaProperties = b1 & 0x03;
-                exits.Add(new ScreenExit(
-                    Screen: b0 & 0x1F,
-                    ScreenCursor: screenCursor,
-                    ExitLow: extra[0],
-                    RawR11: b1,
-                    VanillaProperties: vanillaProperties,
-                    VanillaDestinationPropertyBits: ((vanillaProperties & 1) << 8) | extra[0],
-                    VanillaSecondaryPropertyBits: (vanillaProperties >> 1) & 1,
-                    LunarMagicProperties: b1 & 0x0F,
-                    LunarMagicSecondary: (b1 >> 1) & 1,
-                    VanillaDestinationLow: null,
-                    VanillaSourceMapHigh: null,
-                    VanillaDestination: null,
-                    VanillaSecondary: null));
-            }
-            else if (objectId is 0x22 or 0x23)
-            {
-                extra.Add(raw[index++]);
-            }
-            else if (objectId is 0x27 or 0x29)
-            {
-                extra.Add(raw[index++]);
-                extra.Add(raw[index++]);
-            }
-
-            objects.Add(new LevelObject(
-                Sequence: sequence,
-                Offset: offset,
-                Raw: [(int)b0, b1, b2],
-                ObjectId: objectId,
-                SizeOrType: b2,
-                Extra: extra.ToArray(),
-                Placement: DecodeObjectPlacement(b0, b1, b2, objectId, screenCursor, header.LayoutFlags, layerIndex)));
-
-            if (objectId == 0 && b2 == 0x01)
-            {
-                screenCursor = b0 & 0x1F;
-            }
-
-            sequence++;
-        }
-
+            var p = obj.Placement;
+            var adjusted0 = p.SubY | (p.HighSubscreen ? 16 : 0) | (obj.B0 & 0xE0);
+            var adjusted1 = p.SubX | (obj.B1 & 0xF0);
+            return new LevelObject(obj.Sequence, obj.Offset, [obj.B0, obj.B1, obj.SizeOrType], obj.Id, obj.SizeOrType,
+                obj.ExitLow is byte low ? [low] : [], new ObjectPlacement(p.Layer, p.Screen, obj.ScreenIncrement,
+                p.SubX, p.SubY, p.HighSubscreen, p.Map16Offset, p.XTile, p.YTile, p.XTile * 16, p.YTile * 16,
+                [adjusted0, adjusted1, obj.SizeOrType]));
+        }).ToList();
+        var exits = stream.Objects.Where(obj => obj.IsExit).Select(obj => new ScreenExit(obj.B0 & 31, obj.Placement.Screen,
+            obj.ExitLow!.Value, obj.B1, obj.B1 & 3,
+            ((obj.B1 & 1) << 8) | obj.ExitLow.Value, (obj.B1 >> 1) & 1,
+            obj.B1 & 15, (obj.B1 >> 1) & 1, null, null, null, null)).ToList();
         return new ParsedLayerObjects(objects, exits);
-    }
-
-    private static ObjectPlacement DecodeObjectPlacement(int b0, int b1, int b2, int objectId, int screenCursor, int layoutFlags, int layerIndex)
-    {
-        var adjustedB0 = b0;
-        var adjustedB1 = b1;
-        var layerFlags = layerIndex == 0 ? layoutFlags : layoutFlags >> 1;
-        if ((layerFlags & 1) != 0 && ((objectId << 8) | b2) >= 2)
-        {
-            var lowNibble = b0 & 0x0F;
-            adjustedB0 = (b1 & 0x0F) | (b0 & 0xF0);
-            adjustedB1 = lowNibble | (b1 & 0xF0);
-        }
-
-        var subX = adjustedB1 & 0x0F;
-        var subY = adjustedB0 & 0x0F;
-        var yTile = adjustedB0 & 0x1F;
-        return new ObjectPlacement(
-            Layer: layerIndex + 1,
-            ScreenCursor: screenCursor,
-            ScreenIncrement: (b0 & 0x80) != 0,
-            SubX: subX,
-            SubY: subY,
-            HighSubscreen: (adjustedB0 & 0x10) != 0,
-            Map16Offset: yTile * 16 + subX,
-            XTile: screenCursor * 16 + subX,
-            YTile: yTile,
-            XPx: (screenCursor * 16 + subX) * 16,
-            YPx: yTile * 16,
-            AdjustedRaw: [adjustedB0, adjustedB1, b2]);
     }
 
     private static void AnnotateVanillaScreenExits(List<ScreenExit> exits, int sourceLevelId)
     {
-        var sourceMapHigh = sourceLevelId & 0x100;
+        // Historical development projection. Actual exit resolution uses the
+        // current overworld state in SmwScreenExit.ResolveId.
         for (var i = 0; i < exits.Count; i++)
-        {
-            var exit = exits[i];
-            exits[i] = exit with
-            {
-                VanillaDestinationLow = exit.ExitLow,
-                VanillaSourceMapHigh = sourceMapHigh >> 8,
-                VanillaDestination = sourceMapHigh | exit.ExitLow,
-                VanillaSecondary = exit.RawR11 >> 1,
-            };
-        }
-    }
-
-    private static ParsedSprites ParseSpriteData(byte[] raw)
-    {
-        Check(raw.Length > 0, "sprite stream is too short for header");
-        var sprites = new List<SpriteRecord>();
-        var index = 1;
-        while (index < raw.Length && raw[index] != 0xFF)
-        {
-            Check(index + 3 <= raw.Length, "truncated sprite stream");
-            var first = raw[index];
-            var second = raw[index + 1];
-            var screen = ((first << 3) & 0x10) | (second & 0x0F);
-            sprites.Add(new SpriteRecord(
-                Offset: index,
-                ScreenY: first,
-                XId: second,
-                Screen: screen,
-                XPx: screen * 0x100 + (second & 0xF0),
-                YPx: (first & 0xF0) | (((first & 0x01) != 0) ? 0x100 : 0),
-                ExtraBits: (first >> 2) & 0x03,
-                SpriteId: raw[index + 2],
-                Raw: [raw[index], raw[index + 1], raw[index + 2]]));
-            index += 3;
-        }
-
-        return new ParsedSprites(raw[0], sprites);
-    }
-
-    private static (byte[] Data, int Length) UnpackRle(Rom rom, int address)
-    {
-        var start = address;
-        var output = new List<byte>();
-        while (rom.GetWord(address) != 0xFFFF)
-        {
-            var control = rom.GetByte(address++);
-            var count = (control & 0x7F) + 1;
-            if ((control & 0x80) != 0)
-            {
-                var value = (byte)rom.GetByte(address++);
-                for (var i = 0; i < count; i++)
-                {
-                    output.Add(value);
-                }
-            }
-            else
-            {
-                for (var i = 0; i < count; i++)
-                {
-                    output.Add((byte)rom.GetByte(address + i));
-                }
-                address += count;
-            }
-        }
-
-        return (output.ToArray(), address + 2 - start);
+            exits[i] = exits[i] with { VanillaDestinationLow = exits[i].ExitLow,
+                VanillaSourceMapHigh = sourceLevelId >> 8 & 1,
+                VanillaDestination = (sourceLevelId & 0x100) | exits[i].ExitLow,
+                VanillaSecondary = exits[i].RawR11 >> 1 };
     }
 
     private static void VerifyGeneratedLevel(string generatedRoot, string levelKey, LevelSummary summary)
@@ -915,6 +949,7 @@ internal static class Program
 
     private static PlayerMetadata BuildPlayerMetadata(Rom rom)
     {
+        var data = new SmwPlayerGraphicsData(rom.Native);
         var paletteVariants = new List<PlayerPaletteVariant>();
         for (var i = 0; i < PlayerPaletteNames.Length; i++)
         {
@@ -923,10 +958,10 @@ internal static class Program
 
         var tilePointerTables = new Dictionary<string, int[]>(StringComparer.Ordinal)
         {
-            ["head"] = rom.GetBytes(0x00E00C, 192).Select(value => (int)value).ToArray(),
-            ["body"] = rom.GetBytes(0x00E0CC, 192).Select(value => (int)value).ToArray(),
-            ["walking_pose_count"] = rom.GetBytes(0x00DC78, 4).Select(value => (int)value).ToArray(),
-            ["animation_speed_table"] = rom.GetBytes(0x00DC7C, 112).Select(value => (int)value).ToArray(),
+            ["head"] = data.Values("head_tile_pointer_index").ToArray(),
+            ["body"] = data.Values("body_tile_pointer_index").ToArray(),
+            ["walking_pose_count"] = data.Values("walking_pose_count").ToArray(),
+            ["animation_speed_table"] = data.Values("animation_speed_table").ToArray(),
         };
 
         var oamTables = PlayerOamTableSpecs
@@ -935,7 +970,7 @@ internal static class Program
                 SourceAddress: spec.Address,
                 Count: spec.Count,
                 Format: spec.Format,
-                Values: ReadPlayerTableValues(rom, spec)))
+                Values: data.Values(spec.Name).ToArray()))
             .ToList();
 
         return new PlayerMetadata(rom.Sha1, paletteVariants, tilePointerTables, oamTables);
@@ -943,35 +978,7 @@ internal static class Program
 
     private static int[] BuildPlayerSpritePaletteWords(Rom rom, int player)
     {
-        var palette = Enumerable.Repeat(PaletteBlack, 16).ToArray();
-        palette[0] = PaletteBlack;
-        palette[1] = PaletteWhite;
-        CopyPaletteWords(palette, color: 2, rom.GetWords(ObjectPaletteAddress + 4 * 0x0C, 6));
-        CopyPaletteWords(palette, color: 6, rom.GetWords(PlayerPaletteAddress + Math.Clamp(player, 0, 3) * 0x14, 10));
-        return palette;
-    }
-
-    private static void CopyPaletteWords(int[] target, int color, int[] words)
-    {
-        for (var i = 0; i < words.Length && color + i < target.Length; i++)
-        {
-            target[color + i] = words[i];
-        }
-    }
-
-    private static int[] ReadPlayerTableValues(Rom rom, PlayerTableSpec spec)
-    {
-        return spec.Format switch
-        {
-            "u8" => rom.GetBytes(spec.Address, spec.Count).Select(value => (int)value).ToArray(),
-            "s16" => rom.GetWords(spec.Address, spec.Count).Select(Signed16).ToArray(),
-            _ => throw new InvalidOperationException($"unsupported player table format {spec.Format} for {spec.Name}"),
-        };
-    }
-
-    private static int Signed16(int word)
-    {
-        return (word & 0x8000) != 0 ? word - 0x10000 : word;
+        return new SmwPaletteDecoder(rom.Native).CreatePlayerRow(player).Select(value => (int)value).ToArray();
     }
 
     private static void VerifyGeneratedPlayerMetadata(string generatedRoot, PlayerMetadata expected)
@@ -1062,46 +1069,10 @@ internal static class Program
 
     private static LevelPalette BuildLevelPalette(Rom rom, string levelId, LevelHeader header)
     {
-        var words = Enumerable.Repeat(0, 256).ToArray();
-        for (var row = 0; row < 16; row++)
-        {
-            words[row * 16] = PaletteBlack;
-            words[row * 16 + 1] = PaletteWhite;
-        }
-
-        var backAreaColor = rom.GetWord(BackAreaColorAddress + header.BackgroundColor * 2);
-        var bgWords = rom.GetWords(BgPaletteAddress + header.BgPalette * 0x18, 12);
-        CopyPaletteWords(words, row: 0, color: 2, bgWords.Take(6).ToArray());
-        CopyPaletteWords(words, row: 1, color: 2, bgWords.Skip(6).ToArray());
-
-        var fgWords = rom.GetWords(FgPaletteAddress + header.FgPalette * 0x18, 12);
-        CopyPaletteWords(words, row: 2, color: 2, fgWords.Take(6).ToArray());
-        CopyPaletteWords(words, row: 3, color: 2, fgWords.Skip(6).ToArray());
-
-        for (var row = 4; row < 14; row++)
-        {
-            CopyPaletteWords(words, row, color: 2, rom.GetWords(ObjectPaletteAddress + (row - 4) * 0x0C, 6));
-        }
-
-        CopyPaletteWords(words, row: 8, color: 6, rom.GetWords(PlayerPaletteAddress, 10));
-
-        var spriteWords = rom.GetWords(SpritePaletteAddress + header.SpritePalette * 0x18, 12);
-        CopyPaletteWords(words, row: 14, color: 2, spriteWords.Take(6).ToArray());
-        CopyPaletteWords(words, row: 15, color: 2, spriteWords.Skip(6).ToArray());
-
-        for (var row = 0; row < 2; row++)
-        {
-            CopyPaletteWords(words, row, color: 8, rom.GetWords(Layer3PaletteAddress + row * 0x10, 8));
-        }
-
-        for (var offset = 0; offset < 3; offset++)
-        {
-            var berryWords = rom.GetWords(BerryPaletteAddress + offset * 0x0E, 7);
-            CopyPaletteWords(words, row: offset + 2, color: 9, berryWords);
-            CopyPaletteWords(words, row: offset + 9, color: 9, berryWords);
-        }
-
-        words[6 * 16 + 4] = rom.GetWord(AnimatedColorAddress);
+        var selection = new SmwPaletteSelection(header.BackgroundColor, header.BgPalette, header.FgPalette, header.SpritePalette);
+        var decoder = new SmwPaletteDecoder(rom.Native);
+        var backAreaColor = decoder.ApplyLevelBase(new ushort[256], selection);
+        var words = decoder.CreateLevelEntry(selection).Select(value => (int)value).ToArray();
 
         return new LevelPalette(
             LevelId: levelId,
@@ -1115,15 +1086,6 @@ internal static class Program
                 ["fg_palette"] = header.FgPalette,
                 ["sprite_palette"] = header.SpritePalette,
             });
-    }
-
-    private static void CopyPaletteWords(int[] target, int row, int color, IReadOnlyList<int> words)
-    {
-        var start = row * 16 + color;
-        for (var i = 0; i < words.Count && start + i < target.Length; i++)
-        {
-            target[start + i] = words[i];
-        }
     }
 
     private static int[][] SnesWordsToRgb(IReadOnlyList<int> words)
@@ -1193,86 +1155,6 @@ internal static class Program
         }
     }
 
-    private static (byte[] Data, int CompressedLength) SmwDecompress(Rom rom, int address)
-    {
-        var result = new List<byte>();
-        var reader = new RomReader(rom, address);
-        while (true)
-        {
-            var command = reader.Next();
-            if (command == 0xFF)
-            {
-                return (result.ToArray(), (reader.Address - address) & 0x7FFF);
-            }
-
-            int op;
-            int length;
-            if ((command & 0xE0) != 0xE0)
-            {
-                length = command & 0x1F;
-                op = command & 0xE0;
-            }
-            else
-            {
-                op = (command << 3) & 0xE0;
-                length = ((command & 0x03) << 8) | reader.Next();
-            }
-            length++;
-
-            if (op == 0x00)
-            {
-                for (var i = 0; i < length; i++)
-                {
-                    result.Add((byte)reader.Next());
-                }
-            }
-            else if ((op & 0x80) != 0)
-            {
-                var offset = (reader.Next() << 8) | reader.Next();
-                for (var i = 0; i < length; i++)
-                {
-                    Check(offset >= 0 && offset < result.Count, $"LC_LZ2 repeat offset out of range: {offset}");
-                    result.Add(result[offset]);
-                    offset++;
-                }
-            }
-            else if ((op & 0x40) == 0)
-            {
-                var value = (byte)reader.Next();
-                for (var i = 0; i < length; i++)
-                {
-                    result.Add(value);
-                }
-            }
-            else if ((op & 0x20) == 0)
-            {
-                var first = (byte)reader.Next();
-                var second = (byte)reader.Next();
-                while (length > 0)
-                {
-                    result.Add(first);
-                    length--;
-                    if (length <= 0)
-                    {
-                        break;
-                    }
-
-                    result.Add(second);
-                    length--;
-                }
-            }
-            else
-            {
-                var value = reader.Next();
-                for (var i = 0; i < length; i++)
-                {
-                    result.Add((byte)value);
-                    value = (value + 1) & 0xFF;
-                }
-            }
-        }
-    }
-
     private static void WriteBinary(string path, byte[] data)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
@@ -1305,9 +1187,15 @@ internal static class Program
         Console.Error.WriteLine("usage:");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-core <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-core <rom.sfc> <generated/smw>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-graphics <rom.sfc> <ignored-out-dir>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-level-graphics <rom.sfc> <ignored-out-dir> [105,1CB,...]");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-level-data <rom.sfc> <ignored-out-dir> [all|105,1CB,...]");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-terrain <rom.sfc> <ignored-out-dir> [105,1CB,...]");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- audit-terrain <rom.sfc> <ignored-out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-levels <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-levels <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-audio-previews <rom.sfc> <out-dir>");
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-audio-native <rom.sfc> <ignored-out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-audio-previews <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-player-metadata <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-player-metadata <rom.sfc> <generated/smw>");
@@ -1316,17 +1204,7 @@ internal static class Program
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- extract-palettes <rom.sfc> <out-dir>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- verify-palettes <rom.sfc> <generated/smw>");
         Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-rom <rom.sfc>");
-        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- native-init <rom.sfc> <out-dir>");
-        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- native-import-level <rom.sfc> <out-dir> <level-id>");
-    }
-
-    private sealed class ConsoleImportProgress : IProgress<SmwImportProgress>
-    {
-        public void Report(SmwImportProgress value)
-        {
-            var level = string.IsNullOrWhiteSpace(value.LevelId) ? "" : $" level={value.LevelId}";
-            Console.Error.WriteLine($"smw-asset-tool: {value.Stage}{level} ({value.Completed}/{value.Total})");
-        }
+        Console.Error.WriteLine("  dotnet run --project tools/SmwAssetTool/SmwAssetTool.csproj -- inspect-level-catalog <rom.sfc>");
     }
 
     private static void Check(bool condition, string message)
@@ -1842,55 +1720,31 @@ internal static class Program
 
     private sealed class Rom
     {
-        private Rom(string path, byte[] data, string sha1)
+        private Rom(string path, SmwRom native)
         {
             Path = path;
-            Data = data;
-            Sha1 = sha1;
+            Native = native;
         }
 
         public string Path { get; }
-        public byte[] Data { get; }
-        public string Sha1 { get; }
+        public SmwRom Native { get; }
+        public string Sha1 => Native.Inspection.Sha1;
 
         public static Rom Load(string path)
         {
             var fullPath = System.IO.Path.GetFullPath(path);
             Check(File.Exists(fullPath), $"ROM does not exist: {fullPath}");
-            var data = File.ReadAllBytes(fullPath);
-            var inspection = SmwRomInspector.Inspect(data);
-
-            if (inspection.HasCopierHeader)
-            {
-                throw new InvalidOperationException($"headered ROMs are not supported: size={inspection.Size} sha1={inspection.Sha1}");
-            }
-
-            Check(inspection.IsExpectedSize, $"unsupported ROM size={inspection.Size}; expected {SmwRomInspector.ExpectedUnheaderedRomSize}");
-            Check(inspection.IsExpectedSha1,
-                $"unsupported ROM sha1={inspection.Sha1}; expected {SmwRomInspector.ExpectedRomLabel} {SmwRomInspector.ExpectedUnheaderedSha1}");
-            return new Rom(fullPath, data, inspection.Sha1);
-        }
-
-        public int LoRomIndex(int address)
-        {
-            try
-            {
-                return SmwRomInspector.LoRomIndex(address, Data.Length);
-            }
-            catch (ArgumentOutOfRangeException ex)
-            {
-                throw new InvalidOperationException(ex.Message, ex);
-            }
+            return new Rom(fullPath, SmwRom.FromBytes(File.ReadAllBytes(fullPath)));
         }
 
         public int GetByte(int address)
         {
-            return Data[LoRomIndex(address)];
+            return Native.Data.ReadByte(address);
         }
 
         public int GetWord(int address)
         {
-            return GetByte(address) | (GetByte(address + 1) << 8);
+            return Native.Data.ReadUInt16(address);
         }
 
         public int[] GetWords(int address, int count)
@@ -1898,7 +1752,8 @@ internal static class Program
             var words = new int[count];
             for (var i = 0; i < count; i++)
             {
-                words[i] = GetWord(address + i * 2);
+                words[i] = GetWord(address);
+                address = LoRomData.NextAddress(LoRomData.NextAddress(address));
             }
 
             return words;
@@ -1906,24 +1761,14 @@ internal static class Program
 
         public int Get24(int address)
         {
-            return GetWord(address) | (GetByte(address + 2) << 16);
+            return Native.Data.ReadUInt24(address);
         }
 
         public byte[] GetBytes(int address, int count)
         {
-            var output = new byte[count];
-            for (var i = 0; i < count; i++)
-            {
-                output[i] = (byte)GetByte(address);
-                address++;
-                if ((address & 0x8000) == 0)
-                {
-                    address += 0x8000;
-                }
-            }
-
-            return output;
+            return Native.Data.ReadBytes(address, count);
         }
+
     }
 
     private sealed class RomReader
@@ -1941,11 +1786,7 @@ internal static class Program
         public int Next()
         {
             var value = _rom.GetByte(Address);
-            Address++;
-            if ((Address & 0xFFFF) == 0)
-            {
-                Address += 0x8000;
-            }
+            Address = LoRomData.NextAddress(Address);
 
             return value;
         }

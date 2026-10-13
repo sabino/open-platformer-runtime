@@ -14,7 +14,7 @@ const statusEl = document.getElementById("status");
 const detailsEl = document.getElementById("details");
 const manifestButton = document.getElementById("manifestButton");
 const playButton = document.getElementById("playButton");
-const runtimeFrame = document.getElementById("runtimeFrame");
+let runtimeFrame = document.getElementById("runtimeFrame");
 const screenEl = document.querySelector(".screen");
 const controlsEl = document.querySelector(".controls");
 const fileButton = document.querySelector(".file-button");
@@ -48,6 +48,7 @@ romFile.addEventListener("change", async () => {
   currentIndexedLevelCount = 0;
   runtimeRomReady = false;
   rejectPendingRomReady("ROM selection changed.");
+  resetRuntimeFrame();
   screenEl?.classList.remove("is-playing");
   runtimeFrame.hidden = true;
   setBusy(file.name);
@@ -72,12 +73,14 @@ romFile.addEventListener("change", async () => {
       currentIndexedLevelCount = result.indexedLevelCount ?? 0;
       runtimeRomReady = currentIndexedLevelCount > 0;
       currentManifest.runtime_status.indexed_level_count = currentIndexedLevelCount;
+      currentManifest.runtime_status.verified_terrain_count = result.verifiedTerrainCount;
       currentManifest.runtime_status.native_importer = "ready";
+      currentManifest.runtime_status.playable_browser_runtime = runtimeRomReady;
       const readyMessage = runtimeRomReady
-        ? `ROM loaded. ${currentIndexedLevelCount} levels are searchable inside the game.`
-        : "ROM loaded, but no valid levels were indexed.";
+        ? `ROM loaded. ${currentIndexedLevelCount} slots indexed; ${result.verifiedTerrainCount} layouts available for testing.`
+        : "ROM loaded, but no valid slots were indexed.";
       await progressStep("Ready", 100, readyMessage);
-      updateDetails("Complete", `${currentIndexedLevelCount} levels`);
+      updateDetails("Complete", `${currentIndexedLevelCount} ROM slots`);
     } else {
       showProgress("Unsupported", 100, statusEl.textContent);
     }
@@ -137,7 +140,7 @@ playButton.addEventListener("click", async () => {
     screenEl?.classList.add("is-playing");
     runtimeFrame.hidden = false;
     showProgress("Runtime ready", 100, "Use the in-game selector to search and start a level.");
-    updateDetails("Complete", `${currentIndexedLevelCount} levels`);
+    updateDetails("Complete", `${currentIndexedLevelCount} ROM slots`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Browser play failed.";
     showProgress("Failed", 100, message);
@@ -155,6 +158,7 @@ function resetState() {
   currentIndexedLevelCount = 0;
   runtimeRomReady = false;
   rejectPendingRomReady("ROM state reset.");
+  resetRuntimeFrame();
   isBusy = false;
   screenEl?.classList.remove("is-playing");
   runtimeFrame.hidden = true;
@@ -166,6 +170,17 @@ function resetState() {
     ["Runtime", "Pending"],
   ]);
   refreshControls();
+}
+
+function resetRuntimeFrame() {
+  // Drop the old runtime, audio and ROM state before accepting another file.
+  // A new iframe also prevents an old runtime's completion message from
+  // resolving the new selection's pending import.
+  const replacement = runtimeFrame.cloneNode(false);
+  replacement.removeAttribute("src");
+  replacement.hidden = true;
+  runtimeFrame.replaceWith(replacement);
+  runtimeFrame = replacement;
 }
 
 function setBusy(fileName) {
@@ -300,9 +315,10 @@ function buildBrowserManifest(file, inspection) {
       probes: inspection.probes,
     },
     runtime_status: {
-      playable_browser_runtime: inspection.isSupported,
+      playable_browser_runtime: false,
+      native_importer: "pending",
       reason: inspection.isSupported
-        ? "Ready to import locally in the browser."
+        ? "ROM validated; waiting for the native runtime."
         : "The runtime only accepts the compatible USA ROM.",
     },
   };
@@ -343,14 +359,16 @@ async function ensureRuntimeFrame(options = {}) {
 }
 
 async function sendRomToGodot(fileName, bytes) {
-  const readyPromise = waitForRuntimeRomReady();
   const command = runtimeFrame.contentWindow?.openPlatformerRuntimeGodotCommand;
   if (typeof command !== "function") {
-    rejectPendingRomReady("Godot runtime bridge is not available.");
     throw new Error("Godot runtime bridge is not available.");
   }
-
-  command("rom", bytes, fileName);
+  const readyPromise = waitForRuntimeRomReady();
+  try {
+    command("rom", bytes, fileName);
+  } catch (error) {
+    rejectPendingRomReady(error instanceof Error ? error.message : String(error));
+  }
   return readyPromise;
 }
 
@@ -410,6 +428,7 @@ function handleRuntimeMessage(data) {
       pendingRomReady?.resolve({
         sha1: data.sha1,
         indexedLevelCount: count,
+        verifiedTerrainCount: Number(data.verifiedTerrainCount) || 0,
         generatedLevelCount: Number(data.generatedLevelCount) || 0,
       });
       break;

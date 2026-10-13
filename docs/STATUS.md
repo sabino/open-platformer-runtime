@@ -19,10 +19,10 @@ The runtime is useful today for technical playtesting, importer validation, and 
 - The local asset importer validates a compatible ROM and writes Godot-readable generated assets under `generated/smw/`.
 - The importer can generate one requested level, a list of levels, or the full `000..1FF` level-id range.
 - The manifest includes imported level metadata and ROM-derived overworld level titles when available.
-- The course selector lists imported levels, supports type-ahead search by id or title, and can launch a selected level.
+- Desktop and browser ROM selection load directly into native gameplay and audio. The selector lists all 512 pointer slots and gates native play to four verified terrain layouts. The others remain inspectable entries. Names and aliases are not reachability evidence.
 - A level can return to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or after the current course-clear walkout.
-- Runtime toggles exist for debug gizmos, actor simulation, and actor visuals. Gizmos default on; audio remains intentionally opt-in and greyed out in the selector.
-- A GitHub Pages browser loader exists under `web/`. It lets a user pick a local ROM file, validates it in browser memory, probes importer table ranges, exports a browser manifest, and passes ROM bytes into the experimental runtime so the C# importer can index, search, and generate levels inside the game.
+- Runtime toggles exist for debug gizmos, actor simulation, actor visuals, and audio. Gizmos default on; audio is opt-in. The Music / SFX Player offers standalone listening.
+- A GitHub Pages browser loader exists under `web/`. It validates a local file in browser memory and passes its bytes directly to native Godot decoding. It does not upload the ROM or run the Python importer.
 - An experimental Godot .NET Web export track exists for custom builds based on `godotengine/godot#106125`; it is not part of the stock Godot 4.6.3 path and currently depends on local Godot marshalling fixes.
 - Level rendering covers the current partial Map16/object projection, generated palettes, level previews, layer backgrounds for covered cases, and generated player/sprite atlases.
 - The main verified playability slice is still the first-level route plus its direct pipe target. Other imported levels may boot and render, but playability varies widely.
@@ -33,15 +33,15 @@ The runtime is useful today for technical playtesting, importer validation, and 
 
 ### Legal and Release Readiness
 
-- No CI workflow is configured in this checkout.
+- CI checks managed builds, source-only physics/ROM/audio tests, conditional Web compilation, browser-loader handoff and exact synthetic DSP fixtures.
 - Public package metadata, repository description, contribution policy, and issue templates are not finalized.
 - Current documentation still contains many internal development details and compatibility terms. Keep public-facing wording generic where possible.
 
 ### Asset Pipeline
 
 - Generated assets are local artifacts and are not part of the repository.
-- The broad parity/reference importer is still Python-based, but the runtime, browser bridge, and C# asset tool can now use `src/SmwAssets/SmwNativeImporter.cs` for ROM indexing and focused level generation.
-- The browser loader no longer uses Pyodide; it passes ROM bytes into the experimental Godot runtime and lets the shared C# importer generate levels on demand.
+- The broad importer is still Python-based; the C# asset tool only covers focused extraction/verification slices.
+- The browser loader passes ROM bytes into the same native decoder used by desktop. Actual execution and audio in the custom Web build remain separate compatibility gates.
 - The direct Godot .NET Web path depends on an unmerged upstream PR and custom export templates. It should be treated as experimental and may need COOP/COEP headers from the deployment host.
 - The level object expander is partial and does not implement every native object routine.
 - Lunar Magic/custom-ROM behavior is only partially understood; vanilla-compatible ROM data is the current target.
@@ -87,16 +87,17 @@ The runtime is useful today for technical playtesting, importer validation, and 
 ### Audio
 
 - Audio is disabled by default.
-- Current audio is a diagnostic/internal BRR/APU probe plus preview controls, not a complete SPC/DSP sequencer.
-- Music sequencing, SFX priority, pause/fade behavior, echo/DSP behavior, and exact runtime audio timing are pending.
+- Native SMW sequencing and integer S-DSP processing now play ROM-derived music and SFX without running an SPC700 CPU.
+- The listening player offers all three song banks, transport controls and playback diagnostics.
+- DSP fixtures pass exact comparisons; translated-driver cases pass at 500 Hz control boundaries. Full-song firmware timing, exhaustive SFX/transition coverage, and browser playback remain unverified. See [NATIVE-AUDIO.md](NATIVE-AUDIO.md).
 
 ### Tooling and Testing
 
 - The strongest automated checks are focused on the current first-level slice and importer contracts.
-- GitHub Pages deployment exists for the browser loader, but public CI for the full source-only test suite still needs to be added.
+- GitHub Pages deployment and source-only CI exist. Local `tools/check-rom-startup.sh` verifies ROM selection, header stripping, verified level entry, the first-course pipe route and the audio player with an empty asset pack.
 - Full regression coverage across all imported levels does not exist.
 - Frame-level comparison tooling exists, but many systems still need native trace anchors and golden tests.
-- The public release should add CI for source-only checks that do not require a proprietary ROM.
+- Proprietary ROM-dependent captures remain local and are never CI artifacts.
 
 ## Roadmap
 
@@ -104,7 +105,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
    - Keep MIT license metadata present and accurate.
    - Keep project naming and README framing generic.
    - Run history scans for generated assets, ROMs, screenshots, local paths, and accidental binary data.
-   - Add CI for source-only build/lint checks.
+   - Maintain source-only CI and extend behavioral evidence for the first course.
 
 2. Runtime/importer contract hardening
    - Keep moving extraction and validation into C# tooling.
