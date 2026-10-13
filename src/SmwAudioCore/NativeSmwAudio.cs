@@ -58,9 +58,10 @@ public sealed class NativeSmwAudio
         _lastEventClock = command.Clock;
     }
 
-    public void Generate(Span<short> stereo)
+    public void Generate(Span<short> stereo, Span<short> monitorStereo = default, SnesDspMonitor? monitor = null)
     {
         if ((stereo.Length & 1) != 0) throw new ArgumentException("Stereo PCM must contain pairs", nameof(stereo));
+        if (!monitorStereo.IsEmpty && monitorStereo.Length != stereo.Length) throw new ArgumentException("Monitor PCM size mismatch", nameof(monitorStereo));
         var index = 0;
         while (index < stereo.Length)
         {
@@ -77,7 +78,13 @@ public sealed class NativeSmwAudio
             }
             if (Dsp.Clock != 0 && Dsp.Clock % 2048 == 0) Driver.Tick();
             if (!Dsp.StepClock()) continue;
-            stereo[index++] = Dsp.LastLeft; stereo[index++] = Dsp.LastRight;
+            stereo[index] = Dsp.LastLeft; stereo[index + 1] = Dsp.LastRight;
+            if (!monitorStereo.IsEmpty)
+            {
+                if (monitor == null) { monitorStereo[index] = Dsp.LastLeft; monitorStereo[index + 1] = Dsp.LastRight; }
+                else monitor.Render(Dsp, out monitorStereo[index], out monitorStereo[index + 1]);
+            }
+            index += 2;
         }
     }
 

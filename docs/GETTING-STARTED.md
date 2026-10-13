@@ -109,7 +109,9 @@ tools/run-audio-player.sh
 ```
 
 It starts **Here We Go!**, offers all 50 music IDs across three banks, and
-provides gameplay SFX, pause/resume, stop/restart, volume and stereo meters.
+provides a searchable sound-command list, Yoshi percussion, pause/resume,
+stop/restart, stereo/mono/mirrored routing, L/R gains, instrument/voice solo
+and mute, volume and stereo meters.
 Escape returns to Course Select. Enable native gameplay audio with:
 
 ```bash

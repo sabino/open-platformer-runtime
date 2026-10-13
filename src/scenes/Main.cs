@@ -1323,7 +1323,7 @@ public partial class Main : Node2D
         SetAudioEnabled(true);
         _audioPlayerOpen = true;
         GetWindow().ContentScaleSize = SmwAudioPlayer.ViewportSize;
-        GetWindow().ContentScaleMode = Window.ContentScaleModeEnum.CanvasItems;
+        GetWindow().ContentScaleMode = Window.ContentScaleModeEnum.Viewport;
         GetWindow().ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
         GetWindow().Title = "SMW Audio Player — Open Platformer Runtime";
         var player = GD.Load<PackedScene>("res://src/scenes/SmwAudioPlayer.tscn").Instantiate<SmwAudioPlayer>();

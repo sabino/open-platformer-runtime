@@ -64,6 +64,8 @@ This document captures the current implementation slice. It is intentionally spe
 - Audio is disabled by default.
 - ROM-derived sequences and BRR samples play through a native SMW sequencer and integer eight-voice S-DSP pipeline.
 - The music player exposes 50 original song IDs, gameplay SFX, transport controls, volume and live playback diagnostics.
+- The Sound effects tab lists 106 commands/cues, including circle close and a course-clear/circle preview sequence. Yoshi mounting/dismounting controls original percussion where authored.
+- Output has stereo, mono, L/R mirroring and separate side gains. An optional monitor provides per-voice/sample solo, mute, gain and L/R controls without altering native PCM/state.
 - DSP-only fixtures match `snes_spc` exactly. Register traces and PCM for 50 five-second song cases match the translated C driver at 500 Hz control boundaries; original SPC700 instruction timing is a separate, unfinished gate.
 - No SPC700 CPU executes during gameplay. Godot receives the final stereo PCM through `AudioStreamGenerator`.
 - See [NATIVE-AUDIO.md](NATIVE-AUDIO.md) for verification and limitations.

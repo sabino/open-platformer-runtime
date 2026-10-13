@@ -49,8 +49,39 @@ if (args.Length == 1 && args[0] == "self-test")
         for(var i=0;i<actual.Length;i+=2) pieces.Generate(actual.AsSpan(i,2));
         if(!expected.AsSpan().SequenceEqual(actual) || !whole.CaptureState().AsSpan().SequenceEqual(pieces.CaptureState()))
             throw new InvalidOperationException("Native sequencing depends on the render block size");
+        var referenceMix = new NativeSmwAudio(data); var monitored = new NativeSmwAudio(data);
+        referenceMix.ScheduleCommand(0,2,2); monitored.ScheduleCommand(0,2,2);
+        var listening = new short[expected.Length]; var monitor = new SnesDspMonitor();
+        referenceMix.Generate(expected); monitored.Generate(actual,listening,monitor);
+        if (!expected.AsSpan().SequenceEqual(actual) || !actual.AsSpan().SequenceEqual(listening))
+            throw new InvalidOperationException("Bypassed monitor changes authentic PCM");
+        monitor.Enabled = true;
+        for (var voice=0;voice<8;voice++) monitor.SetMuted(false,voice,true);
+        referenceMix.Generate(expected); monitored.Generate(actual,listening,monitor);
+        if (!expected.AsSpan().SequenceEqual(actual) || !referenceMix.CaptureState().AsSpan().SequenceEqual(monitored.CaptureState()))
+            throw new InvalidOperationException("Listening mixer changes native PCM or simulation state");
+        foreach (var sample in listening) if (sample!=0) throw new InvalidOperationException("Muted dry monitor is not silent");
+        monitor.Reset(); monitor.Enabled=true;
+        for(var sample=0;sample<20;sample++) monitor.SetSideGain(true,sample,true,0);
+        monitored.Generate(actual,listening,monitor);
+        for(var i=1;i<listening.Length;i+=2) if(listening[i]!=0) throw new InvalidOperationException("Instrument right-channel gain leaks");
     }
     Console.WriteLine("native audio self-test: block independence, full DSP checkpoint, rational clock mapping, zero hot-path allocation passed");
+    return;
+}
+if (args.Length == 7 && args[0] == "sfx-case")
+{
+    var data=SmwAudioData.FromRom(SmwRom.FromBytes(File.ReadAllBytes(args[1])));
+    var port=int.Parse(args[2]); var command=byte.Parse(args[3]); var frames=int.Parse(args[4]); var root=args[5];
+    if(args[6]!="--isolated") throw new ArgumentException("Expected isolated SFX fixture");
+    Directory.CreateDirectory(root); var writes=new List<Write>();
+    var engine=new NativeSmwAudio(data,trace:(clock,register,value)=>writes.Add(new Write(clock,register,value)));
+    engine.ScheduleCommand(0,port,command); var pcm=new short[frames*2]; engine.Generate(pcm);
+    var bytes=new byte[pcm.Length*2];
+    for(var i=0;i<pcm.Length;i++) BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i*2,2),pcm[i]);
+    File.WriteAllBytes(Path.Combine(root,"native.pcm"),bytes);
+    File.WriteAllText(Path.Combine(root,"writes.json"),JsonSerializer.Serialize(writes));
+    Console.WriteLine($"native isolated SFX: port={port} command={command:X2} frames={frames} writes={writes.Count}");
     return;
 }
 if (args.Length == 4 && args[0] == "driver-cases")
@@ -86,7 +117,7 @@ if (args.Length == 4 && args[0] == "driver-cases")
     Console.WriteLine($"native SMW driver: rendered {cases.Count} ROM song cases");
     return;
 }
-if (args.Length == 6 && args[0] == "render")
+if ((args.Length == 6 || args.Length == 7 && args[6] == "--music-only") && args[0] == "render")
 {
     var rom = SmwRom.FromBytes(File.ReadAllBytes(args[1]));
     var data = SmwAudioData.FromRom(rom);
@@ -99,8 +130,11 @@ if (args.Length == 6 && args[0] == "render")
     var initialRegisters = new byte[128]; initialRegisters[0x6C] = 0xE0;
     File.WriteAllBytes(Path.Combine(output, "initial.registers"), initialRegisters);
     engine.ScheduleCommand(0, 2, song);
-    engine.ScheduleCommand(32768, 1, 1); engine.ScheduleCommand(65536, 1, 0);
-    engine.ScheduleCommand(98304, 3, 1); engine.ScheduleCommand(131072, 3, 0);
+    if (args.Length == 6)
+    {
+        engine.ScheduleCommand(32768, 1, 1); engine.ScheduleCommand(65536, 1, 0);
+        engine.ScheduleCommand(98304, 3, 1); engine.ScheduleCommand(131072, 3, 0);
+    }
     var pcm = new short[frames * 2]; engine.Generate(pcm);
     var bytes = new byte[pcm.Length * 2];
     for (var i = 0; i < pcm.Length; i++) BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), pcm[i]);

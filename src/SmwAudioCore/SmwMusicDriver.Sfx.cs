@@ -101,7 +101,10 @@ public sealed partial class SmwMusicDriver
                     command = ram[pointer++];
                     if (port == 3 && (command & 0x80) != 0)
                     {
-                        sfx3_unused = 0x1F; Dsp_Write(this, FLG, 0x1F); chan_bit_flags = 0x40; Dsp_Write(this, NON, 0x40);
+                        // Original CODE_094E masks the ROM command's noise rate.
+                        // The pinned native C reference incorrectly hardcodes 0x1F.
+                        sfx3_unused = (byte)(command & 0x1F); Dsp_Write(this, FLG, sfx3_unused);
+                        chan_bit_flags = 0x40; Dsp_Write(this, NON, 0x40);
                     }
                 } while (port == 3 && (command & 0x80) != 0);
                 var instrument = 0x5570 + command * 9;

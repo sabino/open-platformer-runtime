@@ -55,6 +55,7 @@ public sealed partial class SnesDsp
         memory.CopyTo(_memory);
         registers.CopyTo(_registers);
         Array.Clear(_main); Array.Clear(_echoIn); Array.Clear(_echoOut); Array.Clear(_history);
+        ClearMonitorTaps();
         foreach (var v in _voices)
         {
             Array.Clear(v.Buffer);
@@ -212,6 +213,9 @@ public sealed partial class SnesDsp
     private void MixVoice(int n, int channel)
     {
         var value = _output * unchecked((sbyte)Reg(n, channel)) >> 7;
+        if (channel == 0) _monitorLeft[n] = value;
+        else _monitorRight[n] = value;
+        _monitorSource[n] = (byte)Reg(n, 4);
         _main[channel] = Clamp16(_main[channel] + value);
         if (_voices[n].Echo) _echoOut[channel] = Clamp16(_echoOut[channel] + value);
     }
@@ -352,11 +356,13 @@ public sealed partial class SnesDsp
     }
     private void Echo26()
     {
+        _monitorEchoLeft = Signed16(_echoIn[0] * unchecked((sbyte)_registers[0x2C]) >> 7);
         _main[0] = EchoOutput(0);
         for (var c = 0; c < 2; c++) _echoOut[c] = Clamp16(_echoOut[c] + Signed16(_echoIn[c] * unchecked((sbyte)_registers[13]) >> 7)) & ~1;
     }
     private void Echo27()
     {
+        _monitorEchoRight = Signed16(_echoIn[1] * unchecked((sbyte)_registers[0x3C]) >> 7);
         _left = (short)_main[0]; _right = (short)EchoOutput(1);
         _main[0] = _main[1] = 0;
         if ((_registers[0x6C] & 64) != 0) _left = _right = 0;

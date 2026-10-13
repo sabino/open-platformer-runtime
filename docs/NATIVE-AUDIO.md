@@ -11,8 +11,32 @@ tools/run-audio-player.sh
 Course Select also has a **Music / SFX Player** button. The player starts
 Here We Go!, lists 29 level, nine overworld and 12 credits song IDs (some
 are aliases), and supports double-click playback, restart, pause/resume,
-stop, gameplay effects and playback volume. SMW's pause chime completes
+stop, a searchable list of 106 sound commands/cues, and playback volume. SMW's pause chime completes
 before music mutes. Escape returns to Course Select.
+
+The Sound effects tab includes all 94 original table IDs, jump/Yoshi controls,
+the hurry-up command and music/transition cues. **Circle close / zoom in** is
+level-bank music command `11`, sent by the original victory-pose routine.
+**Course clear → circle close** previews both cues, switching when the first
+sequence ends; it does not reproduce the game's visual transition timing.
+Removed effect IDs are preserved and labeled silent.
+
+The Yoshi toggle sends original drum-on/off commands. Mounting also plays
+Yoshi's sound. Dismounting chooses jump or hurt with a seeded UI-only generator;
+drum-off and jump use different audio frames to avoid overwriting their shared
+port. Original percussion exists in specific level songs, including Piano,
+Here We Go!, Water and Cave.
+
+Output offers **Stereo**, **Mono (L + R)**, **Left → both**, **Right → both**,
+and independent L/R gains. Mono averages both sides; original opposite-phase
+surround can cancel in that sum, while mirroring a side avoids cancellation.
+The Mixer tab has solo/mute, gain and separate L/R controls for eight voices
+and 20 instrument samples. Sample controls follow a BRR sample across voices;
+voice controls follow a track even when its instrument changes. The optional
+monitor mix is dry by default. Including original echo also includes the echo
+of muted voices, so leave it off for clean solos. **Original mix** resets the
+monitor. These listening controls leave native PCM/registers/state unchanged;
+their processed output has no bit-identity claim.
 
 Application volume and Godot device resampling occur after the raw PCM
 boundary. Stereo meters show source levels before application volume.
@@ -58,6 +82,7 @@ Run the managed checks and external oracle comparisons:
 tools/check-dotnet.sh
 tools/check-native-audio.sh
 tools/check-smw-audio.sh
+tools/check-smw-firmware-audio.sh --port 3 --command 1 --seconds 2 --require-values-match
 tools/run.sh --no-import --headless --smw-audio-player-smoke --quit-after 420
 ```
 
@@ -78,12 +103,15 @@ Verified on macOS Apple Silicon with .NET 10.0.401 and Godot .NET 4.7.2:
 - Block-size independence, complete DSP and native sequencer checkpoints,
   queued-event restoration, ROM-cache roundtrip and zero DSP hot-path
   allocations pass executable managed tests.
-- Eight active voices with echo: 11.54 ms to generate one audio second,
-  about 86.6 times real time, zero allocated bytes in the measured hot path
+- Eight active voices with echo: 11.59 ms to generate one audio second,
+  about 86.3 times real time, zero allocated bytes in the measured hot path
   (20 seconds after five warmup seconds). Run the `SmwAudioTool benchmark`
   command to measure the current checkout on another host.
 - The player control smoke exercises three banks, jump/coin/spin jump,
-  pause/resume, stop/restart, nonzero PCM and complete viewport containment.
+  pause/resume, stop/restart, Yoshi drums, circle-close lookup, monitor controls,
+  mono routing, nonzero PCM and complete viewport containment. Independent
+  managed tests prove that enabling/muting the monitor preserves raw PCM and
+  native checkpoints, and that instrument R=0 silences the dry monitor's R.
   The graphical player was launched and the user confirmed audible playback.
 - Conditional `GodotWebDotNetPrototype=true` net9 compilation passed. Actual
   WebAssembly export/playback was not tested; the custom editor/templates
@@ -100,8 +128,21 @@ register writes at 500 Hz control ticks; original instruction-by-instruction
 write offsets and startup phases have not been reproduced. Native C-driver
 agreement does not independently validate that C translation against the
 original firmware. Whole-song PCM identity is therefore not established.
-Listening reports about layers, echo, coin tone and instrument levels need
-an original-firmware trace comparison, not arbitrary gain changes.
+
+`check-smw-firmware-audio.sh` now runs the original ROM sound driver in an
+external `snes_spc` test oracle from a controlled audio boot. CPU execution
+exists only in that local validation process, with no game dependency.
+The 60-second Title Screen comparison confirms different pitch-sweep events
+and timing; the first register-value divergence is event 199. This is a real
+remaining sequencing/timing gap. This controlled boot is not an original
+whole-game startup snapshot or a full-song PCM identity test.
+
+The comparison identified a native C-reference bug: noise SFX selected fixed
+rate `1F`, while original routine `CODE_094E` masks the ROM command's low five
+bits. The managed driver now follows the original. Isolated Podoboo command
+`$1DFC:27` matches all 32 register values, and coin `$1DFC:01` matches all 35.
+Their precise write times still differ. These checks establish register-value
+agreement, not full PCM identity.
 
 Next gates are original-firmware event/timing validation, complete song loops,
 all SFX and priority combinations, bank transitions and pause/fade restoration,
@@ -109,4 +150,17 @@ measured device/SFX latency, and actual desktop/Web playback checks. Timing
 diagnostics currently report command-to-KON delay, queues, dropped frames,
 generation cost and cumulative device underruns; they do not measure the
 physical audio device's end-to-end latency. Windows/Linux execution has not
-been tested on this host. The full-game parity goal remains incomplete.
+been tested on this host. ROM-free managed builds and exact DSP fixtures also
+run in pull-request CI. The full-game parity goal remains incomplete.
+
+## Sharing and startup
+
+The intended shareable app contains managed game code and the engine runtime,
+with each user's own ROM supplied locally. Desktop currently accepts
+`--smw-rom=/path/to/compatible-rom.sfc` or `SMW_ROM_PATH` and validates the USA
+ROM fingerprint before loading. The browser already has a local ROM picker;
+its experimental native audio playback still needs validation. A desktop ROM
+picker and standalone desktop export presets are pending. The checked-in Web
+export excludes `generated/**`, ROMs, local configuration and caches. Native
+audio reads the ROM directly without requiring preview WAVs or pre-rendered
+music. Private development caches remain ignored and untracked.

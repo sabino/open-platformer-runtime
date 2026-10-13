@@ -15,6 +15,7 @@ public partial class SmwAudio : Node
     private const int PlaybackChunk = 512;
     private const int QueueFrames = 16384;
     private readonly short[] _pcm = new short[1068];
+    private readonly short[] _monitorPcm = new short[1068];
     private readonly Vector2[] _queue = new Vector2[QueueFrames];
     private readonly Vector2[] _playbackChunk = new Vector2[PlaybackChunk];
     private readonly byte[] _pendingCommands = new byte[4];
@@ -37,19 +38,34 @@ public partial class SmwAudio : Node
 
     public SmwRom? Rom { get; set; }
     public bool ClockedByGameplay { get; set; }
+    public SnesDspMonitor Monitor { get; } = new();
+    public enum ChannelMode { Stereo, Mono, LeftToBoth, RightToBoth }
+    public ChannelMode OutputChannels { get; set; }
+    public float LeftOutputGain { get; set; } = 1;
+    public float RightOutputGain { get; set; } = 1;
     public static readonly int[] ProbeSampleIds = [7, 8, 9, 14, 16];
     public int LoadedProbeSampleCount { get { EnsureLoaded(); return _engine != null ? ProbeSampleIds.Length : 0; } }
     public bool HasNativeData { get { EnsureLoaded(); return _engine != null; } }
 
     public readonly record struct PlaybackStatus(bool Loaded, bool Failed, string Error, SmwMusicBank Bank,
         byte Song, bool Paused, long GeneratedFrames, long Skips, long DroppedFrames,
-        int QueuedFrames, int DeviceQueuedFrames, float LeftPeak, float RightPeak, string LastSfx);
+        int QueuedFrames, int DeviceQueuedFrames, float LeftPeak, float RightPeak, string LastSfx, bool OnYoshi);
 
     public PlaybackStatus GetPlaybackStatus() => new(_engine != null, _failed, _lastError,
         _engine?.Bank ?? SmwMusicBank.Level, _engine?.Driver.Song ?? 0, (_engine?.Driver.smw_pause_music ?? 0) != 0,
         _renderedFrames, _underruns, _droppedFrames, _queued,
         Math.Max(0, _playbackCapacity - (_playback?.GetFramesAvailable() ?? 0)),
-        _leftPeak / 32768f, _rightPeak / 32768f, _lastSfx);
+        _leftPeak / 32768f, _rightPeak / 32768f, _lastSfx, (_engine?.Driver.smw_player_on_yoshi ?? 0) != 0);
+
+    public readonly record struct VoiceStatus(byte Sample, sbyte Left, sbyte Right, int Pitch, byte Envelope, bool Sfx);
+    public VoiceStatus GetVoiceStatus(int voice)
+    {
+        if (_engine == null || (uint)voice >= 8) return default;
+        var dsp = _engine.Dsp;
+        return new(dsp.ReadRegister(voice * 16 + 4), unchecked((sbyte)dsp.ReadRegister(voice * 16)),
+            unchecked((sbyte)dsp.ReadRegister(voice * 16 + 1)), dsp.ReadRegister(voice * 16 + 2) | (dsp.ReadRegister(voice * 16 + 3) & 63) << 8,
+            dsp.ReadRegister(voice * 16 + 8), (_engine.Driver.ClaimedVoiceMask & (1 << voice)) != 0);
+    }
 
     // Application volume is deliberately outside the raw, reference-tested PCM boundary.
     public float PlaybackVolumeDb
@@ -153,7 +169,7 @@ public partial class SmwAudio : Node
             var count = checked((int)(target - _engine.Dsp.GeneratedFrames));
             if (count > _pcm.Length / 2) throw new NotSupportedException("Audio frame rate is below the supported PCM block capacity");
             var started = Stopwatch.GetTimestamp();
-            _engine.Generate(_pcm.AsSpan(0, count * 2));
+            _engine.Generate(_pcm.AsSpan(0, count * 2), Monitor.Enabled ? _monitorPcm.AsSpan(0, count * 2) : default, Monitor);
             _renderMilliseconds += Stopwatch.GetElapsedTime(started).TotalMilliseconds;
             _renderedFrames += count;
             _leftPeak = _rightPeak = 0;
@@ -164,7 +180,17 @@ public partial class SmwAudio : Node
                 if (_queued == QueueFrames) { _read = (_read + 1) % QueueFrames; _queued--; _droppedFrames++; }
                 // Every s16 / 32768 value is exactly representable as float32.
                 // Device resampling, bus effects and volume are outside the raw PCM boundary.
-                _queue[_write] = new Vector2(_pcm[i*2] / 32768.0f, _pcm[i*2+1] / 32768.0f);
+                var sink = Monitor.Enabled ? _monitorPcm : _pcm;
+                var l = sink[i * 2] / 32768f * Math.Clamp(LeftOutputGain, 0, 2);
+                var r = sink[i * 2 + 1] / 32768f * Math.Clamp(RightOutputGain, 0, 2);
+                (l, r) = OutputChannels switch
+                {
+                    ChannelMode.Mono => ((l + r) * 0.5f, (l + r) * 0.5f),
+                    ChannelMode.LeftToBoth => (l, l),
+                    ChannelMode.RightToBoth => (r, r),
+                    _ => (l, r),
+                };
+                _queue[_write] = new Vector2(Math.Clamp(l, -1, 1), Math.Clamp(r, -1, 1));
                 _write = (_write + 1) % QueueFrames; _queued++;
             }
         }
@@ -213,6 +239,14 @@ public partial class SmwAudio : Node
     public void PlayPlayerHurt() => Trigger("hurt",0,4);
     public void PlayDeath() { _lastSfx="death"; PlaySong(SmwMusicBank.Level,9); }
     public void PlayCourseClear() { _lastSfx="course_clear"; PlaySong(SmwMusicBank.Level,12); }
+    public void PlayCircleClose() { _lastSfx="circle_close"; PlaySong(SmwMusicBank.Level,0x11); }
+    public void SetYoshiMounted(bool mounted) => Trigger(mounted ? "yoshi_drums_on" : "yoshi_drums_off", 1, mounted ? (byte)2 : (byte)3);
+    public void PlayRawSfx(int port, byte command, string name)
+    {
+        var valid = port switch { 0 => command is >= 1 and <= 42 or 0x80, 1 => command is >= 1 and <= 4, 3 => command is >= 1 and <= 52, _ => false };
+        if (!valid) throw new ArgumentOutOfRangeException(nameof(command), "Unsupported original sound command");
+        Trigger(name, port, command);
+    }
 
     public bool PlayNamedSfx(string name)
     {
@@ -299,6 +333,7 @@ public partial class SmwAudio : Node
     {
         EnsureLoaded();
         return $"loaded={(_engine!=null?1:0)} failed={(_failed?1:0)} source={_source} backend=native_dsp samples={LoadedProbeSampleCount} voices=8 " +
+            $"monitor={(Monitor.Enabled ? 1 : 0)} output_channels={OutputChannels} left_gain={LeftOutputGain:0.00} right_gain={RightOutputGain:0.00} " +
             $"music={(_engine?.Driver.Song??0):X2} simulation_frames={_frames} generated_frames={_renderedFrames} queued_frames={_queued} " +
             $"playback_skips={_underruns} dropped_frames={_droppedFrames} queued_ms={_queued*1000.0/SampleRate:0.00} " +
             $"device_queued_frames={Math.Max(0,_playbackCapacity-(_playback?.GetFramesAvailable()??0))} " +
