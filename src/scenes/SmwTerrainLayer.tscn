@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/scripts/SmwTerrainLayer.cs" id="1_terrain"]
+
+[node name="Terrain" type="TileMapLayer"]
+z_index = -10
+texture_filter = 1
+collision_enabled = false
+navigation_enabled = false
+occlusion_enabled = false
+script = ExtResource("1_terrain")

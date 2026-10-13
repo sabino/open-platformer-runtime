@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/project-env.sh"
 
 HOST="${SMW_DEBUG_RCON_HOST:-127.0.0.1}"
 PORT="${SMW_DEBUG_RCON_PORT:-4600}"

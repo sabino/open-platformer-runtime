@@ -268,7 +268,7 @@ public static class AssetContractCheck
         var variants = RequiredArray(palette, "variants").Select(variant => Required(variant, "name").GetString() ?? "").ToArray();
         Check(variants.SequenceEqual(["mario", "luigi", "fire_mario", "fire_luigi"]), "player palette variants mismatch");
         var basePalette = RequiredArray(palette, "snes_bgr555").Select(value => value.GetInt32()).Take(8).ToArray();
-        Check(basePalette.SequenceEqual([0x0000, 0x7FDD, 0x0000, 0x0D71, 0x1E9B, 0x3B7F, 0x635F, 0x581D]), "player base palette prefix mismatch");
+        Check(basePalette.SequenceEqual([0x0000, 0x7FFF, 0x0000, 0x0D71, 0x1E9B, 0x3B7F, 0x635F, 0x581D]), "player base palette prefix mismatch (original OBJ white is 0x7FFF)");
 
         var tables = Required(root, "oam_tables");
         CheckSourceAddress(tables, "player_xy_disp_index_index", "0x00DCEC");

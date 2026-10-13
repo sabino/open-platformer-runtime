@@ -1,5 +1,10 @@
 # Godot Port Plan
 
+The active complete-game plan is [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md).
+It defines the original-ROM comparison loop, TAS contract, source research,
+assumption audit, milestones, and exact completion criteria. The first-slice
+notes below are historical context.
+
 The native C++ SMW repository is only a moving reference. This repo owns the Godot project and must not depend on files from the native repo after importing or translating specific behavior.
 
 ## Milestone 1

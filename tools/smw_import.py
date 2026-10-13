@@ -351,10 +351,6 @@ def calc_level_len(rom: Rom, addr: int) -> int:
         obj_id = (b1 >> 4) | ((b0 & 0x60) >> 1)
         if obj_id == 0 and b2 == 0:
             addr += 1
-        elif obj_id in (0x22, 0x23):
-            addr += 1
-        elif obj_id in (0x27, 0x29):
-            addr += 2
     return addr - start
 
 
@@ -480,12 +476,6 @@ def parse_level_objects(raw: bytes, header: dict[str, Any], layer_index: int = 0
                     "lunar_magic_secondary": (b1 >> 1) & 1,
                 }
             )
-        elif obj_id in (0x22, 0x23):
-            extra.append(raw[index])
-            index += 1
-        elif obj_id in (0x27, 0x29):
-            extra.extend([raw[index], raw[index + 1]])
-            index += 2
         objects.append(
             {
                 "sequence": sequence,
@@ -670,7 +660,7 @@ def extract_player_oam_tables(rom: Rom) -> dict[str, Any]:
 
 
 def build_player_sprite_palette_words(rom: Rom, player: int = 0) -> list[int]:
-    palette = [PALETTE_BLACK, PALETTE_WHITE] + [PALETTE_BLACK] * 14
+    palette = [PALETTE_BLACK, 0x7FFF] + [PALETTE_BLACK] * 14
     copy_palette_words(palette, 0, 2, rom.get_words(OBJECT_PALETTE_ADDR + 4 * 0x0C, 6))
     player_index = max(0, min(player, 3))
     copy_palette_words(palette, 0, 6, rom.get_words(PLAYER_PALETTE_ADDR + player_index * 0x14, 10))
@@ -722,40 +712,15 @@ def patch_mask_rows(data: bytearray, begin: int, end: int) -> None:
         offset += 2
 
 
-def patch_sparse_mask_rows(data: bytearray, ranges: list[tuple[int, int]]) -> None:
-    existing = 0
-    for begin, end in ranges:
-        offset = begin
-        while offset < end:
-            if (offset & 0x10) == 0:
-                offset += 0x10
-                continue
-            if offset + 1 < len(data):
-                existing |= data[offset + 1]
-            offset += 2
-    if existing != 0:
-        return
-    for begin, end in ranges:
-        patch_mask_rows(data, begin, end)
-
-
-def patch_gfx08_mask_tiles(data: bytearray) -> None:
-    for tile in (
-        0x37, 0x38, 0x39, 0x3A, 0x3B, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x56, 0x57,
-        0x58, 0x59, 0x5A, 0x5B, 0x7A, 0x7B, 0x60, 0x70, 0x6E, 0x6F, 0x7E, 0x7F,
-    ):
-        begin = tile * 32 + 0x10
-        patch_mask_rows(data, begin, begin + 0x10)
-
-
-def apply_gfx_mask_fixes(data: bytes, gfx_id: int) -> bytes:
+def apply_gfx_mask_fixes(data: bytes, gfx_id: int, tileset: int = 0) -> bytes:
+    # Vanilla UploadGFXFile ($00AA6B). GFX08's extra color plane depends on
+    # the active tileset, rather than a fixed subset of tiles.
     patched = bytearray(data)
     if gfx_id in (0x01, 0x17, 0x31):
-        patch_sparse_mask_rows(patched, [(0x10, 0x40), (0x210, 0x240)])
-    elif gfx_id == 0x1E:
+        for begin, end in ((0x10, 0x40), (0x210, 0x240)):
+            patch_mask_rows(patched, begin, end)
+    elif gfx_id == 0x1E or (gfx_id == 0x08 and tileset >= 0x11):
         patch_mask_rows(patched, 0x10, 0x1000)
-    elif gfx_id == 0x08:
-        patch_gfx08_mask_tiles(patched)
     return bytes(patched)
 
 
@@ -854,7 +819,7 @@ def build_vanilla_level_palette_words(rom: Rom, header: dict[str, Any], player: 
     palette = [0] * 256
     for row in range(16):
         palette[row * 16] = PALETTE_BLACK
-        palette[row * 16 + 1] = PALETTE_WHITE
+        palette[row * 16 + 1] = PALETTE_WHITE if row < 8 else 0x7FFF
 
     back_area_color = rom.get_word(BACK_AREA_COLOR_ADDR + int(header["background_color"]) * 2)
 
@@ -967,12 +932,14 @@ def graphics_file_address(rom: Rom, gfx_id: int) -> int:
     return (bank << 16) | (hi << 8) | lo
 
 
-def decompress_graphics_file(rom: Rom, gfx_id: int) -> tuple[bytes, int, int]:
+def decompress_graphics_file(rom: Rom, gfx_id: int, tileset: int = 0) -> tuple[bytes, int, int]:
+    if gfx_id in (0x27, 0x28, 0x29, 0x2A, 0x2B, 0x2F):
+        raise ImportErrorWithExit(f"GFX{gfx_id:02X} is not normal planar level graphics")
     addr = graphics_file_address(rom, gfx_id)
     data, compressed_len = smw_decomp(rom, addr)
     if 0 <= gfx_id < len(NORMAL_GFX_3BPP_EXPAND) and NORMAL_GFX_3BPP_EXPAND[gfx_id]:
         data = expand_3bpp_to_4bpp(data)
-        data = apply_gfx_mask_fixes(data, gfx_id)
+        data = apply_gfx_mask_fixes(data, gfx_id, tileset)
     if len(data) % 32 != 0:
         raise ImportErrorWithExit(f"GFX{gfx_id:02X} decompressed to non-4bpp length {len(data)}")
     return data, addr, compressed_len
@@ -1068,7 +1035,7 @@ def level_fg_bg_vram(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[b
     uploads: list[dict[str, Any]] = []
     gfx_ids, source = resolve_fg_bg_gfx_ids(rom, level_id, header)
     for slot, gfx_id in enumerate(gfx_ids):
-        data, addr, compressed_len = decompress_graphics_file(rom, gfx_id)
+        data, addr, compressed_len = decompress_graphics_file(rom, gfx_id, int(header["tileset"]))
         dst = [0x3000, 0x2000, 0x1000, 0x0000][slot]
         copy_len = min(0x1000, len(data))
         vram[dst : dst + copy_len] = data[:copy_len]
@@ -1092,7 +1059,7 @@ def level_sprite_vram(rom: Rom, level_id: int, header: dict[str, Any]) -> tuple[
     uploads: list[dict[str, Any]] = []
     gfx_ids, source = resolve_sprite_gfx_ids(rom, level_id, header)
     for slot, gfx_id in enumerate(gfx_ids):
-        data, addr, compressed_len = decompress_graphics_file(rom, gfx_id)
+        data, addr, compressed_len = decompress_graphics_file(rom, gfx_id, int(header["tileset"]))
         dst = [0x3000, 0x2000, 0x1000, 0x0000][slot]
         copy_len = min(0x1000, len(data))
         vram[dst : dst + copy_len] = data[:copy_len]
@@ -2749,11 +2716,12 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
     for name, pointer_addr in {"gfx32": 0x00B8D8, "gfx33": 0x00B88B}.items():
         gfx_addr = 0x080000 | rom.get_word(pointer_addr)
         gfx_data, compressed_len = smw_decomp(rom, gfx_addr)
+        atlas_data = expand_3bpp_to_4bpp(gfx_data) if name == "gfx33" else gfx_data
         gfx_path = out_dir / "gfx" / f"{name}.bin"
         atlas_variants = []
         for palette_index, palette_rgb in enumerate(player_palette_rgbs):
             atlas_path = out_dir / "player" / f"{name}_player_palette{palette_index}.png"
-            atlas = write_4bpp_atlas_png(atlas_path, gfx_data, palette_rgb)
+            atlas = write_4bpp_atlas_png(atlas_path, atlas_data, palette_rgb)
             atlas["file"] = rel(atlas_path, out_dir)
             atlas["palette_variant"] = palette_index
             atlas["palette_name"] = player_palette_variants[palette_index]["name"]
@@ -2763,7 +2731,7 @@ def extract_global_assets(rom: Rom, out_dir: Path) -> dict[str, Any]:
             "source_addr": f"0x{gfx_addr:06X}",
             "compressed_length": compressed_len,
             "decompressed_length": len(gfx_data),
-            "format": "snes_4bpp_planar",
+            "format": "snes_3bpp_planar" if name == "gfx33" else "snes_4bpp_planar",
             "sha1": write_bin(gfx_path, gfx_data),
             "atlas_png": atlas_variants[0],
             "atlas_pngs": atlas_variants,

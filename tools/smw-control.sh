@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/project-env.sh"
 
-COMMAND_FILE="${SMW_DEBUG_COMMAND_FILE:-/tmp/smw-godot-debug.commands}"
+COMMAND_FILE="${SMW_DEBUG_COMMAND_FILE:-$SMW_PROJECT_ROOT/.godot_local/debug/commands}"
 
 if [[ "$#" -eq 0 ]]; then
   cat >&2 <<EOF

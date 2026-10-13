@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/tools/project-env.sh"
 ROM_PATH="${SMW_ROM_PATH:-}"
 OUT_DIR="${SMW_IMPORT_OUT_DIR:-generated/smw}"
 EXIT_DEPTH="${SMW_IMPORT_EXIT_DEPTH:-1}"
@@ -187,3 +188,5 @@ fi
 printf 'import-smw: rom=%s out=%s levels=%s exit_targets=%s exit_depth=%s\n' \
   "$ROM_PATH" "$OUT_DIR" "${LEVELS[*]}" "$INCLUDE_EXIT_TARGETS" "$EXIT_DEPTH" >&2
 "${args[@]}"
+smw_prepare_dotnet
+dotnet run --project "$ROOT/tools/SmwAssetTool/SmwAssetTool.csproj" -- extract-audio-native "$ROM_PATH" "$OUT_DIR"

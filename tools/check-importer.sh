@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/project-env.sh"
+smw_prepare_dotnet
+cd "$SMW_PROJECT_ROOT"
 
 ROM_PATH="${1:-${SMW_ROM_PATH:-}}"
 OUT_DIR="${2:-generated/smw}"
@@ -86,7 +89,7 @@ player_graphics = json.loads((out_dir / "player" / "player_graphics.json").read_
 assert player_graphics["status"] == "partial"
 assert player_graphics["categories"]["states_pending_direct_oam_port"], player_graphics
 assert player_graphics["palette"]["layout"].startswith("full OBJ palette row 8"), player_graphics["palette"]
-assert player_graphics["palette"]["snes_bgr555"][:8] == [0x0000, 0x7FDD, 0x0000, 0x0D71, 0x1E9B, 0x3B7F, 0x635F, 0x581D]
+assert player_graphics["palette"]["snes_bgr555"][:8] == [0x0000, 0x7FFF, 0x0000, 0x0D71, 0x1E9B, 0x3B7F, 0x635F, 0x581D]
 assert [variant["name"] for variant in player_graphics["palette"]["variants"]] == ["mario", "luigi", "fire_mario", "fire_luigi"]
 assert player_graphics["palette"]["variants"][2]["snes_bgr555"][6:16] != player_graphics["palette"]["snes_bgr555"][6:16]
 assert player_graphics["tile_pointer_tables"]["walking_pose_count"] == [1, 2, 2, 2]

@@ -1,1000 +1,339 @@
 using Godot;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using FileAccess = Godot.FileAccess;
+using OpenPlatformerRuntime.Audio;
+using OpenPlatformerRuntime.SmwAssets;
 
 namespace OpenPlatformerRuntime;
 
+/// <summary>Godot device sink for native, integer SMW sequencing and S-DSP PCM.</summary>
 public partial class SmwAudio : Node
 {
     private const int SampleRate = 32000;
-    private const int FramesPerSecond = 60;
-    private const int InstrumentTable = 0x5570;
-    private const int MaxVoices = 10;
-    private const float GeneratorBufferLengthSeconds = 0.25f;
-    private const int GeneratorBufferFrames = (int)(SampleRate * GeneratorBufferLengthSeconds);
-    private const int TargetQueuedAudioFrames = 1536;
-    private const int AudioMixChunkFrames = 512;
-    private const int MaxAudioMixChunksPerProcess = 4;
-    private readonly Dictionary<int, DecodedSample> _samples = [];
-    private readonly List<Voice> _voices = [];
-    private byte[] _spcRam = new byte[0x10000];
+    private const int PlaybackChunk = 512;
+    private const int QueueFrames = 16384;
+    private readonly short[] _pcm = new short[1068];
+    private readonly Vector2[] _queue = new Vector2[QueueFrames];
+    private readonly Vector2[] _playbackChunk = new Vector2[PlaybackChunk];
+    private readonly byte[] _pendingCommands = new byte[4];
+    private SmwAudioData? _data;
+    private NativeSmwAudio? _engine;
     private AudioStreamPlayer? _player;
     private AudioStreamGeneratorPlayback? _playback;
-    private Vector2[] _mixBuffer = [];
-    private bool _loaded;
-    private IReadOnlyList<MusicEvent> _musicPattern = Array.Empty<MusicEvent>();
-    private int _musicLoopFrames;
-    private int _musicFrame;
-    private int _musicEventIndex;
-    private double _musicFrameAccumulator;
-    private bool _musicPlaying;
-    private int _debugMixFrames;
-    private int _debugMixCalls;
-    private double _debugMixMilliseconds;
-    private int _debugLastMixFrames;
-    private double _debugLastMixMilliseconds;
-    private string _lastSfxName = "none";
-    private int _lastSfxPort;
-    private int _lastSfxCommand;
-    private bool _lastSfxNativeStream;
-    private int _lastSfxPointer;
-    private int _lastSfxNoteCount;
+    private int _read, _write, _queued;
+    private long _frames, _droppedFrames, _underruns, _renderedFrames;
+    private long _lastTriggerClock, _lastKeyOnClock = -1;
+    private int _playbackCapacity;
+    private double _renderMilliseconds;
+    private bool _loaded, _failed;
+    private SmwMusicBank? _pendingBank;
+    private int? _sampleProbe;
+    private string _source = "none", _lastSfx = "none";
+    private string _lastError = "";
+    private int _leftPeak, _rightPeak;
+    private int _lastPort, _lastCommand;
 
+    public SmwRom? Rom { get; set; }
+    public bool ClockedByGameplay { get; set; }
     public static readonly int[] ProbeSampleIds = [7, 8, 9, 14, 16];
+    public int LoadedProbeSampleCount { get { EnsureLoaded(); return _engine != null ? ProbeSampleIds.Length : 0; } }
+    public bool HasNativeData { get { EnsureLoaded(); return _engine != null; } }
+
+    public readonly record struct PlaybackStatus(bool Loaded, bool Failed, string Error, SmwMusicBank Bank,
+        byte Song, bool Paused, long GeneratedFrames, long Skips, long DroppedFrames,
+        int QueuedFrames, int DeviceQueuedFrames, float LeftPeak, float RightPeak, string LastSfx);
+
+    public PlaybackStatus GetPlaybackStatus() => new(_engine != null, _failed, _lastError,
+        _engine?.Bank ?? SmwMusicBank.Level, _engine?.Driver.Song ?? 0, (_engine?.Driver.smw_pause_music ?? 0) != 0,
+        _renderedFrames, _underruns, _droppedFrames, _queued,
+        Math.Max(0, _playbackCapacity - (_playback?.GetFramesAvailable() ?? 0)),
+        _leftPeak / 32768f, _rightPeak / 32768f, _lastSfx);
+
+    // Application volume is deliberately outside the raw, reference-tested PCM boundary.
+    public float PlaybackVolumeDb
+    {
+        get => _player?.VolumeDb ?? 0;
+        set { EnsureLoaded(); if (_player != null) _player.VolumeDb = Math.Clamp(value, -60, 6); }
+    }
 
     public override void _Ready()
     {
         EnsureLoaded();
-        GD.Print($"smw-audio: internal_apu=1 samples={LoadedProbeSampleCount}");
+        GD.Print($"smw-audio: native_dsp=1 source={_source} samples={LoadedProbeSampleCount} voices=8 samplerate={SampleRate} cpu_emulation=0");
     }
 
-    public override void _Process(double delta)
+    // The physics frame defines event timestamps and sample count. Process delta
+    // and device consumption never alter the native audio simulation.
+    public override void _PhysicsProcess(double delta)
     {
-        StepMusicSequencer(delta);
-        FillGeneratorBuffer();
+        if (!ClockedByGameplay) AdvanceSimulationFrame();
     }
-
+    public override void _Process(double delta) => DrainPlaybackQueue();
     public override void _ExitTree()
     {
-        _voices.Clear();
         _player?.Stop();
-    }
-
-    public int LoadedProbeSampleCount =>
-        CountLoadedProbeSamples();
-
-    public void PlayMenuStart()
-    {
-        PlayNativeSfxProbe(
-            "menu_start",
-            port: 3,
-            command: 0x29,
-            [new SfxProbeNote(9, 0x80, 0x0C, 0.38f, 0, 0.0f)]);
-    }
-
-    public void PlayJump()
-    {
-        PlayNativeSfxProbe(
-            "jump",
-            port: 1,
-            command: 0x01,
-            [new SfxProbeNote(8, 0xB2, 0x30, 0.52f, 4, 0.0f)]);
-    }
-
-    public void PlaySpinJump()
-    {
-        PlayNativeSfxProbe(
-            "spin_jump",
-            port: 1,
-            command: 0x04,
-            [
-                new SfxProbeNote(7, 0xA4, 0x0C, 0.42f, 4, 0.0f),
-                new SfxProbeNote(7, 0xA4, 0x0C, 0.42f, 0x10, 0.0f),
-            ]);
-    }
-
-    public void PlayCoin()
-    {
-        PlayNativeSfxProbe(
-            "coin",
-            port: 3,
-            command: 0x01,
-            [new SfxProbeNote(7, 0x9E, 0x08, 0.30f, 0, 0.0f)]);
-    }
-
-    public void PlayDragonCoin()
-    {
-        PlayNativeSfxProbe(
-            "dragon_coin",
-            port: 3,
-            command: 0x01,
-            [
-                new SfxProbeNote(7, 0x9E, 0x08, 0.26f, 0, -0.10f),
-                new SfxProbeNote(7, 0xA7, 0x0A, 0.24f, 4, 0.10f),
-            ]);
-    }
-
-    public void PlayOneUp()
-    {
-        PlayNativeSfxProbe(
-            "one_up",
-            port: 3,
-            command: 0x02,
-            [
-                new SfxProbeNote(12, 0x60, 0x08, 0.24f, 0, -0.12f),
-                new SfxProbeNote(12, 0x64, 0x08, 0.24f, 5, -0.04f),
-                new SfxProbeNote(12, 0x67, 0x08, 0.24f, 10, 0.04f),
-                new SfxProbeNote(12, 0x70, 0x10, 0.26f, 15, 0.12f),
-            ]);
-    }
-
-    public void PlayStomp(int rewardIndex)
-    {
-        var clamped = Math.Clamp(rewardIndex, 0, 6);
-        PlayNativeSfxProbe(
-            "stomp",
-            port: 1,
-            command: 0x13 + clamped,
-            [new SfxProbeNote(7, 0x78 + clamped * 2, 0x08, 0.36f, 0, 0.0f)]);
-    }
-
-    public void PlayBlockBreak()
-    {
-        PlayNativeSfxProbe(
-            "block_break",
-            port: 1,
-            command: 0x08,
-            [
-                new SfxProbeNote(7, 0x84, 0x06, 0.30f, 0, -0.18f),
-                new SfxProbeNote(7, 0x78, 0x06, 0.28f, 3, 0.18f),
-            ]);
-    }
-
-    public void PlayBlockReward()
-    {
-        PlayNativeSfxProbe(
-            "powerup_reward",
-            port: 3,
-            command: 0x0A,
-            [
-                new SfxProbeNote(12, 0x68, 0x08, 0.22f, 0, -0.08f),
-                new SfxProbeNote(12, 0x70, 0x10, 0.24f, 6, 0.08f),
-            ]);
-    }
-
-    public void PlayFireball()
-    {
-        PlayNativeSfxProbe(
-            "fireball",
-            port: 3,
-            command: 0x06,
-            [
-                new SfxProbeNote(7, 0x8E, 0x08, 0.28f, 0, -0.10f),
-                new SfxProbeNote(7, 0x84, 0x06, 0.24f, 4, 0.12f),
-            ]);
-    }
-
-    public void PlayPlayerHurt()
-    {
-        PlayNativeSfxProbe(
-            "hurt",
-            port: 1,
-            command: 0x04,
-            [new SfxProbeNote(7, 0x72, 0x0E, 0.32f, 0, 0.0f)]);
-    }
-
-    public void PlayDeath()
-    {
-        PlayNativeSfxProbe(
-            "death",
-            port: 3,
-            command: 0x09,
-            [
-                new SfxProbeNote(12, 0x54, 0x12, 0.20f, 0, -0.08f),
-                new SfxProbeNote(12, 0x50, 0x18, 0.18f, 14, 0.08f),
-            ]);
-    }
-
-    public void PlayCourseClear()
-    {
-        PlayNativeSfxProbe(
-            "course_clear",
-            port: 3,
-            command: 0x17,
-            [new SfxProbeNote(12, 0x70, 0x18, 0.20f, 0, 0.0f)]);
-    }
-
-    public bool PlayNamedSfx(string name)
-    {
-        switch (name.ToLowerInvariant())
-        {
-            case "coin":
-                PlayCoin();
-                return true;
-            case "dragon":
-            case "dragon_coin":
-                PlayDragonCoin();
-                return true;
-            case "oneup":
-            case "one-up":
-            case "1up":
-                PlayOneUp();
-                return true;
-            case "stomp":
-                PlayStomp(0);
-                return true;
-            case "block":
-            case "break":
-            case "block_break":
-                PlayBlockBreak();
-                return true;
-            case "reward":
-            case "powerup":
-                PlayBlockReward();
-                return true;
-            case "fireball":
-            case "fire":
-                PlayFireball();
-                return true;
-            case "hurt":
-                PlayPlayerHurt();
-                return true;
-            case "death":
-                PlayDeath();
-                return true;
-            case "clear":
-            case "course_clear":
-                PlayCourseClear();
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    public bool HasSample(int sampleId)
-    {
-        EnsureLoaded();
-        return _samples.ContainsKey(sampleId);
-    }
-
-    public void PlaySample(int sampleId)
-    {
-        EnsureLoaded();
-        if (!_samples.TryGetValue(sampleId, out var sample))
-        {
-            return;
-        }
-
-        AddVoice(new Voice(sample, step: 1.0, volume: 0.42f, pan: 0.0f, durationSamples: 0, delaySamples: 0));
-    }
-
-    public string PlaySampleProbe(int sampleId)
-    {
-        EnsureLoaded();
-        var available = _samples.ContainsKey(sampleId);
-        if (available)
-        {
-            PlaySample(sampleId);
-        }
-
-        return $"sample={sampleId:X2} available={(available ? 1 : 0)} samples={LoadedProbeSampleCount}";
-    }
-
-    public void PlayMusicPreview(string bankName)
-    {
-        EnsureLoaded();
-        (_musicPattern, _musicLoopFrames) = bankName switch
-        {
-            "Overworld" => (OverworldPreviewPattern, 96),
-            "Credits" => (CreditsPreviewPattern, 128),
-            "Star" => (StarPreviewPattern, 64),
-            _ => (LevelPreviewPattern, 96),
-        };
-
-        _voices.Clear();
-        _musicFrame = 0;
-        _musicEventIndex = 0;
-        _musicFrameAccumulator = 0.0;
-        _musicPlaying = true;
-        TriggerMusicEventsForCurrentFrame();
-        GD.Print($"smw-audio: music_preview={bankName} events={_musicPattern.Count} loop_frames={_musicLoopFrames}");
-    }
-
-    public void StopMusicPreview()
-    {
-        _musicPlaying = false;
-        _voices.Clear();
-    }
-
-    public string DebugStatus()
-    {
-        var framesAvailable = _playback?.GetFramesAvailable() ?? -1;
-        var averageMixMilliseconds = _debugMixCalls > 0 ? _debugMixMilliseconds / _debugMixCalls : 0.0;
-        return $"loaded={(_loaded ? 1 : 0)} samples={LoadedProbeSampleCount} voices={_voices.Count} " +
-            $"music={(_musicPlaying ? 1 : 0)} music_frame={_musicFrame} events={_musicPattern.Count} " +
-            $"loop_frames={_musicLoopFrames} frames_available={framesAvailable} " +
-            $"mix_chunk={AudioMixChunkFrames} mix_max_chunks={MaxAudioMixChunksPerProcess} " +
-            $"mix_frames={_debugMixFrames} mix_calls={_debugMixCalls} mix_ms={_debugMixMilliseconds:0.000} " +
-            $"mix_last_frames={_debugLastMixFrames} mix_last_ms={_debugLastMixMilliseconds:0.000} mix_avg_ms={averageMixMilliseconds:0.000} " +
-            $"last_sfx={_lastSfxName} last_sfx_port={_lastSfxPort} last_sfx_cmd={_lastSfxCommand:X2} " +
-            $"last_sfx_native={(_lastSfxNativeStream ? 1 : 0)} last_sfx_ptr={_lastSfxPointer:X4} last_sfx_notes={_lastSfxNoteCount}";
+        _playback?.Dispose();
+        _playback = null;
     }
 
     private void EnsureLoaded()
     {
-        if (_loaded)
-        {
-            return;
-        }
-
+        if (_loaded) return;
         _loaded = true;
-        SetupGenerator();
-        LoadSpcSamples();
+        try
+        {
+            if (Rom != null) { _data = SmwAudioData.FromRom(Rom); _source = "rom"; }
+            else
+            {
+                var path = SmwAssetPaths.Path("audio/native_audio_data.bin");
+                if (FileAccess.FileExists(path)) { _data = SmwAudioData.FromBinary(FileAccess.GetFileAsBytes(path)); _source = "native-cache"; }
+                else
+                {
+                    string[] names = ["spc_engine", "spc_samples", "spc_level_music_bank", "spc_overworld_music_bank", "spc_credits_music_bank"];
+                    var banks = new byte[5][];
+                    for (var i = 0; i < names.Length; i++)
+                    {
+                        var bankPath = SmwAssetPaths.Path($"audio/{names[i]}.bin");
+                        if (!FileAccess.FileExists(bankPath)) return;
+                        banks[i] = FileAccess.GetFileAsBytes(bankPath);
+                    }
+                    _data = SmwAudioData.FromUploadBanks("legacy-unverified-bank-cache", banks[0], banks[1], banks[2], banks[3], banks[4]);
+                    _source = "legacy-bank-cache";
+                }
+            }
+            _engine = new NativeSmwAudio(_data);
+            _engine.Driver.RegisterWritten += ObserveRegisterWrite;
+            var stream = new AudioStreamGenerator
+            {
+                MixRateMode = AudioStreamGenerator.AudioStreamGeneratorMixRate.Custom,
+                MixRate = SampleRate,
+                BufferLength = 0.1f,
+            };
+            _player = new AudioStreamPlayer { Name = "NativeSmwPcm", Stream = stream, Bus = "Master" };
+            AddChild(_player); _player.Play();
+            _playback = _player.GetStreamPlayback() as AudioStreamGeneratorPlayback;
+            _playbackCapacity = _playback?.GetFramesAvailable() ?? 0;
+        }
+        catch (Exception exception)
+        {
+            _failed = true;
+            _lastError = exception.Message;
+            GD.PrintErr($"smw-audio: load_failed={exception.Message}");
+        }
     }
 
-    private int CountLoadedProbeSamples()
+    public void AdvanceSimulationFrame()
     {
         EnsureLoaded();
-        var count = 0;
-        foreach (var sampleId in ProbeSampleIds)
+        if (_engine == null || _failed) return;
+        try
         {
-            if (_samples.ContainsKey(sampleId))
+            var rate = Engine.PhysicsTicksPerSecond;
+            var clock = NativeSmwAudio.FrameToClock(_frames, rate);
+            if (_pendingBank != null)
             {
-                count++;
+                _engine.ScheduleMusic(clock, _pendingBank.Value, _pendingCommands[2]);
+                _pendingBank = null;
             }
-        }
-
-        return count;
-    }
-
-    private void SetupGenerator()
-    {
-        var stream = new AudioStreamGenerator
-        {
-            MixRateMode = AudioStreamGenerator.AudioStreamGeneratorMixRate.Custom,
-            MixRate = SampleRate,
-            BufferLength = GeneratorBufferLengthSeconds,
-        };
-        _player = new AudioStreamPlayer
-        {
-            Name = "SmwInternalApu",
-            Stream = stream,
-            Bus = "Master",
-        };
-        AddChild(_player);
-        _player.Play();
-        _playback = _player.GetStreamPlayback() as AudioStreamGeneratorPlayback;
-    }
-
-    private void LoadSpcSamples()
-    {
-        LoadSpcUploadIntoRam(SmwAssetPaths.Path("audio/spc_engine.bin"), _spcRam);
-        LoadSpcUploadIntoRam(SmwAssetPaths.Path("audio/spc_samples.bin"), _spcRam);
-        foreach (var sampleId in new[] { 7, 8, 9, 14, 16 })
-        {
-            var decoded = DecodeSampleFromDirectory(_spcRam, sampleId);
-            if (decoded.Pcm.Length > 0)
+            else _engine.ScheduleCommand(clock, 2, _pendingCommands[2]);
+            _engine.ScheduleCommand(clock, 0, _pendingCommands[0]);
+            _engine.ScheduleCommand(clock, 1, _pendingCommands[1]);
+            _engine.ScheduleCommand(clock, 3, _pendingCommands[3]);
+            Array.Clear(_pendingCommands);
+            if (_sampleProbe is int sample)
             {
-                _samples[sampleId] = decoded;
+                _sampleProbe = null;
+                int[] registers = [0x74,0x72,0x73,0x75,0x77,0x70,0x71,0x5C,0x4C];
+                byte[] values = [(byte)sample,0,16,0,127,56,56,0,128];
+                for (var i=0;i<registers.Length;i++) _engine.ScheduleRegisterWrite(clock,registers[i],values[i]);
             }
-        }
-    }
-
-    private static void LoadSpcUploadIntoRam(string resourcePath, byte[] ram)
-    {
-        if (!FileAccess.FileExists(resourcePath))
-        {
-            return;
-        }
-
-        using var file = FileAccess.Open(resourcePath, FileAccess.ModeFlags.Read);
-        if (file == null)
-        {
-            return;
-        }
-
-        ParseSpcUploadIntoRam(file.GetBuffer((long)file.GetLength()), ram);
-    }
-
-    private static void ParseSpcUploadIntoRam(byte[] payload, byte[] ram)
-    {
-        var offset = 0;
-        while (offset + 2 <= payload.Length)
-        {
-            var count = payload[offset] | (payload[offset + 1] << 8);
-            offset += 2;
-            if (count == 0)
-            {
-                return;
-            }
-
-            if (offset + 2 + count > payload.Length)
-            {
-                return;
-            }
-
-            var target = payload[offset] | (payload[offset + 1] << 8);
-            offset += 2;
+            var target = (++_frames * SampleRate) / rate;
+            var count = checked((int)(target - _engine.Dsp.GeneratedFrames));
+            if (count > _pcm.Length / 2) throw new NotSupportedException("Audio frame rate is below the supported PCM block capacity");
+            var started = Stopwatch.GetTimestamp();
+            _engine.Generate(_pcm.AsSpan(0, count * 2));
+            _renderMilliseconds += Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            _renderedFrames += count;
+            _leftPeak = _rightPeak = 0;
             for (var i = 0; i < count; i++)
             {
-                ram[(target + i) & 0xFFFF] = payload[offset + i];
+                _leftPeak = Math.Max(_leftPeak, Math.Abs((int)_pcm[i * 2]));
+                _rightPeak = Math.Max(_rightPeak, Math.Abs((int)_pcm[i * 2 + 1]));
+                if (_queued == QueueFrames) { _read = (_read + 1) % QueueFrames; _queued--; _droppedFrames++; }
+                // Every s16 / 32768 value is exactly representable as float32.
+                // Device resampling, bus effects and volume are outside the raw PCM boundary.
+                _queue[_write] = new Vector2(_pcm[i*2] / 32768.0f, _pcm[i*2+1] / 32768.0f);
+                _write = (_write + 1) % QueueFrames; _queued++;
             }
-
-            offset += count;
         }
-    }
-
-    private static DecodedSample DecodeSampleFromDirectory(byte[] ram, int sampleId)
-    {
-        var entry = 0x8000 + sampleId * 4;
-        var start = ram[entry] | (ram[entry + 1] << 8);
-        var loop = ram[entry + 2] | (ram[entry + 3] << 8);
-        return DecodeBrrSample(ram, sampleId, start, loop);
-    }
-
-    private static DecodedSample DecodeBrrSample(byte[] ram, int sampleId, int start, int loop)
-    {
-        var samples = new List<float>();
-        var old = 0;
-        var older = 0;
-        var offset = start;
-        while (offset + 9 <= ram.Length)
+        catch (NotSupportedException exception)
         {
-            var command = ram[offset];
-            var shift = command >> 4;
-            var filterId = (command >> 2) & 0x03;
-            for (var i = 0; i < 16; i++)
-            {
-                var packed = ram[offset + 1 + i / 2];
-                var nibble = (packed >> ((i & 1) == 1 ? 0 : 4)) & 0x0F;
-                var sample = (nibble & 7) - (nibble & 8);
-                if (shift <= 12)
-                {
-                    sample = (sample << shift) >> 1;
-                }
-                else
-                {
-                    sample = (sample >> 3) << 12;
-                }
-
-                if (filterId == 1)
-                {
-                    sample += old + ((-old) >> 4);
-                }
-                else if (filterId == 2)
-                {
-                    sample += old * 2 + ((-old * 3) >> 5) - older + (older >> 4);
-                }
-                else if (filterId == 3)
-                {
-                    sample += old * 2 + ((-old * 13) >> 6) - older + ((older * 3) >> 4);
-                }
-
-                sample = Math.Clamp(sample, -0x8000, 0x7FFF);
-                sample = (sample & 0x3FFF) - (sample & 0x4000);
-                older = old;
-                old = sample;
-                samples.Add(Math.Clamp(sample / 16384.0f, -1.0f, 1.0f));
-            }
-
-            offset += 9;
-            if ((command & 1) != 0)
-            {
-                break;
-            }
+            _failed = true;
+            _lastError = exception.Message;
+            GD.PrintErr($"smw-audio: unsupported={exception.Message} {_engine.Driver.DescribeState()}");
         }
-
-        return new DecodedSample(sampleId, start, loop, samples.ToArray());
     }
 
-    private void PlayNativeSfxProbe(string name, int port, int command, IReadOnlyList<SfxProbeNote> fallbackNotes)
+    private void DrainPlaybackQueue()
+    {
+        if (_playback == null) return;
+        _underruns = _playback.GetSkips();
+        while (_queued >= PlaybackChunk && _playback.GetFramesAvailable() >= PlaybackChunk)
+        {
+            for (var i=0;i<PlaybackChunk;i++) _playbackChunk[i] = _queue[(_read+i) % QueueFrames];
+            if (!_playback.PushBuffer(_playbackChunk)) break;
+            _read = (_read + PlaybackChunk) % QueueFrames; _queued -= PlaybackChunk;
+        }
+    }
+
+    private void Trigger(string name, int port, byte command)
     {
         EnsureLoaded();
-        var nativeStream = TryDecodeNativeSfxCommand(port, command, out var notes, out var pointer);
-        if (!nativeStream || notes.Count == 0)
-        {
-            notes = fallbackNotes;
-            pointer = 0;
-            nativeStream = false;
-        }
-
-        RecordSfx(name, port, command, nativeStream, pointer, notes.Count);
-        foreach (var note in notes)
-        {
-            PlayInstrumentNote(note.Instrument, note.Note, note.DurationFrames, note.Volume, note.DelayFrames, note.Pan);
-        }
+        if (_engine == null || _failed) return;
+        _pendingCommands[port] = command;
+        _lastSfx = name; _lastPort = port; _lastCommand = command;
+        _lastTriggerClock = NativeSmwAudio.FrameToClock(_frames, Engine.PhysicsTicksPerSecond);
+        _lastKeyOnClock = -1;
+        GD.Print($"smw-audio: sfx={name} port={port} command={command:X2} native=1 frame={_frames} scheduled_clock={NativeSmwAudio.FrameToClock(_frames, Engine.PhysicsTicksPerSecond)}");
     }
 
-    private void RecordSfx(string name, int port, int command, bool nativeStream, int pointer, int noteCount)
+    // Raw driver ports: 0=$1DF9, 1=$1DFA (jump), 2=$1DFB (music), 3=$1DFC.
+    public void PlayMenuStart() => Trigger("menu_start",3,0x29);
+    public void PlayJump() => Trigger("jump",1,1);
+    public void PlaySpinJump() => Trigger("spin_jump",3,4);
+    public void PlayCoin() => Trigger("coin",3,1);
+    public void PlayDragonCoin() => Trigger("dragon_coin",0,0x1C);
+    public void PlayOneUp() => Trigger("one_up",3,5);
+    public void PlayStomp(int rewardIndex) => Trigger("stomp",0,(byte)(0x13+Math.Clamp(rewardIndex,0,6)));
+    public void PlayBlockBreak() => Trigger("block_break",0,8);
+    public void PlayBlockReward() => Trigger("powerup_reward",3,0x0A);
+    public void PlayFireball() => Trigger("fireball",3,6);
+    public void PlayPlayerHurt() => Trigger("hurt",0,4);
+    public void PlayDeath() { _lastSfx="death"; PlaySong(SmwMusicBank.Level,9); }
+    public void PlayCourseClear() { _lastSfx="course_clear"; PlaySong(SmwMusicBank.Level,12); }
+
+    public bool PlayNamedSfx(string name)
     {
-        _lastSfxName = name;
-        _lastSfxPort = port;
-        _lastSfxCommand = command & 0xFF;
-        _lastSfxNativeStream = nativeStream;
-        _lastSfxPointer = pointer & 0xFFFF;
-        _lastSfxNoteCount = noteCount;
-        GD.Print(
-            $"smw-audio: sfx={name} port={port} command={_lastSfxCommand:X2} " +
-            $"native={(nativeStream ? 1 : 0)} ptr={_lastSfxPointer:X4} notes={noteCount}");
+        switch(name.ToLowerInvariant())
+        {
+            case "coin": PlayCoin(); break;
+            case "dragon": case "dragon_coin": PlayDragonCoin(); break;
+            case "oneup": case "one-up": case "1up": PlayOneUp(); break;
+            case "stomp": PlayStomp(0); break;
+            case "block": case "break": case "block_break": PlayBlockBreak(); break;
+            case "reward": case "powerup": PlayBlockReward(); break;
+            case "fireball": case "fire": PlayFireball(); break;
+            case "hurt": PlayPlayerHurt(); break;
+            case "death": PlayDeath(); break;
+            case "clear": case "course_clear": PlayCourseClear(); break;
+            default: return false;
+        }
+        return true;
     }
 
-    private bool TryDecodeNativeSfxCommand(int port, int command, out IReadOnlyList<SfxProbeNote> notes, out int pointer)
+    public bool HasSample(int sampleId) { EnsureLoaded(); return _engine != null && (uint)sampleId < 20; }
+    public void PlaySample(int sampleId) { if (HasSample(sampleId)) _sampleProbe = sampleId; }
+    public string PlaySampleProbe(int sampleId)
     {
-        notes = Array.Empty<SfxProbeNote>();
-        pointer = 0;
-        var table = port == 3 ? 0x5619 : 0x5681;
-        var commandIndex = command & 0xFF;
-        var tableOffset = table + commandIndex * 2;
-        if (tableOffset + 1 >= _spcRam.Length)
-        {
-            return false;
-        }
-
-        pointer = _spcRam[tableOffset] | (_spcRam[tableOffset + 1] << 8);
-        if (pointer <= 0 || pointer >= _spcRam.Length)
-        {
-            return false;
-        }
-
-        var decoded = new List<SfxProbeNote>();
-        var offset = pointer;
-        var length = 8;
-        var instrument = 7;
-        var volume = 0.34f;
-        var pan = 0.0f;
-        var delay = port == 3 ? 2 : 0;
-        var guard = 0;
-        while (offset >= 0 && offset < _spcRam.Length && guard++ < 192 && decoded.Count < 16)
-        {
-            var streamCommand = _spcRam[offset++];
-            if (streamCommand == 0)
-            {
-                break;
-            }
-
-            if ((streamCommand & 0x80) == 0)
-            {
-                length = Math.Max(1, (int)streamCommand);
-                if (offset >= _spcRam.Length)
-                {
-                    break;
-                }
-
-                streamCommand = _spcRam[offset++];
-                if ((streamCommand & 0x80) == 0)
-                {
-                    var left = streamCommand;
-                    if (offset >= _spcRam.Length)
-                    {
-                        break;
-                    }
-
-                    streamCommand = _spcRam[offset++];
-                    var right = left;
-                    if ((streamCommand & 0x80) == 0)
-                    {
-                        right = streamCommand;
-                        if (offset >= _spcRam.Length)
-                        {
-                            break;
-                        }
-
-                        streamCommand = _spcRam[offset++];
-                    }
-
-                    var leftNorm = Math.Clamp(left / 127.0f, 0.0f, 1.0f);
-                    var rightNorm = Math.Clamp(right / 127.0f, 0.0f, 1.0f);
-                    volume = Math.Clamp((leftNorm + rightNorm) * 0.22f, 0.06f, 0.50f);
-                    pan = Math.Clamp(rightNorm - leftNorm, -0.8f, 0.8f);
-                }
-            }
-
-            if (streamCommand == 0xDA)
-            {
-                if (port == 3)
-                {
-                    do
-                    {
-                        if (offset >= _spcRam.Length)
-                        {
-                            return decoded.Count > 0;
-                        }
-
-                        streamCommand = _spcRam[offset++];
-                    } while ((streamCommand & 0x80) != 0);
-
-                    instrument = streamCommand;
-                }
-                else
-                {
-                    if (offset >= _spcRam.Length)
-                    {
-                        break;
-                    }
-
-                    instrument = _spcRam[offset++];
-                }
-
-                continue;
-            }
-
-            if (streamCommand == 0xDD)
-            {
-                if (offset >= _spcRam.Length)
-                {
-                    break;
-                }
-
-                var note = _spcRam[offset++];
-                decoded.Add(new SfxProbeNote(instrument, note, length, volume, delay, pan));
-                delay += length;
-                offset = Math.Min(_spcRam.Length, offset + 3);
-                continue;
-            }
-
-            if (streamCommand == 0xEB)
-            {
-                offset = Math.Min(_spcRam.Length, offset + 3);
-                continue;
-            }
-
-            if (streamCommand == 0xFF)
-            {
-                break;
-            }
-
-            if ((streamCommand & 0x80) != 0)
-            {
-                decoded.Add(new SfxProbeNote(instrument, streamCommand, length, volume, delay, pan));
-                delay += length;
-            }
-        }
-
-        notes = decoded;
-        return decoded.Count > 0;
+        var available=HasSample(sampleId); if(available) PlaySample(sampleId);
+        return $"sample={sampleId:X2} available={(available?1:0)} samples={LoadedProbeSampleCount}";
     }
-
-    private void PlayInstrumentNote(int instrument, int note, int durationFrames, float volume, int delayFrames, float pan = 0.0f)
+    public void PlaySong(SmwMusicBank bank, byte song)
+    {
+        EnsureLoaded(); if (_engine == null || _failed) return;
+        if (_engine.Driver.smw_pause_music != 0) _pendingCommands[0] = 0x12;
+        _pendingBank=bank; _pendingCommands[2]=song;
+        GD.Print($"smw-audio: song bank={bank} id={song:X2} source={_source}");
+    }
+    public void PlayLevelMusic(int headerMusicIndex)
     {
         EnsureLoaded();
-        var instrumentOffset = InstrumentTable + instrument * 9;
-        if (instrumentOffset + 8 >= _spcRam.Length)
+        if (_data == null) return;
+        try { PlaySong(SmwMusicBank.Level,_data.LevelSong(headerMusicIndex)); }
+        catch (NotSupportedException exception) { GD.PrintErr($"smw-audio: unsupported={exception.Message}"); }
+    }
+    public void PlayMusicPreview(string bankName)
+    {
+        switch(bankName)
         {
-            return;
+            case "Overworld": PlaySong(SmwMusicBank.Overworld,2); break;
+            case "Credits": PlaySong(SmwMusicBank.Credits,1); break;
+            case "Star": PlaySong(SmwMusicBank.Level,13); break;
+            default: PlaySong(SmwMusicBank.Level,2); break;
         }
+        GD.Print($"smw-audio: music_preview={bankName} source=original-sequence");
+    }
+    public void StopMusicPreview()
+    {
+        EnsureLoaded(); if (_engine == null) return;
+        Trigger("pause_music",0,0x11);
+    }
+    public void SetMusicPaused(bool paused) => Trigger(paused ? "pause_music" : "resume_music",0,paused ? (byte)0x11 : (byte)0x12);
 
-        var sampleId = _spcRam[instrumentOffset + 4];
-        var pitchBase = _spcRam[instrumentOffset + 8];
-        if (!_samples.TryGetValue(sampleId, out var sample))
-        {
-            sample = DecodeSampleFromDirectory(_spcRam, sampleId);
-            if (sample.Pcm.Length == 0)
-            {
-                return;
-            }
-
-            _samples[sampleId] = sample;
-        }
-
-        var step = ComputeDspPitchStep(note, pitchBase);
-        AddVoice(new Voice(
-            sample,
-            step,
-            volume,
-            pan,
-            durationSamples: FramesToSamples(durationFrames),
-            delaySamples: FramesToSamples(delayFrames)));
+    /// <summary>Stop all voices and reset the standalone player, including failed sequence diagnostics.</summary>
+    public void ResetPlayback()
+    {
+        EnsureLoaded();
+        if (_data == null) return;
+        _engine = new NativeSmwAudio(_data);
+        _engine.Driver.RegisterWritten += ObserveRegisterWrite;
+        Array.Clear(_pendingCommands);
+        _pendingBank = null; _sampleProbe = null;
+        _frames = _renderedFrames = _droppedFrames = _underruns = 0;
+        _read = _write = _queued = _leftPeak = _rightPeak = 0;
+        _renderMilliseconds = 0; _failed = false; _lastError = ""; _lastSfx = "none";
+        _lastKeyOnClock = -1;
+        _player?.Stop(); _playback?.Dispose(); _player?.Play();
+        _playback = _player?.GetStreamPlayback() as AudioStreamGeneratorPlayback;
+        _playbackCapacity = _playback?.GetFramesAvailable() ?? 0;
+    }
+    private void ObserveRegisterWrite(long clock, int register, byte value)
+    {
+        var mask = _lastPort == 0 ? 0x10 : _lastPort == 1 ? 0x80 : _lastPort == 3 ? 0x40 : 0;
+        if (_lastKeyOnClock < 0 && clock >= _lastTriggerClock && register == 0x4C && (value & mask) != 0 &&
+            _engine?.Driver.CurrentCommand(_lastPort) == _lastCommand) _lastKeyOnClock = clock;
+    }
+    public string DebugStatus()
+    {
+        EnsureLoaded();
+        return $"loaded={(_engine!=null?1:0)} failed={(_failed?1:0)} source={_source} backend=native_dsp samples={LoadedProbeSampleCount} voices=8 " +
+            $"music={(_engine?.Driver.Song??0):X2} simulation_frames={_frames} generated_frames={_renderedFrames} queued_frames={_queued} " +
+            $"playback_skips={_underruns} dropped_frames={_droppedFrames} queued_ms={_queued*1000.0/SampleRate:0.00} " +
+            $"device_queued_frames={Math.Max(0,_playbackCapacity-(_playback?.GetFramesAvailable()??0))} " +
+            $"dsp_command_latency_ms={(_lastKeyOnClock < 0 ? -1 : (_lastKeyOnClock-_lastTriggerClock)/1024.0):0.000} " +
+            $"render_ms={_renderMilliseconds:0.000} last_sfx={_lastSfx} last_sfx_port={_lastPort} last_sfx_cmd={_lastCommand:X2} last_sfx_native=1 " +
+            (_engine == null ? "" : _engine.Driver.DescribeState()+" "+_engine.Dsp.DescribeState());
     }
 
-    private void StepMusicSequencer(double delta)
+    public byte[]? CaptureNativeState()
     {
-        if (!_musicPlaying || _musicPattern.Count == 0 || _musicLoopFrames <= 0)
-        {
-            return;
-        }
-
-        _musicFrameAccumulator += delta * FramesPerSecond;
-        while (_musicFrameAccumulator >= 1.0)
-        {
-            _musicFrameAccumulator -= 1.0;
-            _musicFrame++;
-            if (_musicFrame >= _musicLoopFrames)
-            {
-                _musicFrame = 0;
-                _musicEventIndex = 0;
-            }
-
-            TriggerMusicEventsForCurrentFrame();
-        }
+        if (_engine == null) return null;
+        using var buffer=new MemoryStream(); using var writer=new BinaryWriter(buffer);
+        writer.Write(1); writer.Write(_frames); writer.Write(Engine.PhysicsTicksPerSecond);
+        writer.Write(_pendingCommands); writer.Write(_pendingBank is null ? -1 : (int)_pendingBank.Value);
+        writer.Write(_sampleProbe??-1);
+        var state=_engine.CaptureState(); writer.Write(state.Length); writer.Write(state);
+        return buffer.ToArray();
     }
 
-    private void TriggerMusicEventsForCurrentFrame()
+    public void RestoreNativeState(byte[] state)
     {
-        while (_musicEventIndex < _musicPattern.Count && _musicPattern[_musicEventIndex].Frame == _musicFrame)
-        {
-            var note = _musicPattern[_musicEventIndex];
-            PlayInstrumentNote(note.Instrument, note.Note, note.DurationFrames, note.Volume, delayFrames: 0, note.Pan);
-            _musicEventIndex++;
-        }
-    }
-
-    private static int FramesToSamples(int frames)
-    {
-        return Math.Max(0, frames) * SampleRate / FramesPerSecond;
-    }
-
-    private static double ComputeDspPitchStep(int note, int instrumentPitchBase)
-    {
-        var pitch = note << 8;
-        if ((pitch >> 8) >= 0x34)
-        {
-            pitch += (pitch >> 8) - 0x34;
-        }
-        else if ((pitch >> 8) < 0x13)
-        {
-            pitch += (byte)(((pitch >> 8) - 0x13) * 2) - 256;
-        }
-
-        var basePeriod = ComputePeriod((pitch >> 8) & 0xFF);
-        var nextPeriod = ComputePeriod(((pitch >> 8) + 1) & 0xFF);
-        var delta = nextPeriod - basePeriod;
-        var interpolated = basePeriod + ((delta >> 8) * (pitch & 0xFF)) + (((delta & 0xFF) * (pitch & 0xFF)) >> 8);
-        var dspPitch = interpolated * instrumentPitchBase;
-        return Math.Clamp(dspPitch / 4096.0, 0.05, 8.0);
-    }
-
-    private static int ComputePeriod(int note)
-    {
-        int[] baseNoteFreqs = [4286, 4541, 4811, 5097, 5400, 5721, 6061, 6422, 6804, 7208, 7637, 8091];
-        var pp = note & 0x7F;
-        var q = pp / 12;
-        var r = pp % 12;
-        var value = baseNoteFreqs[r];
-        while (q < 6)
-        {
-            value >>= 1;
-            q++;
-        }
-        while (q > 6)
-        {
-            value <<= 1;
-            q--;
-        }
-
-        return value;
-    }
-
-    private void FillGeneratorBuffer()
-    {
-        if (_playback == null)
-        {
-            return;
-        }
-
-        PruneInactiveVoices();
-        if (_voices.Count == 0)
-        {
-            return;
-        }
-
-        var framesAvailable = _playback.GetFramesAvailable();
-        if (framesAvailable <= 0)
-        {
-            return;
-        }
-
-        var targetFreeFrames = Math.Max(0, GeneratorBufferFrames - TargetQueuedAudioFrames);
-        var framesNeeded = Math.Max(0, framesAvailable - targetFreeFrames);
-        if (framesNeeded < AudioMixChunkFrames)
-        {
-            return;
-        }
-
-        var chunkCount = Math.Min(framesNeeded / AudioMixChunkFrames, MaxAudioMixChunksPerProcess);
-        if (_mixBuffer.Length != AudioMixChunkFrames)
-        {
-            _mixBuffer = new Vector2[AudioMixChunkFrames];
-        }
-
-        var started = Stopwatch.GetTimestamp();
-        var mixedFrames = 0;
-        for (var chunk = 0; chunk < chunkCount; chunk++)
-        {
-            for (var i = 0; i < AudioMixChunkFrames; i++)
-            {
-                _mixBuffer[i] = RenderFrame();
-            }
-
-            _playback.PushBuffer(_mixBuffer);
-            mixedFrames += AudioMixChunkFrames;
-        }
-
-        _debugMixFrames += mixedFrames;
-        _debugMixCalls++;
-        _debugLastMixFrames = mixedFrames;
-        _debugLastMixMilliseconds = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
-        _debugMixMilliseconds += _debugLastMixMilliseconds;
-    }
-
-    private void AddVoice(Voice voice)
-    {
-        PruneInactiveVoices();
-        while (_voices.Count >= MaxVoices)
-        {
-            _voices.RemoveAt(0);
-        }
-
-        _voices.Add(voice);
-    }
-
-    private void PruneInactiveVoices()
-    {
-        for (var i = _voices.Count - 1; i >= 0; i--)
-        {
-            if (!_voices[i].Active)
-            {
-                _voices.RemoveAt(i);
-            }
-        }
-    }
-
-    private Vector2 RenderFrame()
-    {
-        var left = 0.0f;
-        var right = 0.0f;
-        for (var i = _voices.Count - 1; i >= 0; i--)
-        {
-            var voice = _voices[i];
-            if (!voice.Active)
-            {
-                _voices.RemoveAt(i);
-                continue;
-            }
-
-            var sample = voice.NextSample();
-            left += sample * voice.LeftGain;
-            right += sample * voice.RightGain;
-        }
-
-        return new Vector2(Math.Clamp(left, -1.0f, 1.0f), Math.Clamp(right, -1.0f, 1.0f));
-    }
-
-    private sealed record DecodedSample(int Id, int StartAddress, int LoopAddress, float[] Pcm);
-
-    private readonly record struct MusicEvent(
-        int Frame,
-        int Instrument,
-        int Note,
-        int DurationFrames,
-        float Volume,
-        float Pan);
-
-    private readonly record struct SfxProbeNote(
-        int Instrument,
-        int Note,
-        int DurationFrames,
-        float Volume,
-        int DelayFrames,
-        float Pan);
-
-    private static readonly MusicEvent[] LevelPreviewPattern =
-    [
-        new(0, 9, 0x68, 18, 0.22f, -0.15f),
-        new(0, 12, 0x58, 22, 0.14f, 0.18f),
-        new(12, 9, 0x6C, 18, 0.22f, -0.10f),
-        new(24, 9, 0x70, 18, 0.22f, -0.05f),
-        new(24, 12, 0x5C, 22, 0.14f, 0.18f),
-        new(36, 9, 0x74, 18, 0.22f, 0.00f),
-        new(48, 9, 0x77, 18, 0.22f, 0.05f),
-        new(48, 12, 0x60, 22, 0.14f, 0.18f),
-        new(60, 9, 0x74, 18, 0.22f, 0.00f),
-        new(72, 9, 0x70, 18, 0.22f, -0.05f),
-        new(72, 12, 0x5C, 22, 0.14f, 0.18f),
-        new(84, 9, 0x6C, 18, 0.22f, -0.10f),
-    ];
-
-    private static readonly MusicEvent[] OverworldPreviewPattern =
-    [
-        new(0, 12, 0x60, 14, 0.18f, -0.12f),
-        new(8, 12, 0x64, 14, 0.18f, -0.08f),
-        new(16, 12, 0x67, 14, 0.18f, 0.00f),
-        new(24, 12, 0x6C, 20, 0.20f, 0.08f),
-        new(32, 9, 0x54, 22, 0.12f, 0.18f),
-        new(40, 12, 0x6C, 14, 0.18f, 0.08f),
-        new(48, 12, 0x67, 14, 0.18f, 0.00f),
-        new(56, 12, 0x64, 14, 0.18f, -0.08f),
-        new(64, 12, 0x60, 20, 0.20f, -0.12f),
-        new(72, 9, 0x58, 22, 0.12f, 0.18f),
-        new(80, 12, 0x64, 14, 0.18f, -0.08f),
-        new(88, 12, 0x67, 14, 0.18f, 0.00f),
-    ];
-
-    private static readonly MusicEvent[] CreditsPreviewPattern =
-    [
-        new(0, 12, 0x64, 28, 0.18f, -0.10f),
-        new(0, 9, 0x50, 32, 0.10f, 0.18f),
-        new(24, 12, 0x68, 28, 0.18f, -0.05f),
-        new(40, 9, 0x54, 32, 0.10f, 0.18f),
-        new(48, 12, 0x6C, 28, 0.18f, 0.00f),
-        new(72, 12, 0x70, 28, 0.18f, 0.05f),
-        new(80, 9, 0x58, 32, 0.10f, 0.18f),
-        new(96, 12, 0x6C, 28, 0.18f, 0.00f),
-        new(112, 12, 0x68, 24, 0.18f, -0.05f),
-    ];
-
-    private static readonly MusicEvent[] StarPreviewPattern =
-    [
-        new(0, 12, 0x70, 8, 0.20f, -0.12f),
-        new(4, 9, 0x58, 12, 0.13f, 0.12f),
-        new(8, 12, 0x74, 8, 0.20f, -0.08f),
-        new(16, 12, 0x77, 8, 0.20f, 0.00f),
-        new(20, 9, 0x5C, 12, 0.13f, 0.12f),
-        new(24, 12, 0x7C, 8, 0.20f, 0.08f),
-        new(32, 12, 0x77, 8, 0.20f, 0.00f),
-        new(36, 9, 0x60, 12, 0.13f, 0.12f),
-        new(40, 12, 0x74, 8, 0.20f, -0.08f),
-        new(48, 12, 0x70, 8, 0.20f, -0.12f),
-        new(52, 9, 0x5C, 12, 0.13f, 0.12f),
-        new(56, 12, 0x74, 8, 0.20f, -0.08f),
-    ];
-
-    private sealed class Voice
-    {
-        private readonly DecodedSample _sample;
-        private readonly int _durationSamples;
-        private int _delaySamples;
-        private int _ageSamples;
-        private double _position;
-        private readonly double _step;
-
-        public Voice(DecodedSample sample, double step, float volume, float pan, int durationSamples, int delaySamples)
-        {
-            _sample = sample;
-            _step = step;
-            _durationSamples = durationSamples;
-            _delaySamples = delaySamples;
-            var leftPan = Math.Clamp(1.0f - pan, 0.0f, 1.0f);
-            var rightPan = Math.Clamp(1.0f + pan, 0.0f, 1.0f);
-            LeftGain = volume * leftPan;
-            RightGain = volume * rightPan;
-        }
-
-        public float LeftGain { get; }
-        public float RightGain { get; }
-        public bool Active => _delaySamples > 0 ||
-            (_durationSamples > 0 ? _ageSamples < _durationSamples : _position < _sample.Pcm.Length);
-
-        public float NextSample()
-        {
-            if (_delaySamples > 0)
-            {
-                _delaySamples--;
-                return 0.0f;
-            }
-
-            if (!Active)
-            {
-                return 0.0f;
-            }
-
-            var index = (int)_position;
-            if (index >= _sample.Pcm.Length)
-            {
-                if (_durationSamples > 0)
-                {
-                    _position = 0.0;
-                    index = 0;
-                }
-                else
-                {
-                    return 0.0f;
-                }
-            }
-
-            _position += _step;
-            _ageSamples++;
-            return _sample.Pcm[index];
-        }
+        EnsureLoaded(); if(_engine==null) throw new InvalidOperationException("Checkpoint requires native audio data");
+        using var buffer=new MemoryStream(state); using var reader=new BinaryReader(buffer);
+        if(reader.ReadInt32()!=1) throw new InvalidDataException("Native Godot audio checkpoint schema mismatch");
+        var frames=reader.ReadInt64();
+        if(reader.ReadInt32()!=Engine.PhysicsTicksPerSecond) throw new InvalidDataException("Checkpoint uses a different game/audio timebase");
+        reader.ReadBytes(4).CopyTo(_pendingCommands,0);
+        var bank=reader.ReadInt32(); _pendingBank=bank<0?null:(SmwMusicBank)bank;
+        var probe=reader.ReadInt32(); _sampleProbe=probe<0?null:probe;
+        var length=reader.ReadInt32(); if(length<=0||length>150000) throw new InvalidDataException("Invalid native audio checkpoint length");
+        _engine.RestoreState(reader.ReadBytes(length));
+        if(buffer.Position!=buffer.Length) throw new InvalidDataException("Trailing native Godot audio checkpoint bytes");
+        _frames=frames; _renderedFrames=_engine.Dsp.GeneratedFrames; _read=_write=_queued=0; _failed=false;
+        _player?.Stop(); _playback?.Dispose(); _player?.Play();
+        _playback=_player?.GetStreamPlayback() as AudioStreamGeneratorPlayback;
+        _playbackCapacity=_playback?.GetFramesAvailable()??0;
     }
 }

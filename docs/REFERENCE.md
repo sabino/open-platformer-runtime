@@ -1,5 +1,10 @@
 # Reference Notes
 
+These are historical notes about a modified native checkout. Use
+[REFERENCE-RESEARCH.md](REFERENCE-RESEARCH.md) for pinned upstream sources and
+the current tooling audit, and [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md)
+for the implementation and exact-parity requirements.
+
 Reference inputs used for this port:
 
 - Native repo: `/path/to/native-reference`

@@ -21,7 +21,7 @@ The runtime is useful today for technical playtesting, importer validation, and 
 - The manifest includes imported level metadata and ROM-derived overworld level titles when available.
 - The course selector lists imported levels, supports type-ahead search by id or title, and can launch a selected level.
 - A level can return to the selector with `Esc`, `Backspace`, gamepad Back/Guide, or after the current course-clear walkout.
-- Runtime toggles exist for debug gizmos, actor simulation, and actor visuals. Gizmos default on; audio remains intentionally opt-in and greyed out in the selector.
+- Runtime toggles exist for debug gizmos, actor simulation, actor visuals, and audio. Gizmos default on; audio is opt-in. The Music / SFX Player offers standalone listening.
 - A GitHub Pages browser loader exists under `web/`. It lets a user pick a local ROM file, validates it in browser memory, probes importer table ranges, exports a browser manifest, feeds a ROM-derived level index into the in-game selector, and can generate focused level asset packs requested by the experimental browser runtime.
 - An experimental Godot .NET Web export track exists for custom builds based on `godotengine/godot#106125`; it is not part of the stock Godot 4.6.3 path and currently depends on local Godot marshalling fixes.
 - Level rendering covers the current partial Map16/object projection, generated palettes, level previews, layer backgrounds for covered cases, and generated player/sprite atlases.
@@ -87,8 +87,9 @@ The runtime is useful today for technical playtesting, importer validation, and 
 ### Audio
 
 - Audio is disabled by default.
-- Current audio is a diagnostic/internal BRR/APU probe plus preview controls, not a complete SPC/DSP sequencer.
-- Music sequencing, SFX priority, pause/fade behavior, echo/DSP behavior, and exact runtime audio timing are pending.
+- Native SMW sequencing and integer S-DSP processing now play ROM-derived music and SFX without running an SPC700 CPU.
+- The listening player offers all three song banks, transport controls and playback diagnostics.
+- DSP fixtures pass exact comparisons; translated-driver cases pass at 500 Hz control boundaries. Full-song firmware timing, exhaustive SFX/transition coverage, and browser playback remain unverified. See [NATIVE-AUDIO.md](NATIVE-AUDIO.md).
 
 ### Tooling and Testing
 

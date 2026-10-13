@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using OpenPlatformerRuntime.SmwAssets;
 using IOException = System.IO.IOException;
 using IoPath = System.IO.Path;
 
@@ -18,7 +19,9 @@ public partial class Main : Node2D
 
     private Control? _menu;
     private GameScene? _game;
+    private SmwRom? _rom;
     private SmwAudio? _audio;
+    private bool _audioPlayerOpen;
     private ColorRect? _gameBackground;
     private TextureRect? _menuLevelPreview;
     private TextureRect? _selectedLevelPreview;
@@ -59,6 +62,14 @@ public partial class Main : Node2D
 
     public override void _Ready()
     {
+        // Machine-readable traces must use the same numbers on every host.
+        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+        if (!LoadConfiguredRom())
+        {
+            GetTree().Quit(2);
+            return;
+        }
         Engine.MaxFps = 60;
         var webDisplay = IsWebDisplay();
         if (!webDisplay &&
@@ -78,7 +89,7 @@ public partial class Main : Node2D
         ApplyInitialLevelArg();
         if (_audioEnabled)
         {
-            _audio = new SmwAudio { Name = "SmwAudio" };
+            _audio = new SmwAudio { Name = "SmwAudio", Rom = _rom };
             AddChild(_audio);
         }
         else
@@ -86,7 +97,10 @@ public partial class Main : Node2D
             GD.Print("smw-audio: disabled=1");
         }
 
-        ShowMenu();
+        if (Array.Exists(OS.GetCmdlineArgs(), arg => arg is "--smw-audio-player" or "--smw-audio-player-smoke"))
+            ShowAudioPlayer();
+        else
+            ShowMenu();
 
         var autostart = false;
         string? testLevel = null;
@@ -236,6 +250,28 @@ public partial class Main : Node2D
         if (audioSamplePreview != null)
         {
             GD.Print($"smw-audio: sample_preview {_audio?.PlaySampleProbe(audioSamplePreview.Value) ?? $"sample={audioSamplePreview.Value:X2} available=0 samples=0"}");
+        }
+    }
+
+    private bool LoadConfiguredRom()
+    {
+        var path = OS.GetEnvironment("SMW_ROM_PATH");
+        foreach (var arg in OS.GetCmdlineArgs())
+            if (arg.StartsWith("--smw-rom=", StringComparison.Ordinal)) path = arg["--smw-rom=".Length..];
+        // The experimental browser pack bridge remains available while its
+        // ROM-memory handoff is migrated to this same filesystem-free decoder.
+        if (string.IsNullOrWhiteSpace(path)) return true;
+        try
+        {
+            if (!FileAccess.FileExists(path)) throw new IOException($"ROM not found: {path}");
+            _rom = SmwRom.FromBytes(FileAccess.GetFileAsBytes(path));
+            GD.Print($"smw-rom: source=native sha1={_rom.Inspection.Sha1} size={_rom.Data.Length}");
+            return true;
+        }
+        catch (Exception error)
+        {
+            GD.PushError($"smw-rom: {error.Message}");
+            return false;
         }
     }
 
@@ -592,7 +628,7 @@ public partial class Main : Node2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (_game != null)
+        if (_game != null || _audioPlayerOpen)
         {
             return;
         }
@@ -770,6 +806,11 @@ public partial class Main : Node2D
 
     private void ShowMenu()
     {
+        _audioPlayerOpen = false;
+        GetWindow().ContentScaleSize = LogicalViewportSize;
+        GetWindow().ContentScaleMode = Window.ContentScaleModeEnum.Viewport;
+        GetWindow().ContentScaleStretch = Window.ContentScaleStretchEnum.Integer;
+        GetWindow().Title = "Open Platformer Runtime";
         _menu = new Control();
         _menu.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         AddChild(_menu);
@@ -983,8 +1024,7 @@ public partial class Main : Node2D
         {
             Text = "Audio",
             ButtonPressed = _audioEnabled,
-            Disabled = true,
-            TooltipText = "Audio is intentionally disabled from the selector for now.",
+            TooltipText = "Enable native ROM-derived music and sound effects during gameplay.",
         };
         _audioToggle.AddThemeFontSizeOverride("font_size", 5);
         _audioToggle.AddThemeColorOverride("font_disabled_color", new Color(0.62f, 0.68f, 0.70f, 1.0f));
@@ -1020,6 +1060,11 @@ public partial class Main : Node2D
         _actorVisualsToggle.AddThemeFontSizeOverride("font_size", 5);
         _actorVisualsToggle.Toggled += enabled => _actorVisualsEnabled = enabled;
         actorRow.AddChild(_actorVisualsToggle);
+
+        var audioPlayer = new Button { Text = "Music / SFX Player", TooltipText = "Listen to original ROM songs and test gameplay sounds." };
+        audioPlayer.AddThemeFontSizeOverride("font_size", 7);
+        audioPlayer.Pressed += () => ShowAudioPlayer();
+        panel.AddChild(audioPlayer);
     }
 
     private static Texture2D? LoadTexture(string path)
@@ -1266,14 +1311,33 @@ public partial class Main : Node2D
 
         if (_audio == null)
         {
-            _audio = new SmwAudio { Name = "SmwAudio" };
+            _audio = new SmwAudio { Name = "SmwAudio", Rom = _rom };
             AddChild(_audio);
         }
     }
 
+    private void ShowAudioPlayer()
+    {
+        _menu?.QueueFree();
+        ClearMenuReferences();
+        SetAudioEnabled(true);
+        _audioPlayerOpen = true;
+        GetWindow().ContentScaleSize = SmwAudioPlayer.ViewportSize;
+        GetWindow().ContentScaleMode = Window.ContentScaleModeEnum.CanvasItems;
+        GetWindow().ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
+        GetWindow().Title = "SMW Audio Player — Open Platformer Runtime";
+        var player = GD.Load<PackedScene>("res://src/scenes/SmwAudioPlayer.tscn").Instantiate<SmwAudioPlayer>();
+        player.Audio = _audio!;
+        player.Autoplay = true;
+        player.RunSmokeTest = Array.Exists(OS.GetCmdlineArgs(), arg => arg == "--smw-audio-player-smoke");
+        player.CourseSelectRequested += () => { player.QueueFree(); ClearMenuReferences(); ShowMenu(); };
+        _menu = player;
+        AddChild(player);
+    }
+
     private void AddAudioTester(VBoxContainer panel)
     {
-        var title = new Label { Text = "Internal APU Probe" };
+        var title = new Label { Text = "Native SMW Audio" };
         title.AddThemeFontSizeOverride("font_size", 10);
         panel.AddChild(title);
 
@@ -1310,8 +1374,8 @@ public partial class Main : Node2D
             var button = new Button
             {
                 Text = name,
-                Disabled = name != "Star" && !FileAccess.FileExists(bankPath),
-                TooltipText = "Internal BRR sequencer preview; exact SPC/DSP song playback is still pending.",
+                Disabled = _audio == null || !_audio.HasNativeData,
+                TooltipText = "Play the original ROM sequence through the native C# DSP.",
             };
             button.Pressed += () => _audio?.PlayMusicPreview(name);
             musicButtons.AddChild(button);
@@ -1320,7 +1384,7 @@ public partial class Main : Node2D
         var stop = new Button
         {
             Text = "Stop",
-            TooltipText = "Stop the internal sequencer preview.",
+            TooltipText = "Pause native music playback.",
         };
         stop.Pressed += () => _audio?.StopMusicPreview();
         musicButtons.AddChild(stop);
@@ -1679,16 +1743,14 @@ public partial class Main : Node2D
         EnsureGameBackground();
         _audio?.PlayMenuStart();
 
-        _game = new GameScene
-        {
-            Name = "GameScene",
-            InitialLevelId = _selectedLevelId,
-            DebugOverlays = _debugOverlays,
-            ActorsEnabled = _actorsEnabled,
-            ActorVisualsEnabled = _actorVisualsEnabled,
-            Audio = _audio,
-            AudioEnabled = _audioEnabled,
-        };
+        _game = GD.Load<PackedScene>("res://src/scenes/GameScene.tscn").Instantiate<GameScene>();
+        _game.InitialLevelId = _selectedLevelId;
+        _game.DebugOverlays = _debugOverlays;
+        _game.ActorsEnabled = _actorsEnabled;
+        _game.ActorVisualsEnabled = _actorVisualsEnabled;
+        _game.Audio = _audio;
+        _game.AudioEnabled = _audioEnabled;
+        _game.Rom = _rom;
         _game.CourseSelectRequested += ReturnToCourseSelect;
         AddChild(_game);
     }
@@ -1767,7 +1829,7 @@ public partial class Main : Node2D
             {
                 enabled = false;
             }
-            else if (arg == "--smw-audio" ||
+            else if (arg is "--smw-audio-player" or "--smw-audio-player-smoke" or "--smw-audio" ||
                 arg.Equals("--smw-audio=on", StringComparison.OrdinalIgnoreCase) ||
                 arg.Equals("--smw-audio=1", StringComparison.OrdinalIgnoreCase) ||
                 arg.StartsWith("--smw-audio-preview=", StringComparison.Ordinal) ||
